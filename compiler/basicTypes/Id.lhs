@@ -478,16 +478,16 @@ setIdStrictness id sig = modifyIdInfo (`setStrictnessInfo` sig) id
 zapIdStrictness :: Id -> Id
 zapIdStrictness id = modifyIdInfo (`setStrictnessInfo` topSig) id
 
--- | This predicate says whether the 'Id' has a strict demand placed on it or
--- has a type such that it can always be evaluated strictly (e.g., an
--- unlifted type, but see the comment for 'isStrictType').  We need to
--- check separately whether the 'Id' has a so-called \"strict type\" because if
--- the demand for the given @id@ hasn't been computed yet but @id@ has a strict
--- type, we still want @isStrictId id@ to be @True@.
+-- | This predicate says whether the 'Id' has a strict demand placed
+-- on it or has a type such that it can always be evaluated strictly
+-- (i.e. an unlifted type, as of GHC 7.6).  We need to check
+-- separately whether the 'Id' has a so-called \"strict type\" because
+-- if the demand for the given @id@ hasn't been computed yet but @id@
+-- has a strict type, we still want @isStrictId id@ to be @True@.
 isStrictId :: Id -> Bool
 isStrictId id
   = ASSERT2( isId id, text "isStrictId: not an id: " <+> ppr id )
-           (isStrictType (idType id)) ||
+           (isUnLiftedType (idType id)) ||
            -- Take the best of both strictnesses - old and new               
            (isStrictDmd (idDemandInfo id))
 

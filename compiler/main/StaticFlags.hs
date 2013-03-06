@@ -31,7 +31,7 @@ module StaticFlags (
         opt_NoDebugOutput,
 
 	-- language opts
-	opt_DictsStrict,
+	opt_NoNewtypeDicts,
 
 	-- optimisation opts
 	opt_NoStateHack,
@@ -150,7 +150,6 @@ flagsStatic = [
 isStaticFlag :: String -> Bool
 isStaticFlag f =
   f `elem` [
-    "fdicts-strict",
     "fspec-inline-join-points",
     "fno-hi-version-check",
     "dno-black-holing",
@@ -196,9 +195,10 @@ opt_PprStyle_Debug = lookUp  (fsLit "-dppr-debug")
 opt_NoDebugOutput  :: Bool
 opt_NoDebugOutput  = lookUp  (fsLit "-dno-debug-output")
 
--- language opts
-opt_DictsStrict    :: Bool
-opt_DictsStrict	   = lookUp  (fsLit "-fdicts-strict")
+-- NB as of GHC 7.7ish, if a module is compiled with this flag, then
+-- modules importing it must also be compiled with this flag :( -NSF
+opt_NoNewtypeDicts :: Bool
+opt_NoNewtypeDicts = lookUp  (fsLit "-fno-newtype-dicts")
 
 opt_NoStateHack    :: Bool
 opt_NoStateHack	   = lookUp  (fsLit "-fno-state-hack")
@@ -295,4 +295,3 @@ unpacked_opts =
    expandAts ('@':fname) = words (unsafePerformIO (readFile fname))
    expandAts l = [l]
 -}
-

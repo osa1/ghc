@@ -412,19 +412,18 @@ mkArgInfo fun rules n_val_args call_cont
                    vanilla_stricts      -- Not enough args, or no strictness
 
     add_type_str :: Type -> [Bool] -> [Bool]
-    -- If the function arg types are strict, record that in the 'strictness bits'
-    -- No need to instantiate because unboxed types (which dominate the strict
-    -- types) can't instantiate type variables.
-    -- add_type_str is done repeatedly (for each call); might be better
-    -- once-for-all in the function
-    -- But beware primops/datacons with no strictness
+    -- If the function arg types are strict, record that in the
+    -- 'strictness bits' No need to instantiate because unboxed types
+    -- can't instantiate type variables.  add_type_str is done
+    -- repeatedly (for each call); might be better once-for-all in the
+    -- function But beware primops/datacons with no strictness
     add_type_str _ [] = []
     add_type_str fun_ty strs            -- Look through foralls
         | Just (_, fun_ty') <- splitForAllTy_maybe fun_ty       -- Includes coercions
         = add_type_str fun_ty' strs
     add_type_str fun_ty (str:strs)      -- Add strict-type info
         | Just (arg_ty, fun_ty') <- splitFunTy_maybe fun_ty
-        = (str || isStrictType arg_ty) : add_type_str fun_ty' strs
+        = (str || isUnLiftedType arg_ty) : add_type_str fun_ty' strs
     add_type_str _ strs
         = strs
 

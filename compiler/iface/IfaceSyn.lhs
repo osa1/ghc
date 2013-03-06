@@ -36,6 +36,7 @@ module IfaceSyn (
 
 #include "HsVersions.h"
 
+import StaticFlags
 import TyCon( SynTyConRhs(..) )
 import IfaceType
 import CoreSyn( DFunArg, dfunArgExprs )
@@ -460,7 +461,7 @@ ifaceDeclImplicitBndrs (IfaceClass {ifCtxt = sc_ctxt, ifName = cls_tc_occ,
             | otherwise  = []
     dcww_occ = mkDataConWorkerOcc dc_occ
     dc_occ = mkClassDataConOcc cls_tc_occ
-    is_newtype = n_sigs + n_ctxt == 1 -- Sigh
+    is_newtype = not opt_NoNewtypeDicts && (n_sigs + n_ctxt == 1) -- Sigh
 
 ifaceDeclImplicitBndrs _ = []
 

@@ -23,7 +23,9 @@ import VarEnv
 import BasicTypes	
 import FastString
 import Data.List
+import Type             ( Type,  )
 import DataCon		( dataConTyCon, dataConRepStrictness, isMarkedStrict )
+import DsCCall          ( splitDataProductType_maybe )
 import Id
 import CoreUtils	( exprIsHNF, exprIsTrivial )
 import PprCore	
@@ -135,6 +137,43 @@ simpleDmdAnal dflags env res_ty e
   | otherwise
   = (res_ty, e)
 
+inDFunRhsTop, notInDFunRhsTop :: Bool
+inDFunRhsTop = True
+notInDFunRhsTop = False
+
+dmdAnalLam ::  Bool -- ^ at the top of a DFun RHS?
+           ->  DynFlags -> AnalEnv -> Demand -> (Var, CoreExpr)
+           -> (DmdType, CoreExpr)
+dmdAnalLam dfunRhsTop dflags env dmd (var, body)
+  | isTyVar var
+  = let
+	(body_ty, body') = dmdAnalK env dmd body
+    in
+    (body_ty, Lam var body')
+
+  | Just body_dmd <- peelCallDmd dmd	-- A call demand: good!
+  = let
+	env'		 = extendSigsWithLam env var
+	(body_ty, body') = dmdAnalK env' body_dmd body
+	(lam_ty, var')   = annotateLamIdBndr dfunRhsTop dflags env body_ty var
+    in
+    (lam_ty, Lam var' body')
+
+  | otherwise	-- Not enough demand on the lambda; but do the body
+  = let		-- anyway to annotate it and gather free var info
+	(body_ty, body') = dmdAnalK env evalDmd body
+	(lam_ty, var')   = annotateLamIdBndr dfunRhsTop dflags env body_ty var
+    in
+    (deferType lam_ty, Lam var' body')
+  where
+    dmdAnalK = (if dfunRhsTop then dmdAnalDFunRhsE else dmdAnal) dflags
+
+dmdAnalDFunRhsE :: DynFlags -> AnalEnv -> Demand -> CoreExpr -> (DmdType, CoreExpr)
+dmdAnalDFunRhsE dflags env dmd (Lam var body) = dmdAnalLam inDFunRhsTop dflags env dmd (var, body)
+-- TODO should we preserve the in-the-inDFunRhsTop state through casts
+-- and ticks?
+dmdAnalDFunRhsE dflags env dmd expr           = dmdAnal                 dflags env dmd   expr
+
 dmdAnal :: DynFlags -> AnalEnv -> Demand -> CoreExpr -> (DmdType, CoreExpr)
 dmdAnal dflags env dmd e 
   | isBotDmd dmd  	  = simpleDmdAnal dflags env botDmdType e
@@ -145,8 +184,8 @@ dmdAnal _ _ _ (Lit lit)     = (topDmdType, Lit lit)
 dmdAnal _ _ _ (Type ty)     = (topDmdType, Type ty)	-- Doesn't happen, in fact
 dmdAnal _ _ _ (Coercion co) = (topDmdType, Coercion co)
 
-dmdAnal _ env dmd (Var var)
-  = (dmdTransform env var dmd, Var var)
+dmdAnal dflags env dmd (Var var)
+  = (dmdTransform dflags env var dmd, Var var)
 
 dmdAnal dflags env dmd (Cast e co)
   = (dmd_ty, Cast e' co)
@@ -196,27 +235,7 @@ dmdAnal dflags env dmd (App fun arg)	-- Non-type arguments
 --         , text "overall res dmd_ty =" <+> ppr (res_ty `bothDmdType` arg_ty) ])
     (res_ty `bothDmdType` arg_ty, App fun' arg')
 
-dmdAnal dflags env dmd (Lam var body)
-  | isTyVar var
-  = let   
-	(body_ty, body') = dmdAnal dflags env dmd body
-    in
-    (body_ty, Lam var body')
-
-  | Just body_dmd <- peelCallDmd dmd	-- A call demand: good!
-  = let	
-	env'		 = extendSigsWithLam env var
-	(body_ty, body') = dmdAnal dflags env' body_dmd body
-	(lam_ty, var')   = annotateLamIdBndr dflags env body_ty var
-    in
-    (lam_ty, Lam var' body')
-
-  | otherwise	-- Not enough demand on the lambda; but do the body
-  = let		-- anyway to annotate it and gather free var info
-	(body_ty, body') = dmdAnal dflags env evalDmd body
-	(lam_ty, var')   = annotateLamIdBndr dflags env body_ty var
-    in
-    (deferType lam_ty, Lam var' body')
+dmdAnal dflags env dmd (Lam var body) = dmdAnalLam notInDFunRhsTop dflags env dmd (var, body)
 
 dmdAnal dflags env dmd (Case scrut case_bndr ty [alt@(DataAlt dc, _, _)])
   -- Only one alternative with a product constructor
@@ -226,7 +245,7 @@ dmdAnal dflags env dmd (Case scrut case_bndr ty [alt@(DataAlt dc, _, _)])
   = let
 	env_alt	              = extendAnalEnv NotTopLevel env case_bndr case_bndr_sig
 	(alt_ty, alt')	      = dmdAnalAlt dflags env_alt dmd alt
-	(alt_ty1, case_bndr') = annotateBndr alt_ty case_bndr
+	(alt_ty1, case_bndr') = annotateBndr dflags NonRecursive alt_ty case_bndr
 	(_, bndrs', _)	      = alt'
 	case_bndr_sig	      = cprProdSig
 		-- Inside the alternative, the case binder has the CPR property.
@@ -280,7 +299,7 @@ dmdAnal dflags env dmd (Case scrut case_bndr ty alts)
   = let      -- Case expression with multiple alternatives
 	(alt_tys, alts')        = mapAndUnzip (dmdAnalAlt dflags env dmd) alts
 	(scrut_ty, scrut')      = dmdAnal dflags env evalDmd scrut
-	(alt_ty, case_bndr')	= annotateBndr (foldr lubDmdType botDmdType alt_tys) case_bndr
+	(alt_ty, case_bndr')	= annotateBndr dflags NonRecursive (foldr lubDmdType botDmdType alt_tys) case_bndr
         res_ty                  = alt_ty `bothDmdType` scrut_ty
     in
 --    pprTrace "dmdAnal:Case2" (vcat [ text "scrut" <+> ppr scrut
@@ -293,7 +312,7 @@ dmdAnal dflags env dmd (Let (NonRec id rhs) body)
   = let
 	(sigs', lazy_fv, (id1, rhs')) = dmdAnalRhs dflags NotTopLevel NonRecursive env (id, rhs)
 	(body_ty, body') 	      = dmdAnal dflags (updSigEnv env sigs') dmd body
-	(body_ty1, id2)    	      = annotateBndr body_ty id1
+	(body_ty1, id2)    	      = annotateBndr dflags NonRecursive body_ty id1
 	body_ty2		      = addLazyFVs body_ty1 lazy_fv
     in
 	-- If the actual demand is better than the vanilla call
@@ -319,7 +338,7 @@ dmdAnal dflags env dmd (Let (Rec pairs) body)
     in
     sigs' `seq` body_ty `seq`
     let
-	(body_ty2, _) = annotateBndrs body_ty1 bndrs
+	(body_ty2, _) = annotateBndrs dflags Recursive body_ty1 bndrs
 		-- Don't bother to add demand info to recursive
 		-- binders as annotateBndr does; 
 		-- being recursive, we can't treat them strictly.
@@ -333,7 +352,7 @@ dmdAnalAlt dflags env dmd (con,bndrs,rhs)
   = let 
 	(rhs_ty, rhs')   = dmdAnal dflags env dmd rhs
         rhs_ty'          = addDataConPatDmds con bndrs rhs_ty
-	(alt_ty, bndrs') = annotateBndrs rhs_ty' bndrs
+	(alt_ty, bndrs') = annotateBndrs dflags NonRecursive rhs_ty' bndrs
 	final_alt_ty | io_hack_reqd = alt_ty `lubDmdType` topDmdType
 		     | otherwise    = alt_ty
 
@@ -381,17 +400,21 @@ addDataConPatDmds (DataAlt con) bndrs dmd_ty
 %************************************************************************
 
 \begin{code}
-dmdTransform :: AnalEnv		-- The strictness environment
+dmdTransform :: DynFlags
+             -> AnalEnv		-- The strictness environment
 	     -> Id		-- The function
 	     -> Demand		-- The demand on the function
 	     -> DmdType		-- The demand type of the function in this context
 	-- Returned DmdEnv includes the demand on 
 	-- this function plus demand on its free variables
 
-dmdTransform env var dmd
+dmdTransform dflags env var dmd
   | isDataConWorkId var		                 -- Data constructor
   = dmdTransformDataConSig 
        (idArity var) (idStrictness var) dmd
+
+  | Just _ <- isClassOpId_maybe var -- Dictionary component selector
+  = dmdTransformDictSelSig (idStrictness var) dmd
 
   | isGlobalId var	                         -- Imported function
   = dmdTransformSig (idStrictness var) dmd
@@ -479,7 +502,6 @@ dmdFix dflags top_lvl env orig_pairs
 			Just (sig,_) -> sig
                         Nothing      -> pprPanic "dmdFix" (ppr var)
 
--- Non-recursive bindings
 dmdAnalRhs :: DynFlags -> TopLevelFlag -> RecFlag
 	-> AnalEnv -> (Id, CoreExpr)
 	-> (SigEnv,  DmdEnv, (Id, CoreExpr))
@@ -490,14 +512,13 @@ dmdAnalRhs dflags top_lvl rec_flag env (id, rhs)
  where
   arity		     = idArity id   -- The idArity should be up to date
 				    -- The simplifier was run just beforehand
-  (rhs_dmd_ty, rhs') = dmdAnal dflags env (vanillaCall arity) rhs
+  (rhs_dmd_ty, rhs') = (if isDFunId id then dmdAnalDFunRhsE else dmdAnal) dflags env (vanillaCall arity) rhs
   (lazy_fv, sig_ty)  = WARN( arity /= dmdTypeDepth rhs_dmd_ty && not (exprIsTrivial rhs), ppr id )
                        -- The RHS can be eta-reduced to just a variable, 
                        -- in which case we should not complain. 
 		       mkSigTy top_lvl rec_flag env id rhs rhs_dmd_ty
   id'		     = id `setIdStrictness` sig_ty
   sigs'		     = extendSigEnv top_lvl (sigEnv env) id sig_ty
-
 \end{code}
 
 %************************************************************************
@@ -570,43 +591,54 @@ possible to safely ignore non-mentioned variables (their joint demand
 is <L,A>).
 
 \begin{code}
-annotateBndr :: DmdType -> Var -> (DmdType, Var)
+annotateBndr :: DynFlags -> RecFlag -> DmdType -> Var -> (DmdType, Var)
 -- The returned env has the var deleted
 -- The returned var is annotated with demand info
 -- according to the result demand of the provided demand type
 -- No effect on the argument demands
-annotateBndr dmd_ty@(DmdType fv ds res) var
+annotateBndr dflags recFlag dmd_ty@(DmdType fv ds res) var
   | isTyVar var = (dmd_ty, var)
-  | otherwise   = (DmdType fv' ds res, setIdDemandInfo var dmd)
+  | otherwise   = (DmdType fv' ds res, setIdDemandInfo var dmd')
   where
     (fv', dmd) = removeFV fv var res
 
-annotateBndrs :: DmdType -> [Var] -> (DmdType, [Var])
-annotateBndrs = mapAccumR annotateBndr
+    dmd' | gopt Opt_DictsStrict dflags,
+             -- only strictify *non-recursive* let-bound dicts
+           NonRecursive == recFlag = strictifyDictDmd (idType var) dmd
+         | otherwise               = dmd
 
-annotateLamIdBndr :: DynFlags
+annotateBndrs :: DynFlags -> RecFlag -> DmdType -> [Var] -> (DmdType, [Var])
+annotateBndrs dflags recFlag = mapAccumR (annotateBndr dflags recFlag)
+
+annotateLamIdBndr :: Bool -- ^ parameter to a DFunId?
+                  -> DynFlags
                   -> AnalEnv
                   -> DmdType 	-- Demand type of body
 		  -> Id 	-- Lambda binder
 		  -> (DmdType, 	-- Demand type of lambda
-		      Id)	-- and binder annotated with demand	
+		      Id)	-- and binder annotated with demand
 
-annotateLamIdBndr dflags env (DmdType fv ds res) id
+annotateLamIdBndr dfunRhsTop dflags env (DmdType fv ds res) id
 -- For lambdas we add the demand to the argument demands
 -- Only called for Ids
   = ASSERT( isId id )
-    (final_ty, setIdDemandInfo id dmd)
+    (final_ty, setIdDemandInfo id dmd')
   where
       -- Watch out!  See note [Lambda-bound unfoldings]
     final_ty = case maybeUnfoldingTemplate (idUnfolding id) of
                  Nothing  -> main_ty
                  Just unf -> main_ty `bothDmdType` unf_ty
                           where
-                             (unf_ty, _) = dmdAnal dflags env dmd unf
-    
-    main_ty = DmdType fv' (dmd:ds) res
+                             (unf_ty, _) = dmdAnal dflags env dmd' unf
+
+    main_ty = DmdType fv' (dmd':ds) res
 
     (fv', dmd) = removeFV fv id res
+
+    dmd' | gopt Opt_DictsStrict dflags,
+             -- do not strictify arguments of a defun
+           not dfunRhsTop = strictifyDictDmd (idType id) dmd
+         | otherwise      = dmd
 
 mkSigTy :: TopLevelFlag -> RecFlag -> AnalEnv -> Id -> 
            CoreExpr -> DmdType -> (DmdEnv, StrictSig)
@@ -637,6 +669,35 @@ mkSigTy top_lvl rec_flag env id rhs (DmdType fv dmds res)
         -- See Note [Optimistic CPR in the "virgin" case]
 	| isStrictDmd (idDemandInfo id) = True
 	| otherwise 		        = False	
+
+-- If the argument is a used non-newtype dictionary, give it strict
+-- demand. Also split the product type & demand and recur in order to
+-- similarly strictify the argument's contained used non-newtype
+-- superclass dictionaries. We use the demand as our recursive measure
+-- to guarantee termination.
+strictifyDictDmd :: Type -> JointDmd -> JointDmd
+strictifyDictDmd ty dmd
+  | isUsedDmd dmd, -- is used
+    Just (tycon, _arg_tys, _data_con, inst_con_arg_tys)
+      <- splitDataProductType_maybe ty,
+    not (isNewTyCon tycon), isClassTyCon tycon -- is a non-newtype dictionary
+  = seqDmd `bothDmd` -- main idea: ensure its strict
+    case splitProdDmd_maybe dmd of
+      -- superclass cycles should not be a problem, since the demand
+      -- we are consuming would also have to be infinite in order for
+      -- us to diverge
+      Nothing -> dmd -- no components have interesting dmd, so stop
+                     -- looking for superclass dicts
+      Just dmds
+        | all isUsedDmd dmds -> evalDmd
+          -- abstract to strict w/ arbitrary component use, since this
+          -- smells like reboxing; results in CBV boxed
+          --
+          -- TODO revisit this if we ever do boxity analysis
+        | otherwise -> mkProdDmd $ zipWith strictifyDictDmd inst_con_arg_tys dmds
+          -- TODO could optimize with an aborting variant of zipWith
+          -- -- since the superclass dicts are always a prefix
+  | otherwise = dmd
 \end{code}
 
 Note [CPR for sum types]
@@ -778,8 +839,9 @@ So the new plan is to define unsafePerformIO using the 'lazy' combinator:
 
 	unsafePerformIO (IO m) = lazy (case m realWorld# of (# _, r #) -> r)
 
-Remember, 'lazy' is a wired-in identity-function Id, of type a->a, which is 
-magically NON-STRICT, and is inlined after strictness analysis.  So
+Remember, 'lazy' is a wired-in identity-function Id, of type a->a,
+which is magically NON-STRICT, and is inlined after strictness
+analysis (in CorePrep; cf Note [lazyId magic] in MkId).  So
 unsafePerformIO will look non-strict, and that's what we want.
 
 Now we don't need the hack in the strictness analyser.  HOWEVER, this

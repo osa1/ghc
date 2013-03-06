@@ -37,6 +37,7 @@ import Type
 import Coercion
 
 import DynFlags
+import StaticFlags
 import TcRnMonad
 import UniqSupply
 import Util
@@ -219,7 +220,7 @@ buildClass no_unf tycon_name tvs sc_theta fds at_items sig_stuff tc_isrec
 	      -- (We used to call them D_C, but now we can have two different
 	      --  superclasses both called C!)
 	
-	; let use_newtype = isSingleton arg_tys
+	; let use_newtype = not opt_NoNewtypeDicts && isSingleton arg_tys
 		-- Use a newtype if the data constructor 
 		--   (a) has exactly one value field
 		--       i.e. exactly one operation or superclass taken together

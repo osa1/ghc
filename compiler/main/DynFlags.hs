@@ -300,6 +300,7 @@ data GeneralFlag
    | Opt_OmitYields
    | Opt_SimpleListLiterals
    | Opt_FunToThunk               -- allow WwLib.mkWorkerArgs to remove all value lambdas
+   | Opt_DictsStrict                    -- be strict in dictionary arguments
 
    -- Interface files
    | Opt_IgnoreInterfacePragmas
@@ -2243,6 +2244,7 @@ dynamic_flags = [
   , Flag "frule-check"                 (sepArg (\s d -> d{ ruleCheck = Just s }))
   , Flag "fcontext-stack"              (intSuffix (\n d -> d{ ctxtStkDepth = n }))
   , Flag "fstrictness-before"          (intSuffix (\n d -> d{ strictnessBefore = n : strictnessBefore d }))
+
   , Flag "ffloat-lam-args"             (intSuffix (\n d -> d{ floatLamArgs = Just n }))
   , Flag "ffloat-all-lams"             (noArg (\d -> d{ floatLamArgs = Nothing }))
   , Flag "fhistory-size"               (intSuffix (\n d -> d{ historySize = n }))
@@ -2503,7 +2505,8 @@ fFlags = [
   ( "prof-cafs",                        Opt_AutoSccsOnIndividualCafs, nop ),
   ( "hpc",                              Opt_Hpc, nop ),
   ( "pre-inlining",                     Opt_SimplPreInlining, nop ),
-  ( "use-rpaths",                       Opt_RPath, nop )
+  ( "use-rpaths",                       Opt_RPath, nop ),
+  ( "dicts-strict",                     Opt_DictsStrict, nop )
   ]
 
 -- | These @-f\<blah\>@ flags can all be reversed with @-fno-\<blah\>@

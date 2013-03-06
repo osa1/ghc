@@ -30,12 +30,12 @@ module Demand (
        
         seqStrDmd, seqStrDmdList, seqAbsDmd, seqAbsDmdList,
         seqDemand, seqDemandList, seqDmdType, seqStrictSig, 
-        evalDmd, vanillaCall, isStrictDmd, splitCallDmd, splitDmdTy,
+        evalDmd, seqDmd, vanillaCall, isStrictDmd, splitCallDmd, splitDmdTy,
         someCompUsed, isUsed, isUsedDmd,
         defer, deferType, deferEnv, modifyEnv,
 
         isProdDmd, splitProdDmd, splitProdDmd_maybe, peelCallDmd, mkCallDmd,
-        dmdTransformSig, dmdTransformDataConSig,
+        dmdTransformSig, dmdTransformDataConSig, dmdTransformDictSelSig,
 
         worthSplittingFun, worthSplittingThunk
      ) where
@@ -392,6 +392,10 @@ someCompUsed _         = False
 evalDmd :: JointDmd
 -- Evaluated strictly, and used arbitrarily deeply
 evalDmd = mkJointDmd strStr absTop
+
+seqDmd :: JointDmd
+-- Evaluated strictly, with no components used
+seqDmd = mkJointDmd strStr absHead
 
 defer :: Demand -> Demand
 defer (JD {absd = a}) = mkJointDmd strTop a 
@@ -990,6 +994,21 @@ dmdTransformDataConSig arity (StrictSig (DmdType _ _ con_res)) dmd
     go n dmd = case peelCallDmd dmd of
                  Nothing   -> topDmdType
                  Just dmd' -> go (n-1) dmd'
+
+dmdTransformDictSelSig :: StrictSig -> Demand -> DmdType
+-- Like dmdTransformDataConSig, we have a special demand transformer
+-- for dictionary selectors.  If the selector is saturated (ie has one
+-- argument: the dictionary), we feed the demand on the result into
+-- the indicated dictionary component.
+dmdTransformDictSelSig (StrictSig (DmdType _ [dictDmd] _)) dmd
+  = case peelCallDmd dmd of
+      Nothing   -> topDmdType
+      Just dmd' -> case splitProdDmd_maybe dictDmd of
+        Nothing   -> panic "dmdTransformDictSelSig"
+        Just dmds -> DmdType emptyDmdEnv [mkProdDmd $ map enhance dmds] topRes
+        where enhance old | isUsedDmd old = dmd'
+                          | otherwise     = old
+dmdTransformDictSelSig _ _ = panic "dmdTransformDictSelSig"
 \end{code}
 
 Note [Non-full application] 

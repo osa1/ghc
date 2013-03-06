@@ -67,7 +67,7 @@ module Type (
 
         -- (Lifting and boxity)
         isUnLiftedType, isUnboxedTupleType, isAlgType, isClosedAlgType,
-        isPrimitiveType, isStrictType,
+        isPrimitiveType,
 
         -- * Main data types representing Kinds
         -- $kind_subtyping
@@ -167,7 +167,6 @@ import CoAxiom
 import Unique           ( Unique, hasKey )
 import BasicTypes       ( Arity, RepArity )
 import NameSet
-import StaticFlags
 import Util
 import Outputable
 import FastString
@@ -1107,30 +1106,6 @@ isClosedAlgType ty
       Just (tc, ty_args) | isAlgTyCon tc && not (isFamilyTyCon tc)
              -> ASSERT2( ty_args `lengthIs` tyConArity tc, ppr ty ) True
       _other -> False
-\end{code}
-
-\begin{code}
--- | Computes whether an argument (or let right hand side) should
--- be computed strictly or lazily, based only on its type.
--- Works just like 'isUnLiftedType', except that it has a special case
--- for dictionaries (i.e. does not work purely on representation types)
-
--- Since it takes account of class 'PredType's, you might think
--- this function should be in 'TcType', but 'isStrictType' is used by 'DataCon',
--- which is below 'TcType' in the hierarchy, so it's convenient to put it here.
---
--- We may be strict in dictionary types, but only if it
--- has more than one component.
---
--- (Being strict in a single-component dictionary risks
---  poking the dictionary component, which is wrong.)
-isStrictType :: Type -> Bool
-isStrictType ty | Just ty' <- coreView ty = isStrictType ty'
-isStrictType (ForAllTy _ ty)   = isStrictType ty
-isStrictType (TyConApp tc _)
- | isUnLiftedTyCon tc               = True
- | isClassTyCon tc, opt_DictsStrict = True
-isStrictType _                      = False
 \end{code}
 
 \begin{code}
