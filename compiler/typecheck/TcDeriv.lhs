@@ -1051,7 +1051,7 @@ nonStdErr cls = quotes (ppr cls) <+> ptext (sLit "is not a derivable class")
 
 sideConditions :: DerivContext -> Class -> Maybe Condition
 sideConditions mtheta cls
-  | cls_key == eqClassKey          = Just (cond_std `andCond` cond_args cls)
+  | cls_key == eqClassKey          = Just (cond_args cls)
   | cls_key == ordClassKey         = Just (cond_std `andCond` cond_args cls)
   | cls_key == showClassKey        = Just (cond_std `andCond` cond_args cls)
   | cls_key == readClassKey        = Just (cond_std `andCond` cond_args cls)

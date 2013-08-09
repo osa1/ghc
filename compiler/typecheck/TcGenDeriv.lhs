@@ -171,7 +171,7 @@ gen_Eq_binds loc tycon
     fall_through_eqn
       | no_tag_match_cons   -- All constructors have arguments
       = case pat_match_cons of
-          []  -> []   -- No constructors; no fall-though case
+          []  -> [([nlWildPat, nlWildPat], true_Expr)]
           [_] -> []   -- One constructor; no fall-though case
           _   ->      -- Two or more constructors; add fall-through of
                       --       (==) _ _ = False
