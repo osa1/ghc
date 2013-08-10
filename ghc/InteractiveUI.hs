@@ -853,6 +853,11 @@ afterRunStmt step_here run_result = do
      GHC.RunOk names -> do
         show_types <- isOptionSet ShowType
         when show_types $ printTypeOfNames names
+     GHC.RunOkNoShow names -> do
+       -- at this point we know return value isn't printed
+       -- becuase it doesn't have Show instance implemented,
+       -- so print type of return value
+       printTypeOfNames names
      GHC.RunBreak _ names mb_info
          | isNothing  mb_info ||
            step_here (GHC.resumeSpan $ head resumes) -> do
@@ -874,7 +879,7 @@ afterRunStmt step_here run_result = do
   b <- isOptionSet RevertCAFs
   when b revertCAFs
 
-  return (case run_result of GHC.RunOk _ -> True; _ -> False)
+  return (case run_result of GHC.RunOk _ -> True; GHC.RunOkNoShow _ -> True; _ -> False)
 
 toBreakIdAndLocation ::
   Maybe GHC.BreakInfo -> GHCi (Maybe (Int, BreakLocation))

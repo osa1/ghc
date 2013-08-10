@@ -9,6 +9,7 @@
 module InteractiveEvalTypes (
 #ifdef GHCI
         RunResult(..), Status(..), Resume(..), History(..),
+        resultNotShown,
 #endif
         ) where
 
@@ -26,8 +27,13 @@ import Control.Concurrent
 
 data RunResult
   = RunOk [Name]                -- ^ names bound by this evaluation
+  | RunOkNoShow [Name]          -- ^ statement run fine but result isn't printed (no show instance)
   | RunException SomeException  -- ^ statement raised an exception
   | RunBreak ThreadId [Name] (Maybe BreakInfo)
+
+resultNotShown :: RunResult -> RunResult
+resultNotShown (RunOk names) = RunOkNoShow names
+resultNotShown r             = r
 
 data Status
    = Break Bool HValue BreakInfo ThreadId

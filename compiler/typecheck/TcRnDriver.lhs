@@ -1263,13 +1263,13 @@ setInteractiveContext hsc_env icxt thing_inside
 -- The returned TypecheckedHsExpr is of type IO [ () ], a list of the bound
 -- values, coerced to ().
 tcRnStmt :: HscEnv -> InteractiveContext -> GhciLStmt RdrName
-         -> IO (Messages, Maybe ([Id], LHsExpr Id, FixityEnv))
+         -> IO (Messages, Maybe ([Id], LHsExpr Id, Bool, FixityEnv))
 tcRnStmt hsc_env ictxt rdr_stmt
   = initTcPrintErrors hsc_env iNTERACTIVE $
     setInteractiveContext hsc_env ictxt $ do {
 
     -- The real work is done here
-    ((bound_ids, tc_expr), fix_env) <- tcUserStmt rdr_stmt ;
+    ((bound_ids, tc_expr, is_printed), fix_env) <- tcUserStmt rdr_stmt ;
     zonked_expr <- zonkTopLExpr tc_expr ;
     zonked_ids  <- zonkTopBndrs bound_ids ;
 
@@ -1304,7 +1304,7 @@ tcRnStmt hsc_env ictxt rdr_stmt
         (vcat [text "Bound Ids" <+> pprWithCommas ppr global_ids,
                text "Typechecked expr" <+> ppr zonked_expr]) ;
 
-    return (global_ids, zonked_expr, fix_env)
+    return (global_ids, zonked_expr, is_printed, fix_env)
     }
   where
     bad_unboxed id = addErr (sep [ptext (sLit "GHCi can't bind a variable of unlifted type:"),
@@ -1355,7 +1355,8 @@ Here is the grand plan, implemented in tcUserStmt
 \begin{code}
 
 -- | A plan is an attempt to lift some code into the IO monad.
-type PlanResult = ([Id], LHsExpr Id)
+type PlanResult = ([Id], LHsExpr Id, Bool)
+
 type Plan = TcM PlanResult
 
 -- | Try the plans in order. If one fails (by raising an exn), try the next.
@@ -1407,6 +1408,7 @@ tcUserStmt (L loc (BodyStmt expr _ _ _))
         --   A. [it <- e; print it]     but not if it::()
         --   B. [it <- e]
         --   C. [let it = e; print it]
+        --   D. [let it = e]
         --
         -- Ensure that type errors don't get deferred when type checking the
         -- naked expression. Deferring type errors here is unhelpful because the
@@ -1414,13 +1416,14 @@ tcUserStmt (L loc (BodyStmt expr _ _ _))
         -- emit two redundant type-error warnings, one from each plan.
         ; plan <- unsetGOptM Opt_DeferTypeErrors $ runPlans [
                     -- Plan A
-                    do { stuff@([it_id], _) <- tcGhciStmts [bind_stmt, print_it]
+                    do { ([it_id], e, _) <- tcGhciStmts [bind_stmt, print_it]
                        ; it_ty <- zonkTcType (idType it_id)
                        ; when (isUnitTy $ it_ty) failM
-                       ; return stuff },
+                       ; return ([it_id], e, True) },
 
                         -- Plan B; a naked bind statment
-                    tcGhciStmts [bind_stmt],
+                    do { (ids, e, _) <- tcGhciStmts [bind_stmt]
+                       ; return (ids, e, False) },
 
                         -- Plan C; check that the let-binding is typeable all by itself.
                         -- If not, fail; if so, try to print it.
@@ -1429,7 +1432,12 @@ tcUserStmt (L loc (BodyStmt expr _ _ _))
                         -- This two-step story is very clunky, alas
                     do { _ <- checkNoErrs (tcGhciStmts [let_stmt])
                                 --- checkNoErrs defeats the error recovery of let-bindings
-                       ; tcGhciStmts [let_stmt, print_it] } ]
+                       ; (ids, e, _) <- tcGhciStmts [let_stmt, print_it]
+                       ; return (ids, e, True) },
+
+                        -- Plan D
+                    do { (ids, e, _) <- tcGhciStmts [let_stmt]
+                       ; return (ids, e, False) } ]
 
         ; fix_env <- getFixityEnv
         ; return (plan, fix_env) }
@@ -1463,7 +1471,7 @@ tcUserStmt rdr_stmt@(L loc _)
        ; return (plan, fix_env) }
   where
     mk_print_result_plan stmt v
-      = do { stuff@([v_id], _) <- tcGhciStmts [stmt, print_v]
+      = do { stuff@([v_id], _, is_printed) <- tcGhciStmts [stmt, print_v]
            ; v_ty <- zonkTcType (idType v_id)
            ; when (isUnitTy v_ty || not (isTauTy v_ty)) failM
            ; return stuff }
@@ -1516,7 +1524,7 @@ tcGhciStmts stmts
             stmts = tc_stmts ++ [noLoc (mkLastStmt ret_expr)]
         } ;
         return (ids, mkHsDictLet (EvBinds const_binds) $
-                     noLoc (HsDo GhciStmtCtxt stmts io_ret_ty))
+                     noLoc (HsDo GhciStmtCtxt stmts io_ret_ty), False)
     }
 
 -- | Generate a typed ghciStepIO expression (ghciStep :: Ty a -> IO a)

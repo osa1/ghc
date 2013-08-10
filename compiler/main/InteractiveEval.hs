@@ -175,7 +175,7 @@ runStmtWithLocation source linenumber expr step =
       -- empty statement / comment
       Nothing -> return (RunOk [])
 
-      Just (tyThings, hval, fix_env) -> do
+      Just (tyThings, hval, is_printed, fix_env) -> do
         updateFixityEnv fix_env
 
         status <-
@@ -188,13 +188,16 @@ runStmtWithLocation source linenumber expr step =
 
             size = ghciHistSize idflags'
 
-        case step of
-          RunAndLogSteps ->
-              traceRunStatus expr bindings tyThings
-                             breakMVar statusMVar status (emptyHistory size)
-          _other ->
-              handleRunStatus expr bindings tyThings
+            rl = if is_printed then id else resultNotShown
+
+        liftM rl $
+          case step of
+            RunAndLogSteps ->
+                traceRunStatus expr bindings tyThings
                                breakMVar statusMVar status (emptyHistory size)
+            _other ->
+                handleRunStatus expr bindings tyThings
+                                 breakMVar statusMVar status (emptyHistory size)
 
 runDecls :: GhcMonad m => String -> m [Name]
 runDecls = runDeclsWithLocation "<interactive>" 1
@@ -975,7 +978,7 @@ typeKind normalise str = withSession $ \hsc_env -> do
 
 compileExpr :: GhcMonad m => String -> m HValue
 compileExpr expr = withSession $ \hsc_env -> do
-  Just (ids, hval, fix_env) <- liftIO $ hscStmt hsc_env ("let __cmCompileExpr = "++expr)
+  Just (ids, hval, is_printed, fix_env) <- liftIO $ hscStmt hsc_env ("let __cmCompileExpr = "++expr)
   updateFixityEnv fix_env
   hvals <- liftIO hval
   case (ids,hvals) of
@@ -1000,7 +1003,7 @@ dynCompileExpr expr = do
                      }
     setContext (IIDecl importDecl : iis)
     let stmt = "let __dynCompileExpr = Data.Dynamic.toDyn (" ++ expr ++ ")"
-    Just (ids, hvals, fix_env) <- withSession $ \hsc_env ->
+    Just (ids, hvals, is_printed, fix_env) <- withSession $ \hsc_env ->
                            liftIO $ hscStmt hsc_env stmt
     setContext iis
     updateFixityEnv fix_env
