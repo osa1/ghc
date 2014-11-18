@@ -18,6 +18,13 @@
 
 /* For defaults, see the @initRtsFlagsDefaults@ routine. */
 
+/* Note [Synchronization of flags and base APIs]
+ *
+ * We provide accessors to RTS flags in base. (GHC.RTS module)
+ * The API should be updated whenever RTS flags are modified.
+ */
+
+/* See Note [Synchronization of flags and base APIs] */
 typedef struct _GC_FLAGS {
     FILE   *statsFile;
     nat	    giveStats;
@@ -58,6 +65,7 @@ typedef struct _GC_FLAGS {
     StgWord heapBase;           /* address to ask the OS for memory */
 } GC_FLAGS;
 
+/* See Note [Synchronization of flags and base APIs] */
 typedef struct _DEBUG_FLAGS {
     /* flags to control debugging output & extra checking in various subsystems */
     rtsBool scheduler;      /* 's' */
@@ -77,6 +85,7 @@ typedef struct _DEBUG_FLAGS {
     rtsBool sparks; 	    /* 'r' */
 } DEBUG_FLAGS;
 
+/* See Note [Synchronization of flags and base APIs] */
 typedef struct _COST_CENTRE_FLAGS {
     nat	    doCostCentres;
 # define COST_CENTRES_SUMMARY	1
@@ -88,6 +97,7 @@ typedef struct _COST_CENTRE_FLAGS {
     int	    msecsPerTick;    /* derived */
 } COST_CENTRE_FLAGS;
 
+/* See Note [Synchronization of flags and base APIs] */
 typedef struct _PROFILING_FLAGS {
     nat	doHeapProfile;
 # define NO_HEAP_PROFILING	0	/* N.B. Used as indexes into arrays */
@@ -105,7 +115,7 @@ typedef struct _PROFILING_FLAGS {
     rtsBool             includeTSOs;
 
 
-    rtsBool		showCCSOnException;
+    rtsBool		        showCCSOnException;
 
     nat                 maxRetainerSetSize;
 
@@ -125,6 +135,7 @@ typedef struct _PROFILING_FLAGS {
 #define TRACE_EVENTLOG  1
 #define TRACE_STDERR    2
 
+/* See Note [Synchronization of flags and base APIs] */
 typedef struct _TRACE_FLAGS {
     int tracing;
     rtsBool timestamp;      /* show timestamp in stderr output */
@@ -135,6 +146,7 @@ typedef struct _TRACE_FLAGS {
     rtsBool user;           /* trace user events (emitted from Haskell code) */
 } TRACE_FLAGS;
 
+/* See Note [Synchronization of flags and base APIs] */
 typedef struct _CONCURRENT_FLAGS {
     Time ctxtSwitchTime;         /* units: TIME_RESOLUTION */
     int ctxtSwitchTicks;         /* derived */
@@ -149,6 +161,7 @@ typedef struct _CONCURRENT_FLAGS {
  */
 #define DEFAULT_TICK_INTERVAL USToTime(10000)
 
+/* See Note [Synchronization of flags and base APIs] */
 typedef struct _MISC_FLAGS {
     Time    tickInterval;        /* units: TIME_RESOLUTION */
     rtsBool install_signal_handlers;
@@ -158,6 +171,7 @@ typedef struct _MISC_FLAGS {
 } MISC_FLAGS;
 
 #ifdef THREADED_RTS
+/* See Note [Synchronization of flags and base APIs] */
 typedef struct _PAR_FLAGS {
   nat            nNodes;         /* number of threads to run simultaneously */
   rtsBool        migrate;        /* migrate threads between capabilities */
@@ -183,6 +197,7 @@ typedef struct _PAR_FLAGS {
 } PAR_FLAGS;
 #endif /* THREADED_RTS */
 
+/* See Note [Synchronization of flags and base APIs] */
 typedef struct _TICKY_FLAGS {
     rtsBool showTickyStats;
     FILE   *tickyFile;
@@ -191,6 +206,7 @@ typedef struct _TICKY_FLAGS {
 #ifdef USE_PAPI
 #define MAX_PAPI_USER_EVENTS 8
 
+/* See Note [Synchronization of flags and base APIs] */
 typedef struct _PAPI_FLAGS {
     nat     eventType;          /* The type of events to count */
     nat     numUserEvents;
@@ -212,22 +228,23 @@ typedef struct _PAPI_FLAGS {
 
 /* Put them together: */
 
+/* See Note [Synchronization of flags and base APIs] */
 typedef struct _RTS_FLAGS {
     /* The first portion of RTS_FLAGS is invariant. */
-    GC_FLAGS	     GcFlags;
+    GC_FLAGS	      GcFlags;
     CONCURRENT_FLAGS  ConcFlags;
     MISC_FLAGS        MiscFlags;
-    DEBUG_FLAGS	     DebugFlags;
+    DEBUG_FLAGS	      DebugFlags;
     COST_CENTRE_FLAGS CcFlags;
     PROFILING_FLAGS   ProfFlags;
     TRACE_FLAGS       TraceFlags;
-    TICKY_FLAGS	     TickyFlags;
+    TICKY_FLAGS	      TickyFlags;
 
 #if defined(THREADED_RTS)
-    PAR_FLAGS	ParFlags;
+    PAR_FLAGS	      ParFlags;
 #endif
 #ifdef USE_PAPI
-    PAPI_FLAGS   PapiFlags;
+    PAPI_FLAGS        PapiFlags;
 #endif
 } RTS_FLAGS;
 
