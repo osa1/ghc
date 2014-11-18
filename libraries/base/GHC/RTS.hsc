@@ -138,13 +138,13 @@ data DoCostCentres
     deriving (Show)
 
 instance Enum DoCostCentres where
-    fromEnum CostCentresNone    = 0 -- not defined as macro, but still checked
+    fromEnum CostCentresNone    = #{const COST_CENTRES_NONE}
     fromEnum CostCentresSummary = #{const COST_CENTRES_SUMMARY}
     fromEnum CostCentresVerbose = #{const COST_CENTRES_VERBOSE}
     fromEnum CostCentresAll     = #{const COST_CENTRES_ALL}
     fromEnum CostCentresXML     = #{const COST_CENTRES_XML}
 
-    toEnum 0                             = CostCentresNone
+    toEnum #{const COST_CENTRES_NONE}    = CostCentresNone
     toEnum #{const COST_CENTRES_SUMMARY} = CostCentresSummary
     toEnum #{const COST_CENTRES_VERBOSE} = CostCentresVerbose
     toEnum #{const COST_CENTRES_ALL}     = CostCentresAll
@@ -397,4 +397,3 @@ getTickyFlags = do
   ptr <- getTickyFlagsPtr
   TickyFlags <$> #{peek TICKY_FLAGS, showTickyStats} ptr
              <*> (peekFilePath =<< #{peek TICKY_FLAGS, tickyFile} ptr)
-

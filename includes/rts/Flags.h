@@ -88,6 +88,7 @@ typedef struct _DEBUG_FLAGS {
 /* See Note [Synchronization of flags and base APIs] */
 typedef struct _COST_CENTRE_FLAGS {
     nat	    doCostCentres;
+# define COST_CENTRES_NONE      0
 # define COST_CENTRES_SUMMARY	1
 # define COST_CENTRES_VERBOSE	2 /* incl. serial time profile */
 # define COST_CENTRES_ALL	3
