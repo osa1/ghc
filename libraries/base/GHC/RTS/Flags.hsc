@@ -1,6 +1,13 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE RecordWildCards   #-}
 
+-- | Accessors to GHC RTS flags.
+-- Descriptions of flags can be seen in
+-- <https://www.haskell.org/ghc/docs/latest/html/users_guide/runtime-control.html GHC User's Guide>,
+-- or by running RTS help message using @+RTS --help@.
+--
+-- /Since: 4.8.0.0/
+--
 module GHC.RTS.Flags
   ( RTSFlags (..)
   , GCFlags (..)
