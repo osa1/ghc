@@ -1,7 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE RecordWildCards   #-}
 
-module GHC.RTS
+module GHC.RTS.Flags
   ( RTSFlags (..)
   , GCFlags (..)
   , ConcFlags (..)

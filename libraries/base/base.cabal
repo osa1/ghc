@@ -236,7 +236,7 @@ Library
         GHC.Ptr
         GHC.Read
         GHC.Real
-        GHC.RTS
+        GHC.RTS.Flags
         GHC.ST
         GHC.STRef
         GHC.Show
