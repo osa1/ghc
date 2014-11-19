@@ -40,10 +40,10 @@ import GHC.Real
 import GHC.Show
 import GHC.Word
 
--- | Time is defined as a StgWord64 in stg/Types.h
+-- | @'Time'@ is defined as a @'StgWord64'@ in @stg/Types.h@
 type Time = Word64
 
--- | `nat` defined in rts/Types.h
+-- | @'nat'@ defined in @rts/Types.h@
 type Nat = #{type unsigned int}
 
 data GiveGCStats
@@ -196,13 +196,13 @@ data ProfFlags = ProfFlags
     , showCCSOnException       :: Bool
     , maxRetainerSetSize       :: Word
     , ccsLength                :: Word
-    , modSelector              :: Maybe [Char]
-    , descrSelector            :: Maybe [Char]
-    , typeSelector             :: Maybe [Char]
-    , ccSelector               :: Maybe [Char]
-    , ccsSelector              :: Maybe [Char]
-    , retainerSelector         :: Maybe [Char]
-    , bioSelector              :: Maybe [Char]
+    , modSelector              :: Maybe String
+    , descrSelector            :: Maybe String
+    , typeSelector             :: Maybe String
+    , ccSelector               :: Maybe String
+    , ccsSelector              :: Maybe String
+    , retainerSelector         :: Maybe String
+    , bioSelector              :: Maybe String
     } deriving (Show)
 
 data DoTrace
