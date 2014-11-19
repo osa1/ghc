@@ -116,7 +116,7 @@ typedef struct _PROFILING_FLAGS {
     rtsBool             includeTSOs;
 
 
-    rtsBool		        showCCSOnException;
+    rtsBool		showCCSOnException;
 
     nat                 maxRetainerSetSize;
 
