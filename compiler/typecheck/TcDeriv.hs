@@ -1215,11 +1215,15 @@ sideConditions mtheta cls
   | otherwise                      = Nothing
   where
     cls_key = getUnique cls
-    cond_std = (checkFlag Opt_EmptyDataDecls `andCond` cond_vanilla) `orCond` cond_constr
-    cond_constr = cond_stdOK mtheta False   -- Vanilla data constructors, at least one,
-                                            --    and monotype arguments
-    cond_vanilla = cond_stdOK mtheta True   -- Vanilla data constructors but
-                                            --   allow no data cons or polytype arguments
+    cond_std =
+      (checkFlag Opt_EmptyDataDecls `andCond` cond_constr True) `orCond`
+      cond_constr False
+
+    cond_constr :: Bool -> Condition
+    cond_constr = cond_stdOK mtheta False        -- Vanilla data constructors,
+                                                 --   monotype arguments
+    cond_vanilla = cond_stdOK mtheta True True   -- Vanilla data constructors but
+                                                 --   allow no data cons or polytype arguments
 
 type Condition = (DynFlags, TyCon, [Type]) -> Validity
         -- first Bool is whether or not we are allowed to derive Data and Typeable
@@ -1241,16 +1245,16 @@ andCond c1 c2 tc = c1 tc `andValid` c2 tc
 
 cond_stdOK :: DerivContext -- Says whether this is standalone deriving or not;
                            --     if standalone, we just say "yes, go for it"
-           -> Bool         -- True <=> permissive: allow higher rank
-                           --          args and no data constructors
+           -> Bool         -- True <=> allow higher rank
+           -> Bool         -- True <=> allow empty types
            -> Condition
-cond_stdOK (Just _) _ _
+cond_stdOK (Just _) _ _ _
   = IsValid     -- Don't check these conservative conditions for
                 -- standalone deriving; just generate the code
                 -- and let the typechecker handle the result
-cond_stdOK Nothing permissive (_, rep_tc, _)
+cond_stdOK Nothing higherRank emptyData (_, rep_tc, _)
   | null data_cons
-  , not permissive      = NotValid (no_cons_why rep_tc $$ suggestion)
+  , not emptyData       = NotValid (no_cons_why rep_tc $$ suggestion)
   | not (null con_whys) = NotValid (vcat con_whys $$ suggestion)
   | otherwise           = IsValid
   where
@@ -1262,7 +1266,7 @@ cond_stdOK Nothing permissive (_, rep_tc, _)
     check_con con
       | not (isVanillaDataCon con)
       = NotValid (badCon con (ptext (sLit "has existentials or constraints in its type")))
-      | not (permissive || all isTauTy (dataConOrigArgTys con))
+      | not (higherRank || all isTauTy (dataConOrigArgTys con))
       = NotValid (badCon con (ptext (sLit "has a higher-rank type")))
       | otherwise
       = IsValid
@@ -1990,7 +1994,7 @@ genInst comauxs
        ; return ( InstInfo
                     { iSpec   = inst_spec
                     , iBinds  = InstBindings
-                        { ib_binds = gen_Newtype_binds loc clas tvs tys rhs_ty
+                        { ib_binds = gen_Newtype_binds loc rep_tycon clas tvs tys rhs_ty
                         , ib_tyvars = map Var.varName tvs   -- Scope over bindings
                         , ib_pragmas = []
                         , ib_extensions = [ Opt_ImpredicativeTypes

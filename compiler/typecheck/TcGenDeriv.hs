@@ -238,7 +238,7 @@ gen_Eq_binds loc tycon
               | otherwise         = unitBag $ DerivAuxBind $ DerivCon2Tag tycon
 
     method_binds = listToBag [eq_bind, ne_bind]
-    eq_bind = mk_FunBind loc eq_RDR (map pats_etc pat_match_cons ++ fall_through_eqn)
+    eq_bind = mk_FunBind loc tycon eq_RDR (map pats_etc pat_match_cons ++ fall_through_eqn)
     ne_bind = mk_easy_FunBind loc ne_RDR [a_Pat, b_Pat] (
                         nlHsApp (nlHsVar not_RDR) (nlHsPar (nlHsVarApps eq_RDR [a_RDR, b_RDR])))
 
@@ -375,7 +375,7 @@ gtResult OrdGT      = true_Expr
 gen_Ord_binds :: SrcSpan -> TyCon -> (LHsBinds RdrName, BagDerivStuff)
 gen_Ord_binds loc tycon
   | null tycon_data_cons        -- No data-cons => invoke bale-out case
-  = (unitBag $ mk_FunBind loc compare_RDR [], emptyBag)
+  = (unitBag $ mk_FunBind loc tycon compare_RDR [], emptyBag)
   | otherwise
   = (unitBag (mkOrdOp OrdCompare) `unionBags` other_ops, aux_binds)
   where
@@ -1127,7 +1127,7 @@ gen_Show_binds get_fixity loc tycon
                   (nlHsApp (nlHsVar showList___RDR) (nlHsPar (nlHsApp (nlHsVar showsPrec_RDR) (nlHsIntLit 0))))
     -----------------------------------------------------------------------
     data_cons = tyConDataCons tycon
-    shows_prec = mk_FunBind loc showsPrec_RDR (map pats_etc data_cons)
+    shows_prec = mk_FunBind loc tycon showsPrec_RDR (map pats_etc data_cons)
 
     pats_etc data_con
       | nullary_con =  -- skip the showParen junk...
@@ -1335,7 +1335,7 @@ gen_Data_binds dflags loc rep_tc
            | otherwise = prefix_RDR
 
         ------------ gfoldl
-    gfoldl_bind = mk_FunBind loc gfoldl_RDR (map gfoldl_eqn data_cons)
+    gfoldl_bind = mk_FunBind loc rep_tc gfoldl_RDR (map gfoldl_eqn data_cons)
 
     gfoldl_eqn con
       = ([nlVarPat k_RDR, nlVarPat z_RDR, nlConVarPat con_name as_needed],
@@ -1347,7 +1347,7 @@ gen_Data_binds dflags loc rep_tc
                      mk_k_app e v = nlHsPar (nlHsOpApp e k_RDR (nlHsVar v))
 
         ------------ gunfold
-    gunfold_bind = mk_FunBind loc
+    gunfold_bind = mk_FunBind loc rep_tc
                               gunfold_RDR
                               [([k_Pat, z_Pat, if one_constr then nlWildPat else c_Pat],
                                 gunfold_rhs)]
@@ -1371,7 +1371,7 @@ gen_Data_binds dflags loc rep_tc
         tag = dataConTag dc
 
         ------------ toConstr
-    toCon_bind = mk_FunBind loc toConstr_RDR (map to_con_eqn data_cons)
+    toCon_bind = mk_FunBind loc rep_tc toConstr_RDR (map to_con_eqn data_cons)
     to_con_eqn dc = ([nlWildConPat dc], nlHsVar (mk_constr_name dc))
 
         ------------ dataTypeOf
@@ -1564,7 +1564,7 @@ gen_Functor_binds loc tycon
   = (unitBag fmap_bind, emptyBag)
   where
     data_cons = tyConDataCons tycon
-    fmap_bind = mkRdrFunBind (L loc fmap_RDR) eqns
+    fmap_bind = mkRdrFunBind (L loc fmap_RDR) tycon eqns
 
     fmap_eqn con = evalState (match_for_con [f_Pat] con =<< parts) bs_RDRs
       where
@@ -1755,13 +1755,13 @@ gen_Foldable_binds loc tycon
   where
     data_cons = tyConDataCons tycon
 
-    foldr_bind = mkRdrFunBind (L loc foldable_foldr_RDR) eqns
+    foldr_bind = mkRdrFunBind (L loc foldable_foldr_RDR) tycon eqns
     eqns = map foldr_eqn data_cons
     foldr_eqn con = evalState (match_foldr z_Expr [f_Pat,z_Pat] con =<< parts) bs_RDRs
       where
         parts = sequence $ foldDataConArgs ft_foldr con
 
-    foldMap_bind = mkRdrFunBind (L loc foldMap_RDR) (map foldMap_eqn data_cons)
+    foldMap_bind = mkRdrFunBind (L loc foldMap_RDR) tycon (map foldMap_eqn data_cons)
     foldMap_eqn con = evalState (match_foldMap [f_Pat] con =<< parts) bs_RDRs
       where
         parts = sequence $ foldDataConArgs ft_foldMap con
@@ -1828,7 +1828,7 @@ gen_Traversable_binds loc tycon
   where
     data_cons = tyConDataCons tycon
 
-    traverse_bind = mkRdrFunBind (L loc traverse_RDR) eqns
+    traverse_bind = mkRdrFunBind (L loc traverse_RDR) tycon eqns
     eqns = map traverse_eqn data_cons
     traverse_eqn con = evalState (match_for_con [f_Pat] con =<< parts) bs_RDRs
       where
@@ -1893,12 +1893,13 @@ mkCoerceClassMethEqn cls inst_tvs cls_tys rhs_ty id
 
 
 gen_Newtype_binds :: SrcSpan
+                  -> TyCon   -- the tycon we're deriving the instance for
                   -> Class   -- the class being derived
                   -> [TyVar] -- the tvs in the instance head
                   -> [Type]  -- instance head parameters (incl. newtype)
                   -> Type    -- the representation type (already eta-reduced)
                   -> LHsBinds RdrName
-gen_Newtype_binds loc cls inst_tvs cls_tys rhs_ty
+gen_Newtype_binds loc tycon cls inst_tvs cls_tys rhs_ty
   = listToBag $ zipWith mk_bind
         (classMethods cls)
         (map (mkCoerceClassMethEqn cls inst_tvs cls_tys rhs_ty) (classMethods cls))
@@ -1906,7 +1907,7 @@ gen_Newtype_binds loc cls inst_tvs cls_tys rhs_ty
     coerce_RDR = getRdrName coerceId
     mk_bind :: Id -> Pair Type -> LHsBind RdrName
     mk_bind id (Pair tau_ty user_ty)
-      = mkRdrFunBind (L loc meth_RDR) [mkSimpleMatch [] rhs_expr]
+      = mkRdrFunBind (L loc meth_RDR) tycon [mkSimpleMatch [] rhs_expr]
       where
         meth_RDR = getRdrName id
         rhs_expr
@@ -1942,7 +1943,7 @@ fiddling around.
 
 genAuxBindSpec :: SrcSpan -> AuxBindSpec -> (LHsBind RdrName, LSig RdrName)
 genAuxBindSpec loc (DerivCon2Tag tycon)
-  = (mk_FunBind loc rdr_name eqns,
+  = (mk_FunBind loc tycon rdr_name eqns,
      L loc (TypeSig [L loc rdr_name] (L loc sig_ty) PlaceHolder))
   where
     rdr_name = con2tag_RDR tycon
@@ -1966,7 +1967,7 @@ genAuxBindSpec loc (DerivCon2Tag tycon)
                                     (toInteger ((dataConTag con) - fIRST_TAG))))
 
 genAuxBindSpec loc (DerivTag2Con tycon)
-  = (mk_FunBind loc rdr_name
+  = (mk_FunBind loc tycon rdr_name
         [([nlConVarPat intDataCon_RDR [a_RDR]],
            nlHsApp (nlHsVar tagToEnum_RDR) a_Expr)],
      L loc (TypeSig [L loc rdr_name] (L loc sig_ty) PlaceHolder))
@@ -2039,26 +2040,27 @@ mkParentType tc
 ************************************************************************
 -}
 
-mk_FunBind :: SrcSpan -> RdrName
+mk_FunBind :: SrcSpan -> TyCon -> RdrName
            -> [([LPat RdrName], LHsExpr RdrName)]
            -> LHsBind RdrName
-mk_FunBind loc fun pats_and_exprs
-  = mkRdrFunBind (L loc fun) matches
+mk_FunBind loc tycon fun pats_and_exprs
+  = mkRdrFunBind (L loc fun) tycon matches
   where
     matches = [mkMatch p e emptyLocalBinds | (p,e) <-pats_and_exprs]
 
-mkRdrFunBind :: Located RdrName -> [LMatch RdrName (LHsExpr RdrName)] -> LHsBind RdrName
-mkRdrFunBind fun@(L loc fun_rdr) matches = L loc (mkFunBind fun matches')
+mkRdrFunBind :: Located RdrName -> TyCon -> [LMatch RdrName (LHsExpr RdrName)] -> LHsBind RdrName
+mkRdrFunBind fun@(L loc fun_rdr) tycon matches = L loc (mkFunBind fun matches')
  where
    -- Catch-all eqn looks like
-   --     fmap = error "Void fmap"
+   --     fmap = error "fmap on empty data type T"
    -- It's needed if there no data cons at all,
    -- which can happen with -XEmptyDataDecls
    -- See Trac #4302
    matches' = if null matches
               then [mkMatch [] (error_Expr str) emptyLocalBinds]
               else matches
-   str = "Void " ++ occNameString (rdrNameOcc fun_rdr)
+   str = occNameString (rdrNameOcc fun_rdr) ++ " on empty data type "
+           ++ getOccString (tyConName tycon)
 
 box ::         String           -- The class involved
             -> TyCon            -- The tycon involved
