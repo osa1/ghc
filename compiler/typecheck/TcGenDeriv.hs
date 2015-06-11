@@ -2164,7 +2164,7 @@ nested_compose_Expr [e] = parenify e
 nested_compose_Expr (e:es)
   = nlHsApp (nlHsApp (nlHsVar compose_RDR) (parenify e)) (nested_compose_Expr es)
 
--- impossible_Expr is used in case RHSs that should never happen.
+-- error_Expr is used in case RHSs that should never happen.
 -- We generate these to keep the desugarer from complaining that they *might* happen!
 error_Expr :: String -> LHsExpr RdrName
 error_Expr string = nlHsApp (nlHsVar error_RDR) (nlHsLit (mkHsString string))
