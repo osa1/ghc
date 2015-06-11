@@ -1220,10 +1220,11 @@ sideConditions mtheta cls
       cond_constr False
 
     cond_constr :: Bool -> Condition
-    cond_constr = cond_stdOK mtheta False        -- Vanilla data constructors,
-                                                 --   monotype arguments
-    cond_vanilla = cond_stdOK mtheta True True   -- Vanilla data constructors but
-                                                 --   allow no data cons or polytype arguments
+    -- Vanilla data constructors, monotype arguments:
+    cond_constr = cond_stdOK mtheta False
+    -- Vanilla data constructors but allow no data cons or polytype arguments:
+    cond_vanilla = cond_stdOK mtheta True True
+
 
 type Condition = (DynFlags, TyCon, [Type]) -> Validity
         -- first Bool is whether or not we are allowed to derive Data and Typeable
@@ -1994,7 +1995,8 @@ genInst comauxs
        ; return ( InstInfo
                     { iSpec   = inst_spec
                     , iBinds  = InstBindings
-                        { ib_binds = gen_Newtype_binds loc rep_tycon clas tvs tys rhs_ty
+                        { ib_binds =
+                            gen_Newtype_binds loc rep_tycon clas tvs tys rhs_ty
                         , ib_tyvars = map Var.varName tvs   -- Scope over bindings
                         , ib_pragmas = []
                         , ib_extensions = [ Opt_ImpredicativeTypes

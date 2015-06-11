@@ -238,7 +238,8 @@ gen_Eq_binds loc tycon
               | otherwise         = unitBag $ DerivAuxBind $ DerivCon2Tag tycon
 
     method_binds = listToBag [eq_bind, ne_bind]
-    eq_bind = mk_FunBind loc tycon eq_RDR (map pats_etc pat_match_cons ++ fall_through_eqn)
+    eq_bind = mk_FunBind loc tycon eq_RDR
+                (map pats_etc pat_match_cons ++ fall_through_eqn)
     ne_bind = mk_easy_FunBind loc ne_RDR [a_Pat, b_Pat] (
                         nlHsApp (nlHsVar not_RDR) (nlHsPar (nlHsVarApps eq_RDR [a_RDR, b_RDR])))
 
@@ -1570,8 +1571,9 @@ gen_Functor_binds loc tycon
       where
         parts = sequence $ foldDataConArgs ft_fmap con
 
-    eqns | null data_cons = [mkSimpleMatch [nlWildPat, nlWildPat]
-                                           (error_Expr (emptyDataErrMsg "fmap" tycon))]
+    eqns | null data_cons =
+           [mkSimpleMatch [nlWildPat, nlWildPat]
+                          (error_Expr (emptyDataErrMsg "fmap" tycon))]
          | otherwise      = map fmap_eqn data_cons
 
     ft_fmap :: FFoldType (State [RdrName] (LHsExpr RdrName))
@@ -1761,7 +1763,8 @@ gen_Foldable_binds loc tycon
       where
         parts = sequence $ foldDataConArgs ft_foldr con
 
-    foldMap_bind = mkRdrFunBind (L loc foldMap_RDR) tycon (map foldMap_eqn data_cons)
+    foldMap_bind =
+      mkRdrFunBind (L loc foldMap_RDR) tycon (map foldMap_eqn data_cons)
     foldMap_eqn con = evalState (match_foldMap [f_Pat] con =<< parts) bs_RDRs
       where
         parts = sequence $ foldDataConArgs ft_foldMap con
@@ -2048,7 +2051,8 @@ mk_FunBind loc tycon fun pats_and_exprs
   where
     matches = [mkMatch p e emptyLocalBinds | (p,e) <-pats_and_exprs]
 
-mkRdrFunBind :: Located RdrName -> TyCon -> [LMatch RdrName (LHsExpr RdrName)] -> LHsBind RdrName
+mkRdrFunBind :: Located RdrName -> TyCon
+             -> [LMatch RdrName (LHsExpr RdrName)] -> LHsBind RdrName
 mkRdrFunBind fun@(L loc fun_rdr) tycon matches = L loc (mkFunBind fun matches')
  where
    -- Catch-all eqn looks like
