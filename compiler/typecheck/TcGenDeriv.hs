@@ -1571,7 +1571,7 @@ gen_Functor_binds loc tycon
         parts = sequence $ foldDataConArgs ft_fmap con
 
     eqns | null data_cons = [mkSimpleMatch [nlWildPat, nlWildPat]
-                                           (error_Expr "Void fmap")]
+                                           (error_Expr (emptyDataErrMsg "fmap" tycon))]
          | otherwise      = map fmap_eqn data_cons
 
     ft_fmap :: FFoldType (State [RdrName] (LHsExpr RdrName))
@@ -2059,8 +2059,7 @@ mkRdrFunBind fun@(L loc fun_rdr) tycon matches = L loc (mkFunBind fun matches')
    matches' = if null matches
               then [mkMatch [] (error_Expr str) emptyLocalBinds]
               else matches
-   str = occNameString (rdrNameOcc fun_rdr) ++ " on empty data type "
-           ++ getOccString (tyConName tycon)
+   str = emptyDataErrMsg (occNameString (rdrNameOcc fun_rdr)) tycon
 
 box ::         String           -- The class involved
             -> TyCon            -- The tycon involved
@@ -2168,6 +2167,11 @@ nested_compose_Expr (e:es)
 -- We generate these to keep the desugarer from complaining that they *might* happen!
 error_Expr :: String -> LHsExpr RdrName
 error_Expr string = nlHsApp (nlHsVar error_RDR) (nlHsLit (mkHsString string))
+
+-- error message printed when applying derived instance function to empty data
+-- types
+emptyDataErrMsg :: String -> TyCon -> String
+emptyDataErrMsg f t = f ++ " on empty data type " ++ getOccString (tyConName t)
 
 -- illegal_Expr is used when signalling error conditions in the RHS of a derived
 -- method. It is currently only used by Enum.{succ,pred}
