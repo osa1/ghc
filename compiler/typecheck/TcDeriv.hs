@@ -1215,7 +1215,8 @@ sideConditions mtheta cls
   | otherwise                      = Nothing
   where
     cls_key = getUnique cls
-    cond_std     = cond_stdOK mtheta False  -- Vanilla data constructors, at least one,
+    cond_std = (checkFlag Opt_EmptyDataDecls `andCond` cond_vanilla) `orCond` cond_constr
+    cond_constr = cond_stdOK mtheta False   -- Vanilla data constructors, at least one,
                                             --    and monotype arguments
     cond_vanilla = cond_stdOK mtheta True   -- Vanilla data constructors but
                                             --   allow no data cons or polytype arguments
