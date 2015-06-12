@@ -1236,7 +1236,7 @@ orCond :: Condition -> Condition -> Condition
 orCond c1 c2 tc
   = case (c1 tc, c2 tc) of
      (IsValid,    _)          -> IsValid    -- c1 succeeds
-     (_,          IsValid)    -> IsValid    -- c21 succeeds
+     (_,          IsValid)    -> IsValid    -- c2 succeeds
      (NotValid x, NotValid y) -> NotValid (x $$ ptext (sLit "  or") $$ y)
                                             -- Both fail
 
