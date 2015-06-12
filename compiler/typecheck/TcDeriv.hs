@@ -1215,16 +1215,15 @@ sideConditions mtheta cls
   | otherwise                      = Nothing
   where
     cls_key = getUnique cls
-    cond_std =
-      (checkFlag Opt_EmptyDataDecls `andCond` cond_constr True) `orCond`
-      cond_constr False
+    cond_std = ifCond (checkFlag Opt_EmptyDataDecls)
+                      (cond_constr True)
+                      (cond_constr False)
 
     cond_constr :: Bool -> Condition
     -- Vanilla data constructors, monotype arguments:
     cond_constr = cond_stdOK mtheta False
     -- Vanilla data constructors but allow no data cons or polytype arguments:
     cond_vanilla = cond_stdOK mtheta True True
-
 
 type Condition = (DynFlags, TyCon, [Type]) -> Validity
         -- first Bool is whether or not we are allowed to derive Data and Typeable
@@ -1243,6 +1242,15 @@ orCond c1 c2 tc
 
 andCond :: Condition -> Condition -> Condition
 andCond c1 c2 tc = c1 tc `andValid` c2 tc
+
+ifCond :: Condition -> Condition -> Condition -> Condition
+ifCond cc c1 c2 tc
+  = case cc tc of
+      IsValid -> c1 tc
+      NotValid x ->
+        case c2 tc of
+          IsValid -> IsValid
+          NotValid y -> NotValid (x $$ ptext (sLit " or") $$ y)
 
 cond_stdOK :: DerivContext -- Says whether this is standalone deriving or not;
                            --     if standalone, we just say "yes, go for it"
