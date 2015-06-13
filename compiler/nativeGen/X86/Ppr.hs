@@ -702,6 +702,7 @@ pprInstr (MUL size op1 op2) = pprSizeOpOp (sLit "mul") size op1 op2
 pprInstr (MUL2 size op) = pprSizeOp (sLit "mul") size op
 
 pprInstr (FDIV size op1 op2) = pprSizeOpOp (sLit "div") size op1 op2
+pprInstr (FMIN size op1 op2) = pprSizeOpOp (sLit "min") size op1 op2
 
 pprInstr (CVTSS2SD from to)      = pprRegReg (sLit "cvtss2sd") from to
 pprInstr (CVTSD2SS from to)      = pprRegReg (sLit "cvtsd2ss") from to

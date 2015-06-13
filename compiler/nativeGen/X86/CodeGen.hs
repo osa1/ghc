@@ -720,6 +720,8 @@ getRegister' _ is32Bit (CmmMachOp mop [x, y]) = do -- dyadic MachOps
       MO_F_Mul w  | sse2      -> trivialFCode_sse2 w MUL x y
                   | otherwise -> trivialFCode_x87    GMUL x y
 
+      MO_F_Min w              -> trivialFCode_sse2 w FMIN x y -- FIXME
+
       MO_Add rep -> add_code rep x y
       MO_Sub rep -> sub_code rep x y
 

@@ -502,6 +502,9 @@ primop   DoubleLtOp "<##"   Compare   Double# -> Double# -> Int#
 primop   DoubleLeOp "<=##"   Compare   Double# -> Double# -> Int#
    with fixity = infix 4
 
+primop   DoubleMinOp "min##" Dyadic Double# -> Double# -> Double#
+   with fixity = infixl 6
+
 primop   DoubleAddOp   "+##"   Dyadic
    Double# -> Double# -> Double#
    with commutable = True

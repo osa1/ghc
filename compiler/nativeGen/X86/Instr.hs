@@ -290,6 +290,9 @@ data Instr
         -- SSE2 floating-point division:
         | FDIV          Size Operand Operand   -- divisor, dividend(dst)
 
+        -- Floating-point min:
+        | FMIN          Size Operand Operand -- src, dst (TODO (osa1): Args are probably wrong)
+
         -- use CMP for comparisons.  ucomiss and ucomisd instructions
         -- compare single/double prec floating point respectively.
 
@@ -442,6 +445,7 @@ x86_regUsageOfInstr platform instr
     CVTSI2SS   _ src dst -> mkRU (use_R src []) [dst]
     CVTSI2SD   _ src dst -> mkRU (use_R src []) [dst]
     FDIV _     src dst  -> usageRM src dst
+    FMIN _     src dst  -> usageRM src dst
 
     FETCHGOT reg        -> mkRU [] [reg]
     FETCHPC  reg        -> mkRU [] [reg]
@@ -611,6 +615,7 @@ x86_patchRegsOfInstr instr env
     CVTSI2SS sz src dst -> CVTSI2SS sz (patchOp src) (env dst)
     CVTSI2SD sz src dst -> CVTSI2SD sz (patchOp src) (env dst)
     FDIV sz src dst     -> FDIV sz (patchOp src) (patchOp dst)
+    FMIN sz src dst     -> FMIN sz (patchOp src) (patchOp dst)
 
     CALL (Left _)  _    -> instr
     CALL (Right reg) p  -> CALL (Right (env reg)) p

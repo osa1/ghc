@@ -1137,6 +1137,8 @@ translateOp _      DoubleMulOp    = Just (MO_F_Mul W64)
 translateOp _      DoubleDivOp    = Just (MO_F_Quot W64)
 translateOp _      DoubleNegOp    = Just (MO_F_Neg W64)
 
+translateOp _      DoubleMinOp    = Just (MO_F_Min W64)
+
 -- Float ops
 
 translateOp _      FloatEqOp     = Just (MO_F_Eq W32)

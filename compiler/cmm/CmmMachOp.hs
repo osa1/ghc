@@ -92,6 +92,9 @@ data MachOp
   | MO_F_Gt Width
   | MO_F_Lt Width
 
+  -- Floating point branchless ops
+  | MO_F_Min Width
+
   -- Bitwise operations.  Not all of these may be supported
   -- at all sizes, and only integral Widths are valid.
   | MO_And   Width
@@ -373,6 +376,7 @@ machOpResultType dflags mop tys =
     MO_F_Mul r          -> cmmFloat r
     MO_F_Quot r         -> cmmFloat r
     MO_F_Neg r          -> cmmFloat r
+    MO_F_Min r          -> cmmFloat r
     MO_F_Eq  {}         -> comparisonResultRep dflags
     MO_F_Ne  {}         -> comparisonResultRep dflags
     MO_F_Ge  {}         -> comparisonResultRep dflags
@@ -462,6 +466,7 @@ machOpArgReps dflags op =
     MO_F_Mul r          -> [r,r]
     MO_F_Quot r         -> [r,r]
     MO_F_Neg r          -> [r]
+    MO_F_Min r          -> [r,r]
     MO_F_Eq  r          -> [r,r]
     MO_F_Ne  r          -> [r,r]
     MO_F_Ge  r          -> [r,r]
