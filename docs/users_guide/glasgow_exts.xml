@@ -2809,6 +2809,71 @@ not <literal>*</literal> then an explicit kind annotation must be used
 
 <para>Such data types have only one value, namely bottom.
 Nevertheless, they can be useful when defining "phantom types".</para>
+
+<sect3 id="nullary-type-deriving">
+  <title>Deriving instances for data types with no constructors</title>
+  <para>
+
+    With <option>-XEmptyDataDecls</option>, GHC can derive instances for these
+    classes: <literal>Eq</literal>, <literal>Ord</literal>,
+    <literal>Show</literal>, <literal>Read</literal>. Derived instance methods
+    always fail, except methods of <literal>Read</literal>. For example,
+    this program:
+
+<programlisting>
+{-# LANGUAGE EmptyDataDecls #-}
+data Foo deriving (Ord)
+main = print $ (undefined :: Foo) `compare` (undefined :: Foo)
+</programlisting>
+
+    Fails with this:
+
+<programlisting>
+compare on empty data type Foo
+</programlisting>
+
+    Note that methods are defined like this:
+
+<programlisting>
+method = error error_msg
+</programlisting>
+
+    Instead of
+
+<programlisting>
+method arg1 ... argN = error error_msg
+</programlisting>
+
+    <literal>Read</literal>'s <literal>readPrec</literal> method doesn't fail
+    with a runtime error, instead it calls <literal>pfail</literal>, which
+    allows parser to backtrack. So this works:
+
+<programlisting>
+{-# LANGUAGE EmptyDataDecls #-}
+data Z a deriving (Show, Read)
+main = print (read "[]" :: [Z])
+</programlisting>
+
+    To derive other instances, combine <option>-XEmptyDataDecls</option> with
+    the options required for other instances;
+    <option>-XDeriveGeneric</option>, <option>-XDeriveFoldable</option> etc.
+    Example:
+
+<programlisting>
+{-# LANGUAGE DeriveFunctor, EmptyDataDecls #-}
+data Z a deriving (Show, Functor)
+
+g :: Z Int
+g = g
+
+main = print $! (fmap (+1) g)
+</programlisting>
+
+    Fails with <literal>fmap on empty data type Z</literal>.
+
+  </para>
+</sect3>
+
 </sect2>
 
 <sect2 id="datatype-contexts">
