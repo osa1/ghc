@@ -2850,7 +2850,7 @@ method arg1 ... argN = error error_msg
 
 <programlisting>
 {-# LANGUAGE EmptyDataDecls #-}
-data Z a deriving (Show, Read)
+data Z deriving (Show, Read)
 main = print (read "[]" :: [Z])
 </programlisting>
 
