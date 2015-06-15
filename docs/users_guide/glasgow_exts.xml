@@ -2872,6 +2872,22 @@ main = print $! (fmap (+1) g)
     Fails with <literal>fmap on empty data type Z</literal>.
 
   </para>
+
+  <para>
+
+    Why is deriving instances for empty data types useful? We can't define any
+    useful instances, so users may expect a static error, instead of a dynamic
+    error.
+
+    But instances are still useful. For example, we may want to use an empty
+    type as an argument to a parametric type, like <literal>Maybe</literal> or
+    <literal>Either Int</literal>, and then compare values of those types with
+    <literal>Ord</literal>'s <literal>compare</literal> or test for equality
+    using <literal>Eq</literal>'s <literal>(==)</literal> etc.
+    <literal>base</literal>'s <literal>Data.Void.Void</literal> is instance of
+    some type classes for this reason.
+
+  </para>
 </sect3>
 
 </sect2>
