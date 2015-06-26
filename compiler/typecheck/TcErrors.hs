@@ -1202,9 +1202,10 @@ mkExpectedActualMsg ty1 ty2 (TypeEqOrigin { uo_actual = act, uo_expected = exp }
     expandTypeSyns (AppTy t1 t2) =
       AppTy (expandTypeSyns t1) (expandTypeSyns t2)
     expandTypeSyns (TyConApp tc tys) =
-      case expandSynTyCon_maybe tc (map expandTypeSyns tys) of
-        Just (tenv, rhs, tys') -> mkAppTys (substTy (mkTopTvSubst tenv) rhs) tys'
-        Nothing                -> TyConApp tc tys
+      let tys' = map expandTypeSyns tys in
+      case expandSynTyCon_maybe tc tys' of
+        Just (tenv, rhs, tys'') -> mkAppTys (substTy (mkTopTvSubst tenv) rhs) tys''
+        Nothing                -> TyConApp tc tys'
     expandTypeSyns (FunTy t1 t2) =
       FunTy (expandTypeSyns t1) (expandTypeSyns t2)
     expandTypeSyns (ForAllTy v ty) =
