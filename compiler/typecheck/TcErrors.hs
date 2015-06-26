@@ -801,7 +801,8 @@ mkEqErr1 ctxt ct
   = do { (ctxt, binds_msg, ct) <- relevantBindings True ctxt ct
        ; rdr_env <- getGlobalRdrEnv
        ; fam_envs <- tcGetFamInstEnvs
-       ; let (is_oriented, wanted_msg) = mk_wanted_extra (ctOrigin ct)
+       ; expandSyns <- gopt Opt_PrintExpandedSynonyms <$> getDynFlags
+       ; let (is_oriented, wanted_msg) = mk_wanted_extra (ctOrigin ct) expandSyns
              coercible_msg = case ctEqRel ct of
                NomEq  -> empty
                ReprEq -> mkCoercibleExplanation rdr_env fam_envs ty1 ty2
@@ -822,21 +823,21 @@ mkEqErr1 ctxt ct
 
        -- If the types in the error message are the same as the types
        -- we are unifying, don't add the extra expected/actual message
-    mk_wanted_extra :: CtOrigin -> (Maybe SwapFlag, SDoc)
-    mk_wanted_extra orig@(TypeEqOrigin {})
-      = mkExpectedActualMsg ty1 ty2 orig
+    mk_wanted_extra :: CtOrigin -> Bool -> (Maybe SwapFlag, SDoc)
+    mk_wanted_extra orig@(TypeEqOrigin {}) expandSyns
+      = mkExpectedActualMsg ty1 ty2 orig expandSyns
 
-    mk_wanted_extra (KindEqOrigin cty1 cty2 sub_o)
+    mk_wanted_extra (KindEqOrigin cty1 cty2 sub_o) expandSyns
       = (Nothing, msg1 $$ msg2)
       where
         msg1 = hang (ptext (sLit "When matching types"))
                   2 (vcat [ ppr cty1 <+> dcolon <+> ppr (typeKind cty1)
                           , ppr cty2 <+> dcolon <+> ppr (typeKind cty2) ])
         msg2 = case sub_o of
-                 TypeEqOrigin {} -> snd (mkExpectedActualMsg cty1 cty2 sub_o)
+                 TypeEqOrigin {} -> snd (mkExpectedActualMsg cty1 cty2 sub_o expandSyns)
                  _ -> empty
 
-    mk_wanted_extra _ = (Nothing, empty)
+    mk_wanted_extra _ _ = (Nothing, empty)
 
 -- | This function tries to reconstruct why a "Coercible ty1 ty2" constraint
 -- is left over.
@@ -1179,29 +1180,38 @@ misMatchMsg ct oriented ty1 ty2
                     | null s2   = s1
                     | otherwise = s1 ++ (' ' : s2)
 
-mkExpectedActualMsg :: Type -> Type -> CtOrigin -> (Maybe SwapFlag, SDoc)
+mkExpectedActualMsg :: Type -> Type -> CtOrigin -> Bool -> (Maybe SwapFlag, SDoc)
 -- NotSwapped means (actual, expected), IsSwapped is the reverse
-mkExpectedActualMsg ty1 ty2 (TypeEqOrigin { uo_actual = act, uo_expected = exp })
+mkExpectedActualMsg ty1 ty2 (TypeEqOrigin { uo_actual = act, uo_expected = exp }) printExpanded
   | act `pickyEqType` ty1, exp `pickyEqType` ty2 = (Just NotSwapped,  empty)
   | exp `pickyEqType` ty1, act `pickyEqType` ty2 = (Just IsSwapped, empty)
   | otherwise                                    = (Nothing, msg)
   where
-    msg = vcat [ text "Expected type:" <+> ppr exp
-               , text "         (aka." <+> ppr (expandTypeSyns exp) <> char ')'
-               , text "  Actual type:" <+> ppr act
-               , text "         (aka." <+> ppr (expandTypeSyns act) <> char ')' ]
+    msg = vcat $
+      [ text "Expected type:" <+> ppr exp
+      , text "  Actual type:" <+> ppr act ]
+      ++ if printExpanded then expandedTys else []
 
-mkExpectedActualMsg _ _ _ = panic "mkExprectedAcutalMsg"
+    expandedTys =
+      [ text "Type synonyms expanded:"
+      , text "Expected type:" <+> ppr (expandTypeSyns exp)
+      , text "  Actual type:" <+> ppr (expandTypeSyns act)
+      ]
 
-expandTypeSyns :: TcType -> TcType
-expandTypeSyns (AppTy t1 t2) = AppTy (expandTypeSyns t1) (expandTypeSyns t2)
-expandTypeSyns (TyConApp tc tys) =
-  let tys' = map expandTypeSyns tys in
-  case expandSynTyCon_maybe tc tys' of
-    Just (tenv, rhs, tys'') -> mkAppTys (substTy (mkTopTvSubst tenv) rhs) tys''
-    Nothing                 -> TyConApp tc tys'
-expandTypeSyns (ForAllTy v ty) = ForAllTy v (expandTypeSyns ty)
-expandTypeSyns ty = ty
+    expandTypeSyns :: TcType -> TcType
+    expandTypeSyns (AppTy t1 t2) =
+      AppTy (expandTypeSyns t1) (expandTypeSyns t2)
+    expandTypeSyns (TyConApp tc tys) =
+      case expandSynTyCon_maybe tc (map expandTypeSyns tys) of
+        Just (tenv, rhs, tys') -> mkAppTys (substTy (mkTopTvSubst tenv) rhs) tys'
+        Nothing                -> TyConApp tc tys
+    expandTypeSyns (FunTy t1 t2) =
+      FunTy (expandTypeSyns t1) (expandTypeSyns t2)
+    expandTypeSyns (ForAllTy v ty) =
+      ForAllTy v (expandTypeSyns ty)
+    expandTypeSyns ty = ty
+
+mkExpectedActualMsg _ _ _ _ = panic "mkExprectedAcutalMsg"
 
 sameOccExtra :: TcType -> TcType -> SDoc
 -- See Note [Disambiguating (X ~ X) errors]
