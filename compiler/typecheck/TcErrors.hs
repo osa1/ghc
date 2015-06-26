@@ -1198,25 +1198,9 @@ mkExpectedActualMsg ty1 ty2
 
     expandedTys =
       [ text "Type synonyms expanded:"
-      , text "Expected type:" <+> ppr (expandTypeSyns exp)
-      , text "  Actual type:" <+> ppr (expandTypeSyns act)
+      , text "Expected type:" <+> ppr (expandTypeSynonyms exp)
+      , text "  Actual type:" <+> ppr (expandTypeSynonyms act)
       ]
-
-    expandTypeSyns :: TcType -> TcType
-    expandTypeSyns (AppTy t1 t2) =
-      AppTy (expandTypeSyns t1) (expandTypeSyns t2)
-    expandTypeSyns (TyConApp tc tys) =
-      let tys' = map expandTypeSyns tys in
-      case expandSynTyCon_maybe tc tys' of
-        Just (tenv, rhs, tys'') ->
-          mkAppTys (substTy (mkTopTvSubst tenv) rhs) tys''
-        Nothing                 ->
-          TyConApp tc tys'
-    expandTypeSyns (FunTy t1 t2) =
-      FunTy (expandTypeSyns t1) (expandTypeSyns t2)
-    expandTypeSyns (ForAllTy v ty) =
-      ForAllTy v (expandTypeSyns ty)
-    expandTypeSyns ty = ty
 
 mkExpectedActualMsg _ _ _ _ = panic "mkExprectedAcutalMsg"
 
