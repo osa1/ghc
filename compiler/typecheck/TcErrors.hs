@@ -801,7 +801,7 @@ mkEqErr1 ctxt ct
   = do { (ctxt, binds_msg, ct) <- relevantBindings True ctxt ct
        ; rdr_env <- getGlobalRdrEnv
        ; fam_envs <- tcGetFamInstEnvs
-       ; exp_syns <- gopt Opt_PrintExpandedSynonyms <$> getDynFlags
+       ; exp_syns <- goptM Opt_PrintExpandedSynonyms
        ; let (is_oriented, wanted_msg) = mk_wanted_extra (ctOrigin ct) exp_syns
              coercible_msg = case ctEqRel ct of
                NomEq  -> empty
