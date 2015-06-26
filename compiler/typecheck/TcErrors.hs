@@ -801,8 +801,8 @@ mkEqErr1 ctxt ct
   = do { (ctxt, binds_msg, ct) <- relevantBindings True ctxt ct
        ; rdr_env <- getGlobalRdrEnv
        ; fam_envs <- tcGetFamInstEnvs
-       ; expandSyns <- gopt Opt_PrintExpandedSynonyms <$> getDynFlags
-       ; let (is_oriented, wanted_msg) = mk_wanted_extra (ctOrigin ct) expandSyns
+       ; exp_syns <- gopt Opt_PrintExpandedSynonyms <$> getDynFlags
+       ; let (is_oriented, wanted_msg) = mk_wanted_extra (ctOrigin ct) exp_syns
              coercible_msg = case ctEqRel ct of
                NomEq  -> empty
                ReprEq -> mkCoercibleExplanation rdr_env fam_envs ty1 ty2
@@ -834,8 +834,10 @@ mkEqErr1 ctxt ct
                   2 (vcat [ ppr cty1 <+> dcolon <+> ppr (typeKind cty1)
                           , ppr cty2 <+> dcolon <+> ppr (typeKind cty2) ])
         msg2 = case sub_o of
-                 TypeEqOrigin {} -> snd (mkExpectedActualMsg cty1 cty2 sub_o expandSyns)
-                 _ -> empty
+                 TypeEqOrigin {} ->
+                   snd (mkExpectedActualMsg cty1 cty2 sub_o expandSyns)
+                 _ ->
+                   empty
 
     mk_wanted_extra _ _ = (Nothing, empty)
 
@@ -1180,9 +1182,11 @@ misMatchMsg ct oriented ty1 ty2
                     | null s2   = s1
                     | otherwise = s1 ++ (' ' : s2)
 
-mkExpectedActualMsg :: Type -> Type -> CtOrigin -> Bool -> (Maybe SwapFlag, SDoc)
+mkExpectedActualMsg :: Type -> Type -> CtOrigin -> Bool
+                    -> (Maybe SwapFlag, SDoc)
 -- NotSwapped means (actual, expected), IsSwapped is the reverse
-mkExpectedActualMsg ty1 ty2 (TypeEqOrigin { uo_actual = act, uo_expected = exp }) printExpanded
+mkExpectedActualMsg ty1 ty2
+      (TypeEqOrigin { uo_actual = act, uo_expected = exp }) printExpanded
   | act `pickyEqType` ty1, exp `pickyEqType` ty2 = (Just NotSwapped,  empty)
   | exp `pickyEqType` ty1, act `pickyEqType` ty2 = (Just IsSwapped, empty)
   | otherwise                                    = (Nothing, msg)
@@ -1204,8 +1208,10 @@ mkExpectedActualMsg ty1 ty2 (TypeEqOrigin { uo_actual = act, uo_expected = exp }
     expandTypeSyns (TyConApp tc tys) =
       let tys' = map expandTypeSyns tys in
       case expandSynTyCon_maybe tc tys' of
-        Just (tenv, rhs, tys'') -> mkAppTys (substTy (mkTopTvSubst tenv) rhs) tys''
-        Nothing                -> TyConApp tc tys'
+        Just (tenv, rhs, tys'') ->
+          mkAppTys (substTy (mkTopTvSubst tenv) rhs) tys''
+        Nothing                 ->
+          TyConApp tc tys'
     expandTypeSyns (FunTy t1 t2) =
       FunTy (expandTypeSyns t1) (expandTypeSyns t2)
     expandTypeSyns (ForAllTy v ty) =
