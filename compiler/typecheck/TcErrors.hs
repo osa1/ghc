@@ -822,6 +822,7 @@ mkEqErr1 ctxt ct
 
        -- If the types in the error message are the same as the types
        -- we are unifying, don't add the extra expected/actual message
+    mk_wanted_extra :: CtOrigin -> (Maybe SwapFlag, SDoc)
     mk_wanted_extra orig@(TypeEqOrigin {})
       = mkExpectedActualMsg ty1 ty2 orig
 
@@ -1186,9 +1187,21 @@ mkExpectedActualMsg ty1 ty2 (TypeEqOrigin { uo_actual = act, uo_expected = exp }
   | otherwise                                    = (Nothing, msg)
   where
     msg = vcat [ text "Expected type:" <+> ppr exp
-               , text "  Actual type:" <+> ppr act ]
+               , text "         (aka." <+> ppr (expandTypeSyns exp) <> char ')'
+               , text "  Actual type:" <+> ppr act
+               , text "         (aka." <+> ppr (expandTypeSyns act) <> char ')' ]
 
 mkExpectedActualMsg _ _ _ = panic "mkExprectedAcutalMsg"
+
+expandTypeSyns :: TcType -> TcType
+expandTypeSyns (AppTy t1 t2) = AppTy (expandTypeSyns t1) (expandTypeSyns t2)
+expandTypeSyns (TyConApp tc tys) =
+  let tys' = map expandTypeSyns tys in
+  case expandSynTyCon_maybe tc tys' of
+    Just (tenv, rhs, tys'') -> mkAppTys (substTy (mkTopTvSubst tenv) rhs) tys''
+    Nothing                 -> TyConApp tc tys'
+expandTypeSyns (ForAllTy v ty) = ForAllTy v (expandTypeSyns ty)
+expandTypeSyns ty = ty
 
 sameOccExtra :: TcType -> TcType -> SDoc
 -- See Note [Disambiguating (X ~ X) errors]
@@ -1340,6 +1353,7 @@ mk_dict_err ctxt (ct, (matches, unifiers, unsafe_overlapped))
     givens        = getUserGivens ctxt
     all_tyvars    = all isTyVarTy tys
 
+    cannot_resolve_msg :: Ct -> SDoc -> SDoc
     cannot_resolve_msg ct binds_msg
       = vcat [ addArising orig no_inst_msg
              , vcat (pp_givens givens)
