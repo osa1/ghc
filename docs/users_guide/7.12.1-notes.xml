@@ -85,6 +85,38 @@
                     This is similar to using <option>-ddump-to-file</option> with <option>-ddump-splices</option> but it always generates a file instead of being coupled to <option>-ddump-to-file</option> and only outputs code that does not exist in the .hs file and a comment for the splice location in the original file.
                 </para>
            </listitem>
+           <listitem>
+               <para>
+                   Added the option <option>-fprint-expanded-types</option>.
+
+                   When enabled, GHC also prints type-synonym-expanded types in
+                   type errors. For example, here's a program and the type error:
+
+<programlisting>
+type Foo = Int
+type Bar = Bool
+main = print $ (undefined :: Foo) == (undefined :: Bar)
+</programlisting>
+
+<programlisting>
+Couldn't match type 'Bool' with 'Int'
+Expected type: Foo
+  Actual type: Bar
+</programlisting>
+
+                   With <option>-fprint-expanded-types</option>, GHC gives this
+                   error:
+
+<programlisting>
+Couldn't match type 'Bool' with 'Int'
+Expected type: Foo
+  Actual type: Bar
+Type synonyms expanded:
+Expected type: Int
+  Actual type: Bool
+</programlisting>
+               </para>
+           </listitem>
        </itemizedlist>
     </sect3>
 
