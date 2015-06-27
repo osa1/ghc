@@ -896,7 +896,7 @@ ghc -c Foo.hs
 
 
       <varlistentry>
-        <term><option>--fprint-explicit-foralls, -fprint-explicit-kinds, -fprint-unicode-syntax</option>
+        <term><option>-fprint-explicit-foralls, -fprint-explicit-kinds, -fprint-unicode-syntax</option>
           <indexterm><primary><option>-fprint-explicit-foralls</option></primary></indexterm>
           <indexterm><primary><option>-fprint-explicit-kinds</option></primary></indexterm>
           <indexterm><primary><option>-fprint-unicode-syntax</option></primary></indexterm>
