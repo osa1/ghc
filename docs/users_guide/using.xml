@@ -969,7 +969,15 @@ ghci> :t (>>)
             When enabled, GHC also prints type-synonym-expanded types in type
             errors.
 
-            For example, this error message:
+            For example, with this type synonyms:
+
+<screen>
+type Foo = Int
+type Bar = Bool
+type MyBarST s = ST s Bar
+</screen>
+
+          This error message:
 
 <screen>
 Couldn't match type 'Int' with 'Bool'
