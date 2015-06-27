@@ -90,31 +90,7 @@
                    Added the option <option>-fprint-expanded-types</option>.
 
                    When enabled, GHC also prints type-synonym-expanded types in
-                   type errors. For example, here's a program and the type error:
-
-<programlisting>
-type Foo = Int
-type Bar = Bool
-main = print $ (1 :: Foo) == (False :: Bar)
-</programlisting>
-
-<programlisting>
-Couldn't match type 'Bool' with 'Int'
-Expected type: Foo
-  Actual type: Bar
-</programlisting>
-
-                   With <option>-fprint-expanded-types</option>, GHC gives this
-                   error:
-
-<programlisting>
-Couldn't match type 'Bool' with 'Int'
-Expected type: Foo
-  Actual type: Bar
-Type synonyms expanded:
-Expected type: Int
-  Actual type: Bool
-</programlisting>
+                   type errors.
                </para>
            </listitem>
        </itemizedlist>
