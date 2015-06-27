@@ -960,6 +960,38 @@ ghci> :t (>>)
       </varlistentry>
 
       <varlistentry>
+        <term>
+          <option>-fprint-expanded-synonyms</option>
+          <indexterm><primary><option>-fprint-expanded-synonyms</option></primary></indexterm>
+        </term>
+        <listitem>
+          <para>
+            When enabled, GHC also prints type-synonym-expanded types in type
+            errors.
+
+            For example, this error message:
+
+<screen>
+Couldn't match type 'Int' with 'Bool'
+Expected type: ST s Foo
+  Actual type: MyBarST s
+</screen>
+
+          Becomes this:
+
+<screen>
+Couldn't match type 'Int' with 'Bool'
+Expected type: ST s Foo
+  Actual type: MyBarST s
+Type synonyms expanded:
+Expected type: ST s Int
+  Actual type: ST s Bool
+</screen>
+          </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
         <term><option>-ferror-spans</option>
           <indexterm><primary><option>-ferror-spans</option></primary>
           </indexterm>
