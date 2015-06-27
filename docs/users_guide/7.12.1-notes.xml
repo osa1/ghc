@@ -95,7 +95,7 @@
 <programlisting>
 type Foo = Int
 type Bar = Bool
-main = print $ (undefined :: Foo) == (undefined :: Bar)
+main = print $ (1 :: Foo) == (False :: Bar)
 </programlisting>
 
 <programlisting>
