@@ -1198,9 +1198,11 @@ mkExpectedActualMsg ty1 ty2
 
     expandedTys =
       [ text "Type synonyms expanded:"
-      , text "Expected type:" <+> ppr (expandTypeSynonyms exp)
-      , text "  Actual type:" <+> ppr (expandTypeSynonyms act)
+      , text "Expected type:" <+> ppr expTy1
+      , text "  Actual type:" <+> ppr expTy2
       ]
+
+    (expTy1, expTy2) = expandSynonymsToMatch exp act
 
 mkExpectedActualMsg _ _ _ _ = panic "mkExprectedAcutalMsg"
 
