@@ -1197,10 +1197,14 @@ mkExpectedActualMsg ty1 ty2
       ++ if printExpanded then expandedTys else []
 
     expandedTys =
-      [ text "Type synonyms expanded:"
-      , text "Expected type:" <+> ppr expTy1
-      , text "  Actual type:" <+> ppr expTy2
-      ]
+        text "Type synonyms expanded:"
+      : if not (expTy1 `pickyEqType` exp) || not (expTy2 `pickyEqType` act)
+          then
+            [ text "Expected type:" <+> ppr expTy1
+            , text "  Actual type:" <+> ppr expTy2
+            ]
+          else
+            [ text "(No expansions are needed)" ]
 
     (expTy1, expTy2) = expandSynonymsToMatch exp act
 
