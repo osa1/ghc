@@ -284,6 +284,8 @@ expandTypeSynonyms ty
     go (FunTy t1 t2)   = FunTy (go t1) (go t2)
     go (ForAllTy tv t) = ForAllTy tv (go t)
 
+-- | Expand type synonyms in given types only enough to make them as equal as
+-- possible. Returned types are the same in terms of used type synonyms.
 expandSynonymsToMatch :: Type -> Type -> (Type, Type)
 expandSynonymsToMatch ty1 ty2 =
     (\(ty1', ty2', _) -> (ty1', ty2')) $ go 0 ty1 ty2

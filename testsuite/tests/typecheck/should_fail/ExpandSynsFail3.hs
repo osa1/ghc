@@ -1,5 +1,5 @@
 -- We test two things here:
--- 
+--
 -- 1. We expand only as much as necessary. In this case, we shouldn't expand T.
 -- 2. When we find a difference(T3 and T5 in this case), we do minimal expansion
 --    e.g. we don't expand both of them to T1, instead we expand T5 to T3.
