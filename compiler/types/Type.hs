@@ -289,6 +289,44 @@ expandTypeSynonyms ty
     go (FunTy t1 t2)   = FunTy (go t1) (go t2)
     go (ForAllTy tv t) = ForAllTy tv (go t)
 
+{-
+Note [Expanding type synonyms to make types simlar]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In type error messages, if -fprint-expanded-types is used, we want to expand
+type synonyms to make expected and found types as similar as possible, but we
+shouldn't expand types too much to make type messages even more verbose and
+harder to understand. The whole point here is to make the difference in expected
+and found types clearer.
+
+`expandSynonymsToMatch` does this, it takes two types, and expands type synonyms
+only as much as necessary. It should work like this:
+
+Given two types t1 and t2:
+
+  * If they're already same, it shouldn't expand any type synonyms and
+    just return.
+
+  * If they're in form `C1 t1_1 .. t1_n` and `C2 t2_1 .. t2_m` (C1 and C2 are
+    type constructors), it should expand C1 and C2 if they're different type
+    synonyms. Then it should continue doing same thing on expanded types. If C1
+    and C2 are same, then we should apply same procedure to arguments of C1
+    and argument of C2 to make them as similar as possible.
+
+    Most important thing here is to keep number of synonym expansions at
+    minimum. For example, if t1 is `T (T3, T5, Int)` and t2 is
+    `T (T5, T3, Bool)` where T5 = T4, T4 = T3, ..., T1 = X, we should return
+    `T (T3, T3, Int)` and `T (T3, T3, Bool)`.
+
+In the implementation, we just search in all possible solutions for a solution
+that does minimum amount of expansions. This leads to a complex algorithm: If
+we have two synonyms like X_m = X_{m-1} = .. X and Y_n = Y_{n-1} = .. Y, where
+X and Y are rigid types, we expand m * n times. But in practice it's not a
+problem because deeply nested synonyms with no intervening rigid type
+constructors are vanishingly rare.
+
+-}
+
 -- | Expand type synonyms in given types only enough to make them as equal as
 -- possible. Returned types are the same in terms of used type synonyms.
 expandSynonymsToMatch :: Type -> Type -> (Type, Type)
@@ -320,6 +358,7 @@ expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
           (Just t1', Just t2') ->
             -- Both constructors are synonyms, but they may be synonyms of
             -- each other. We just search for minimally expanded solution.
+            -- See Note [Expanding type synonyms to make types similar].
             let sol1@(_, _, exp1) = go (exps + 1) t1' t2
                 sol2@(_, _, exp2) = go (exps + 1) t1 t2'
              in if exp1 < exp2 then sol1 else sol2
