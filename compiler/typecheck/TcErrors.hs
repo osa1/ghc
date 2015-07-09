@@ -1191,20 +1191,17 @@ mkExpectedActualMsg ty1 ty2
   | exp `pickyEqType` ty1, act `pickyEqType` ty2 = (Just IsSwapped, empty)
   | otherwise                                    = (Nothing, msg)
   where
-    msg = vcat $
+    msg = vcat
       [ text "Expected type:" <+> ppr exp
-      , text "  Actual type:" <+> ppr act ]
-      ++ if printExpanded then expandedTys else []
+      , text "  Actual type:" <+> ppr act
+      , if printExpanded then expandedTys else empty
+      ]
 
-    expandedTys =
-        text "Type synonyms expanded:"
-      : if not (expTy1 `pickyEqType` exp) || not (expTy2 `pickyEqType` act)
-          then
-            [ text "Expected type:" <+> ppr expTy1
-            , text "  Actual type:" <+> ppr expTy2
-            ]
-          else
-            []
+    expandedTys = ppUnless (expTy1 `pickyEqType` exp && expTy2 `pickyEqType` act) $ vcat
+      [ text "Type synonyms expanded:"
+      , text "Expected type:" <+> ppr expTy1
+      , text "  Actual type:" <+> ppr expTy2
+      ]
 
     (expTy1, expTy2) = expandSynonymsToMatch exp act
 
