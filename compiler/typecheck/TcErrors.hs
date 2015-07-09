@@ -1204,7 +1204,7 @@ mkExpectedActualMsg ty1 ty2
             , text "  Actual type:" <+> ppr expTy2
             ]
           else
-            [ text "(No expansions are needed)" ]
+            []
 
     (expTy1, expTy2) = expandSynonymsToMatch exp act
 
