@@ -1,5 +1,5 @@
 -- Synonyms shouldn't be expanded since type error is visible without
--- expansions
+-- expansions. Error message should not have `Type synonyms expanded: ...` part.
 
 module Main where
 
