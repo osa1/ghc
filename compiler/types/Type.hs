@@ -254,7 +254,10 @@ coreView :: Type -> Maybe Type
 -- By being non-recursive and inlined, this case analysis gets efficiently
 -- joined onto the case analysis that the caller is already doing
 coreView (TyConApp tc tys) | Just (tenv, rhs, tys') <- expandSynTyCon_maybe tc tys
-              = Just (expand tenv rhs tys')
+              = Just (mkAppTys (substTy (mkTopTvSubst tenv) rhs) tys')
+               -- Its important to use mkAppTys, rather than (foldl AppTy),
+               -- because the function part might well return a
+               -- partially-applied type constructor; indeed, usually will!
 coreView _ = Nothing
 
 -----------------------------------------------
@@ -269,7 +272,9 @@ tcView = coreView
 
 -----------------------------------------------
 expandTypeSynonyms :: Type -> Type
--- ^ Expand out all type synonyms.
+-- ^ Expand out all type synonyms.  Actually, it'd suffice to expand out
+-- just the ones that discard type variables (e.g.  type Funny a = Int)
+-- But we don't know which those are currently, so we just expand all.
 expandTypeSynonyms ty
   = go ty
   where
@@ -287,9 +292,10 @@ expandTypeSynonyms ty
 -- | Expand type synonyms in given types only enough to make them as equal as
 -- possible. Returned types are the same in terms of used type synonyms.
 expandSynonymsToMatch :: Type -> Type -> (Type, Type)
-expandSynonymsToMatch ty1 ty2 =
-    (\(ty1', ty2', _) -> (ty1', ty2')) $ go 0 ty1 ty2
+expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
   where
+    (ty1_ret, ty2_ret, _) = go 0 ty1 ty2
+
     go :: Int -> Type -> Type -> (Type, Type, Int)
     go exps t1 t2
       | t1 `pickyEqType` t2 =
@@ -304,34 +310,30 @@ expandSynonymsToMatch ty1 ty2 =
          in (TyConApp tc1 tys1', TyConApp tc2 tys2', exps + sum exps')
       | otherwise =
         -- Try to expand type constructors
-        case (expandSynTyCon_maybe tc1 tys1, expandSynTyCon_maybe tc2 tys2) of
+        case (tcView t1, tcView t2) of
           -- When only one of the constructors is a synonym, we just
           -- expand it and continue search
-          (Just (tenv1, rhs1, tys1'), Nothing) ->
-            go (exps + 1) (expand tenv1 rhs1 tys1') t2
-          (Nothing, Just (tenv2, rhs2, tys2')) ->
-            go (exps + 1) t1 (expand tenv2 rhs2 tys2')
-          (Just (tenv1, rhs1, tys1'), Just (tenv2, rhs2, tys2')) ->
+          (Just t1', Nothing) ->
+            go (exps + 1) t1' t2
+          (Nothing, Just t2') ->
+            go (exps + 1) t1 t2'
+          (Just t1', Just t2') ->
             -- Both constructors are synonyms, but they may be synonyms of
             -- each other. We just search for minimally expanded solution.
-            let sol1@(_, _, exp1) = go (exps + 1) (expand tenv1 rhs1 tys1') t2
-                sol2@(_, _, exp2) = go (exps + 1) t1 (expand tenv2 rhs2 tys2')
+            let sol1@(_, _, exp1) = go (exps + 1) t1' t2
+                sol2@(_, _, exp2) = go (exps + 1) t1 t2'
              in if exp1 < exp2 then sol1 else sol2
           (Nothing, Nothing) ->
             -- None of the constructors are synonyms, nothing to do
             (t1, t2, exps)
 
-    go exps t1@(TyConApp tc1 tys1) t2
-      | Just (tenv, rhs, tys') <- expandSynTyCon_maybe tc1 tys1
-      = go (exps + 1) (expand tenv rhs tys') t2
-      | otherwise
-      = (t1, t2, exps)
+    go exps t1@TyConApp{} t2
+      | Just t1' <- tcView t1 = go (exps + 1) t1' t2
+      | otherwise             = (t1, t2, exps)
 
-    go exps t1 t2@(TyConApp tc2 tys2)
-      | Just (tenv, rhs, tys') <- expandSynTyCon_maybe tc2 tys2
-      = go (exps + 1) t1 (expand tenv rhs tys')
-      | otherwise
-      = (t1, t2, exps)
+    go exps t1 t2@TyConApp{}
+      | Just t2' <- tcView t2 = go (exps + 1) t1 t2'
+      | otherwise             = (t1, t2, exps)
 
     go exps (AppTy t1_1 t1_2) (AppTy t2_1 t2_2) =
       let (t1_1', t2_1', exps1) = go 0 t1_1 t2_1
@@ -434,13 +436,6 @@ mkAppTys :: Type -> [Type] -> Type
 mkAppTys ty1                []   = ty1
 mkAppTys (TyConApp tc tys1) tys2 = mkTyConApp tc (tys1 ++ tys2)
 mkAppTys ty1                tys2 = foldl AppTy ty1 tys2
-
-expand :: [(TyVar, Type)] -> Type -> [Type] -> Type
-expand tenv rhs tys =
-  mkAppTys (substTy (mkTopTvSubst tenv) rhs) tys
-  -- Its important to use mkAppTys, rather than (foldl AppTy),
-  -- because the function part might well return a
-  -- partially-applied type constructor; indeed, usually will!
 
 -------------
 splitAppTy_maybe :: Type -> Maybe (Type, Type)
