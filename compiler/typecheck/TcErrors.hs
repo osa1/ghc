@@ -1197,11 +1197,12 @@ mkExpectedActualMsg ty1 ty2
       , if printExpanded then expandedTys else empty
       ]
 
-    expandedTys = ppUnless (expTy1 `pickyEqType` exp && expTy2 `pickyEqType` act) $ vcat
-      [ text "Type synonyms expanded:"
-      , text "Expected type:" <+> ppr expTy1
-      , text "  Actual type:" <+> ppr expTy2
-      ]
+    expandedTys =
+      ppUnless (expTy1 `pickyEqType` exp && expTy2 `pickyEqType` act) $ vcat
+        [ text "Type synonyms expanded:"
+        , text "Expected type:" <+> ppr expTy1
+        , text "  Actual type:" <+> ppr expTy2
+        ]
 
     (expTy1, expTy2) = expandSynonymsToMatch exp act
 
