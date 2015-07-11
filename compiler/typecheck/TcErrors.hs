@@ -1206,7 +1206,7 @@ mkExpectedActualMsg ty1 ty2
 
     (expTy1, expTy2) = expandSynonymsToMatch exp act
 
-mkExpectedActualMsg _ _ _ _ = panic "mkExprectedAcutalMsg"
+mkExpectedActualMsg _ _ _ _ = panic "mkExpectedAcutalMsg"
 
 pickyEqType :: TcType -> TcType -> Bool
 -- ^ Check when two types _look_ the same, _including_ synonyms.
