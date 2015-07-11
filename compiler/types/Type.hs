@@ -332,20 +332,25 @@ constructors are vanishingly rare.
 expandSynonymsToMatch :: Type -> Type -> (Type, Type)
 expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
   where
-    (ty1_ret, ty2_ret, _) = go 0 ty1 ty2
+    (_, ty1_ret, ty2_ret) = go 0 ty1 ty2
 
-    go :: Int -> Type -> Type -> (Type, Type, Int)
+    -- | Returns (number of synonym expansions done to make types similar,
+    --            type synonym expanded version of first type,
+    --            type synonym expanded version of second type)
+    --
+    -- Int argument is number of synonym expansions done so far.
+    go :: Int -> Type -> Type -> (Int, Type, Type)
     go exps t1 t2
       | t1 `pickyEqType` t2 =
         -- Types are same, nothing to do
-        (t1, t2, exps)
+        (exps, t1, t2)
 
     go exps t1@(TyConApp tc1 tys1) t2@(TyConApp tc2 tys2)
       | tc1 == tc2 =
         -- Type constructors are same. They may be synonyms, but we don't
         -- expand further.
-        let (tys1', tys2', exps') = unzip3 $ zipWith (go 0) tys1 tys2
-         in (TyConApp tc1 tys1', TyConApp tc2 tys2', exps + sum exps')
+        let (exps', tys1', tys2') = unzip3 $ zipWith (go 0) tys1 tys2
+         in (exps + sum exps', TyConApp tc1 tys1', TyConApp tc2 tys2')
       | otherwise =
         -- Try to expand type constructors
         case (tcView t1, tcView t2) of
@@ -359,36 +364,36 @@ expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
             -- Both constructors are synonyms, but they may be synonyms of
             -- each other. We just search for minimally expanded solution.
             -- See Note [Expanding type synonyms to make types similar].
-            let sol1@(_, _, exp1) = go (exps + 1) t1' t2
-                sol2@(_, _, exp2) = go (exps + 1) t1 t2'
+            let sol1@(exp1, _, _) = go (exps + 1) t1' t2
+                sol2@(exp2, _, _) = go (exps + 1) t1 t2'
              in if exp1 < exp2 then sol1 else sol2
           (Nothing, Nothing) ->
             -- None of the constructors are synonyms, nothing to do
-            (t1, t2, exps)
+            (exps, t1, t2)
 
     go exps t1@TyConApp{} t2
       | Just t1' <- tcView t1 = go (exps + 1) t1' t2
-      | otherwise             = (t1, t2, exps)
+      | otherwise             = (exps, t1, t2)
 
     go exps t1 t2@TyConApp{}
       | Just t2' <- tcView t2 = go (exps + 1) t1 t2'
-      | otherwise             = (t1, t2, exps)
+      | otherwise             = (exps, t1, t2)
 
     go exps (AppTy t1_1 t1_2) (AppTy t2_1 t2_2) =
-      let (t1_1', t2_1', exps1) = go 0 t1_1 t2_1
-          (t1_2', t2_2', exps2) = go 0 t1_2 t2_2
-       in (mkAppTy t1_1' t1_2', mkAppTy t2_1' t2_2', exps + exps1 + exps2)
+      let (exps1, t1_1', t2_1') = go 0 t1_1 t2_1
+          (exps2, t1_2', t2_2') = go 0 t1_2 t2_2
+       in (exps + exps1 + exps2, mkAppTy t1_1' t1_2', mkAppTy t2_1' t2_2')
 
     go exps (FunTy t1_1 t1_2) (FunTy t2_1 t2_2) =
-      let (t1_1', t2_1', exps1) = go 0 t1_1 t2_1
-          (t1_2', t2_2', exps2) = go 0 t1_2 t2_2
-       in (FunTy t1_1' t1_2', FunTy t2_1' t2_2', exps + exps1 + exps2)
+      let (exps1, t1_1', t2_1') = go 0 t1_1 t2_1
+          (exps2, t1_2', t2_2') = go 0 t1_2 t2_2
+       in (exps + exps1 + exps2, FunTy t1_1' t1_2', FunTy t2_1' t2_2')
 
     go exps (ForAllTy tv1 t1) (ForAllTy tv2 t2) =
-      let (t1', t2', exps1) = go exps t1 t2
-       in (ForAllTy tv1 t1', ForAllTy tv2 t2', exps1)
+      let (exps1, t1', t2') = go exps t1 t2
+       in (exps1, ForAllTy tv1 t1', ForAllTy tv2 t2')
 
-    go exps t1 t2 = (t1, t2, exps)
+    go exps t1 t2 = (exps, t1, t2)
 
 {-
 ************************************************************************
