@@ -86,7 +86,7 @@ module Type (
 
         -- * Type free variables
         tyVarsOfType, tyVarsOfTypes, closeOverKinds,
-        expandTypeSynonyms, expandSynonymsToMatch,
+        expandTypeSynonyms,
         typeSize, varSetElemsKvsFirst,
 
         -- * Type comparison
@@ -159,7 +159,6 @@ import VarSet
 import NameEnv
 
 import Class
-import {-# SOURCE #-} TcType
 import TyCon
 import TysPrim
 import {-# SOURCE #-} TysWiredIn ( eqTyCon, coercibleTyCon, typeNatKind, typeSymbolKind )
@@ -288,112 +287,6 @@ expandTypeSynonyms ty
     go (AppTy t1 t2)   = mkAppTy (go t1) (go t2)
     go (FunTy t1 t2)   = FunTy (go t1) (go t2)
     go (ForAllTy tv t) = ForAllTy tv (go t)
-
-{-
-Note [Expanding type synonyms to make types simlar]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-In type error messages, if -fprint-expanded-types is used, we want to expand
-type synonyms to make expected and found types as similar as possible, but we
-shouldn't expand types too much to make type messages even more verbose and
-harder to understand. The whole point here is to make the difference in expected
-and found types clearer.
-
-`expandSynonymsToMatch` does this, it takes two types, and expands type synonyms
-only as much as necessary. It should work like this:
-
-Given two types t1 and t2:
-
-  * If they're already same, it shouldn't expand any type synonyms and
-    just return.
-
-  * If they're in form `C1 t1_1 .. t1_n` and `C2 t2_1 .. t2_m` (C1 and C2 are
-    type constructors), it should expand C1 and C2 if they're different type
-    synonyms. Then it should continue doing same thing on expanded types. If C1
-    and C2 are same, then we should apply same procedure to arguments of C1
-    and argument of C2 to make them as similar as possible.
-
-    Most important thing here is to keep number of synonym expansions at
-    minimum. For example, if t1 is `T (T3, T5, Int)` and t2 is
-    `T (T5, T3, Bool)` where T5 = T4, T4 = T3, ..., T1 = X, we should return
-    `T (T3, T3, Int)` and `T (T3, T3, Bool)`.
-
-In the implementation, we just search in all possible solutions for a solution
-that does minimum amount of expansions. This leads to a complex algorithm: If
-we have two synonyms like X_m = X_{m-1} = .. X and Y_n = Y_{n-1} = .. Y, where
-X and Y are rigid types, we expand m * n times. But in practice it's not a
-problem because deeply nested synonyms with no intervening rigid type
-constructors are vanishingly rare.
-
--}
-
--- | Expand type synonyms in given types only enough to make them as equal as
--- possible. Returned types are the same in terms of used type synonyms.
-expandSynonymsToMatch :: Type -> Type -> (Type, Type)
-expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
-  where
-    (_, ty1_ret, ty2_ret) = go 0 ty1 ty2
-
-    -- | Returns (number of synonym expansions done to make types similar,
-    --            type synonym expanded version of first type,
-    --            type synonym expanded version of second type)
-    --
-    -- Int argument is number of synonym expansions done so far.
-    go :: Int -> Type -> Type -> (Int, Type, Type)
-    go exps t1 t2
-      | t1 `pickyEqType` t2 =
-        -- Types are same, nothing to do
-        (exps, t1, t2)
-
-    go exps t1@(TyConApp tc1 tys1) t2@(TyConApp tc2 tys2)
-      | tc1 == tc2 =
-        -- Type constructors are same. They may be synonyms, but we don't
-        -- expand further.
-        let (exps', tys1', tys2') = unzip3 $ zipWith (go 0) tys1 tys2
-         in (exps + sum exps', TyConApp tc1 tys1', TyConApp tc2 tys2')
-      | otherwise =
-        -- Try to expand type constructors
-        case (tcView t1, tcView t2) of
-          -- When only one of the constructors is a synonym, we just
-          -- expand it and continue search
-          (Just t1', Nothing) ->
-            go (exps + 1) t1' t2
-          (Nothing, Just t2') ->
-            go (exps + 1) t1 t2'
-          (Just t1', Just t2') ->
-            -- Both constructors are synonyms, but they may be synonyms of
-            -- each other. We just search for minimally expanded solution.
-            -- See Note [Expanding type synonyms to make types similar].
-            let sol1@(exp1, _, _) = go (exps + 1) t1' t2
-                sol2@(exp2, _, _) = go (exps + 1) t1 t2'
-             in if exp1 < exp2 then sol1 else sol2
-          (Nothing, Nothing) ->
-            -- None of the constructors are synonyms, nothing to do
-            (exps, t1, t2)
-
-    go exps t1@TyConApp{} t2
-      | Just t1' <- tcView t1 = go (exps + 1) t1' t2
-      | otherwise             = (exps, t1, t2)
-
-    go exps t1 t2@TyConApp{}
-      | Just t2' <- tcView t2 = go (exps + 1) t1 t2'
-      | otherwise             = (exps, t1, t2)
-
-    go exps (AppTy t1_1 t1_2) (AppTy t2_1 t2_2) =
-      let (exps1, t1_1', t2_1') = go 0 t1_1 t2_1
-          (exps2, t1_2', t2_2') = go 0 t1_2 t2_2
-       in (exps + exps1 + exps2, mkAppTy t1_1' t1_2', mkAppTy t2_1' t2_2')
-
-    go exps (FunTy t1_1 t1_2) (FunTy t2_1 t2_2) =
-      let (exps1, t1_1', t2_1') = go 0 t1_1 t2_1
-          (exps2, t1_2', t2_2') = go 0 t1_2 t2_2
-       in (exps + exps1 + exps2, FunTy t1_1' t1_2', FunTy t2_1' t2_2')
-
-    go exps (ForAllTy tv1 t1) (ForAllTy tv2 t2) =
-      let (exps1, t1', t2') = go exps t1 t2
-       in (exps1, ForAllTy tv1 t1', ForAllTy tv2 t2')
-
-    go exps t1 t2 = (exps, t1, t2)
 
 {-
 ************************************************************************
