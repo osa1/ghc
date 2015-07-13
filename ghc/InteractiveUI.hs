@@ -740,7 +740,7 @@ runCommands' eh sourceErrorHandler gCmd = gmask $ \unmask -> do
     case b of
       Nothing -> return Nothing
       Just success -> do
-        when (not success) $ maybe (return ()) lift sourceErrorHandler
+        unless success $ maybe (return ()) lift sourceErrorHandler
         unmask $ runCommands' eh sourceErrorHandler gCmd
 
 -- | Evaluate a single line of user input (either :<command> or Haskell code).
