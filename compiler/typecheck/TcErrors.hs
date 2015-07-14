@@ -1236,8 +1236,8 @@ pickyEqType ty1 ty2
     gos _ _ _ = False
 
 {-
-Note [Expanding type synonyms to make types simlar]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Note [Expanding type synonyms to make types similar]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 In type error messages, if -fprint-expanded-types is used, we want to expand
 type synonyms to make expected and found types as similar as possible, but we
