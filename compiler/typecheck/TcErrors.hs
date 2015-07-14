@@ -1275,6 +1275,8 @@ constructors are vanishingly rare.
 
 -- | Expand type synonyms in given types only enough to make them as equal as
 -- possible. Returned types are the same in terms of used type synonyms.
+--
+-- To expand all synonyms, see 'Type.expandTypeSynonyms'.
 expandSynonymsToMatch :: Type -> Type -> (Type, Type)
 expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
   where
