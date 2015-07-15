@@ -1338,6 +1338,9 @@ expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
        in (exps + exps1 + exps2, FunTy t1_1' t1_2', FunTy t2_1' t2_2')
 
     go exps (ForAllTy tv1 t1) (ForAllTy tv2 t2) =
+      -- NOTE: We may have a bug here, but we just can't reproduce it easily.
+      -- See D1016 comments for details and our attempts at producing a test
+      -- case.
       let (exps1, t1', t2') = go exps t1 t2
        in (exps1, ForAllTy tv1 t1', ForAllTy tv2 t2')
 
