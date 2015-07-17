@@ -603,7 +603,7 @@ mkDataConWrapperOcc, mkWorkerOcc,
         mkDefaultMethodOcc,
         mkGenDefMethodOcc, mkDerivedTyConOcc, mkClassDataConOcc, mkDictOcc,
         mkIPOcc, mkSpecOcc, mkForeignExportOcc, mkRepEqOcc, mkGenOcc1, mkGenOcc2,
-        mkGenD, mkGenR, mkGen1R, mkGenRCo,
+        mkGenR, mkGen1R, mkGenRCo,
         mkDataTOcc, mkDataCOcc, mkDataConWorkerOcc, mkNewTyCoOcc,
         mkInstTyCoOcc, mkEqPredCoOcc, mkClassOpAuxOcc,
         mkCon2TagOcc, mkTag2ConOcc, mkMaxTagOcc
@@ -639,14 +639,18 @@ mkGenOcc1           = mk_simple_deriv varName  "$gfrom"
 mkGenOcc2           = mk_simple_deriv varName  "$gto"
 
 -- Generic deriving mechanism (new)
-mkGenD         = mk_simple_deriv tcName "D1"
+mkGenD :: String -> OccName -> OccName
+mkGenD modName = mk_simple_deriv tcName ("D1_" ++ modName ++ "_")
 
-mkGenC :: OccName -> Int -> OccName
-mkGenC occ m   = mk_deriv tcName ("C1_" ++ show m) (occNameString occ)
+mkGenC :: String -> OccName -> Int -> OccName
+mkGenC modName occ m   =
+  mk_deriv tcName ("C1_" ++ show m) $
+    modName ++ "_" ++ occNameString occ
 
-mkGenS :: OccName -> Int -> Int -> OccName
-mkGenS occ m n = mk_deriv tcName ("S1_" ++ show m ++ "_" ++ show n)
-                   (occNameString occ)
+mkGenS :: String -> OccName -> Int -> Int -> OccName
+mkGenS modName occ m n =
+  mk_deriv tcName ("S1_" ++ show m ++ "_" ++ show n) $
+    modName ++ "_" ++ occNameString occ
 
 mkGenR   = mk_simple_deriv tcName "Rep_"
 mkGen1R  = mk_simple_deriv tcName "Rep1_"

@@ -489,9 +489,9 @@ commonAuxiliaries :: [DerivSpec ()] -> TcM (CommonAuxiliaries, BagDerivStuff)
 commonAuxiliaries = foldM snoc ([], emptyBag) where
   snoc :: (CommonAuxiliaries, BagDerivStuff)
        -> DerivSpec () -> TcM (CommonAuxiliaries, BagDerivStuff)
-  snoc acc@(cas, stuff) (DS {ds_name = nm, ds_cls = cls, ds_tc = rep_tycon})
+  snoc acc@(cas, stuff) (DS {ds_cls = cls, ds_tc = rep_tycon})
     | getUnique cls `elem` [genClassKey, gen1ClassKey] =
-      extendComAux $ genGenericMetaTyCons rep_tycon (nameModule nm)
+      extendComAux $ genGenericMetaTyCons rep_tycon
     | otherwise = return acc
    where extendComAux :: TcM (MetaTyCons, BagDerivStuff)
                       -> TcM (CommonAuxiliaries, BagDerivStuff)

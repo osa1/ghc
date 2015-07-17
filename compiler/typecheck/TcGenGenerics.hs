@@ -25,7 +25,7 @@ import TyCon
 import FamInstEnv       ( FamInst, FamFlavor(..), mkSingleCoAxiom )
 import FamInst
 import Module           ( Module, moduleName, moduleNameString
-                        , modulePackageKey, packageKeyString )
+                        , modulePackageKey, packageKeyString, getModule )
 import IfaceEnv         ( newGlobalBinder )
 import Name      hiding ( varName )
 import RdrName
@@ -71,18 +71,21 @@ gen_Generic_binds gk tc metaTyCons mod = do
   repTyInsts <- tc_mkRepFamInsts gk tc metaTyCons mod
   return (mkBindsRep gk tc, repTyInsts)
 
-genGenericMetaTyCons :: TyCon -> Module -> TcM (MetaTyCons, BagDerivStuff)
-genGenericMetaTyCons tc mod =
-  do  loc <- getSrcSpanM
+genGenericMetaTyCons :: TyCon -> TcM (MetaTyCons, BagDerivStuff)
+genGenericMetaTyCons tc =
+  do  currentMod <- getModule
+      loc <- getSrcSpanM
       let
         tc_name   = tyConName tc
+        mod       = nameModule tc_name
         tc_cons   = tyConDataCons tc
         tc_arits  = map dataConSourceArity tc_cons
 
         tc_occ    = nameOccName tc_name
-        d_occ     = mkGenD tc_occ
-        c_occ m   = mkGenC tc_occ m
-        s_occ m n = mkGenS tc_occ m n
+        mod_name  = moduleNameString (moduleName mod)
+        d_occ     = mkGenD mod_name tc_occ
+        c_occ m   = mkGenC mod_name tc_occ m
+        s_occ m n = mkGenS mod_name tc_occ m n
 
         mkTyCon name = ASSERT( isExternalName name )
                        buildAlgTyCon name [] [] Nothing [] distinctAbstractTyConRhs
@@ -91,11 +94,11 @@ genGenericMetaTyCons tc mod =
                                           False          -- Not GADT syntax
                                           NoParentTyCon
 
-      d_name  <- newGlobalBinder mod d_occ loc
+      d_name  <- newGlobalBinder currentMod d_occ loc
       c_names <- forM (zip [0..] tc_cons) $ \(m,_) ->
-                    newGlobalBinder mod (c_occ m) loc
+                    newGlobalBinder currentMod (c_occ m) loc
       s_names <- forM (zip [0..] tc_arits) $ \(m,a) -> forM [0..a-1] $ \n ->
-                    newGlobalBinder mod (s_occ m n) loc
+                    newGlobalBinder currentMod (s_occ m n) loc
 
       let metaDTyCon  = mkTyCon d_name
           metaCTyCons = map mkTyCon c_names
