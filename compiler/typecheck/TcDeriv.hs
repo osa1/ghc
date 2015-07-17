@@ -487,14 +487,18 @@ type CommonAuxiliaries = [(TyCon, CommonAuxiliary)] -- NSF what is a more effici
 
 commonAuxiliaries :: [DerivSpec ()] -> TcM (CommonAuxiliaries, BagDerivStuff)
 commonAuxiliaries = foldM snoc ([], emptyBag) where
+  snoc :: (CommonAuxiliaries, BagDerivStuff)
+       -> DerivSpec () -> TcM (CommonAuxiliaries, BagDerivStuff)
   snoc acc@(cas, stuff) (DS {ds_name = nm, ds_cls = cls, ds_tc = rep_tycon})
     | getUnique cls `elem` [genClassKey, gen1ClassKey] =
       extendComAux $ genGenericMetaTyCons rep_tycon (nameModule nm)
     | otherwise = return acc
-   where extendComAux m -- don't run m if its already in the accumulator
+   where extendComAux :: TcM (MetaTyCons, BagDerivStuff)
+                      -> TcM (CommonAuxiliaries, BagDerivStuff)
+         extendComAux m -- don't run m if its already in the accumulator
            | any ((rep_tycon ==) . fst) cas = return acc
            | otherwise = do (ca, new_stuff) <- m
-                            return $ ((rep_tycon, ca) : cas, stuff `unionBags` new_stuff)
+                            return ((rep_tycon, ca) : cas, stuff `unionBags` new_stuff)
 
 renameDeriv :: Bool
             -> [InstInfo RdrName]
