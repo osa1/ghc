@@ -497,8 +497,9 @@ commonAuxiliaries = foldM snoc ([], emptyBag) where
                       -> TcM (CommonAuxiliaries, BagDerivStuff)
          extendComAux m -- don't run m if its already in the accumulator
            | any ((rep_tycon ==) . fst) cas = return acc
-           | otherwise = do (ca, new_stuff) <- m
-                            return ((rep_tycon, ca) : cas, stuff `unionBags` new_stuff)
+           | otherwise = do
+             (ca, new_stuff) <- m
+             return ((rep_tycon, ca) : cas, stuff `unionBags` new_stuff)
 
 renameDeriv :: Bool
             -> [InstInfo RdrName]
