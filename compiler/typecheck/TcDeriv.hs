@@ -2077,9 +2077,9 @@ genDerivStuff :: SrcSpan -> Class -> Name -> TyCon
               -> TcM (LHsBinds RdrName, BagDerivStuff)
 genDerivStuff loc clas dfun_name tycon comaux_maybe
   | let ck = classKey clas
-  , ck `elem` [genClassKey, gen1ClassKey]   -- Special case because monadic
-  = let gk = if ck == genClassKey then Gen0 else Gen1
-        -- TODO NSF: correctly identify when we're building Both instead of One
+  , -- Special case because monadic
+    Just gk <- lookup ck [(genClassKey, Gen0), (gen1ClassKey, Gen1)]
+  = let -- TODO NSF: correctly identify when we're building Both instead of One
         Just metaTyCons = comaux_maybe -- well-guarded by commonAuxiliaries and genInst
     in do
       (binds, faminst) <- gen_Generic_binds gk tycon metaTyCons (nameModule dfun_name)
