@@ -6,7 +6,7 @@ The deriving code for the Generic class
 (equivalent to the code in TcGenDeriv, for other classes)
 -}
 
-{-# LANGUAGE CPP, ScopedTypeVariables #-}
+{-# LANGUAGE CPP, ScopedTypeVariables, TupleSections #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 module TcGenGenerics (canDoGenerics, canDoGenerics1,
@@ -116,11 +116,13 @@ metaTyConsToDerivStuff tc metaDts =
       dClas <- tcLookupClass datatypeClassName
       d_dfun_name <- new_dfun_name dClas tc
       cClas <- tcLookupClass constructorClassName
-      c_dfun_names <- sequence [ new_dfun_name cClas tc | _ <- metaC metaDts ]
+      c_dfun_names <- sequence [ (conTy,) <$> new_dfun_name cClas tc
+                               | conTy <- metaC metaDts ]
       sClas <- tcLookupClass selectorClassName
-      s_dfun_names <- sequence (map sequence [ [ new_dfun_name sClas tc
-                                               | _ <- x ]
-                                             | x <- metaS metaDts ])
+      s_dfun_names <-
+        sequence (map sequence [ [ (selector,) <$> new_dfun_name sClas tc
+                                 | selector <- selectors ]
+                               | selectors <- metaS metaDts ])
       fix_env <- getFixityEnv
 
       let
@@ -144,9 +146,7 @@ metaTyConsToDerivStuff tc metaDts =
         d_mkInst = DerivInst (InstInfo { iSpec = d_inst, iBinds = d_binds })
 
         -- Constructor
-        c_metaTycons = metaC metaDts
-        c_insts = [ mk_inst cClas c ds
-                  | (c, ds) <- myZip1 c_metaTycons c_dfun_names ]
+        c_insts = [ mk_inst cClas c ds | (c, ds) <- c_dfun_names ]
         c_binds = [ InstBindings { ib_binds = c
                                  , ib_tyvars = []
                                  , ib_pragmas = []
@@ -157,9 +157,7 @@ metaTyConsToDerivStuff tc metaDts =
                    | (is,bs) <- myZip1 c_insts c_binds ]
 
         -- Selector
-        s_metaTycons = metaS metaDts
-        s_insts = map (map (\(s,ds) -> mk_inst sClas s ds))
-                      (myZip2 s_metaTycons s_dfun_names)
+        s_insts = map (map (\(s,ds) -> mk_inst sClas s ds)) s_dfun_names
         s_binds = [ [ InstBindings { ib_binds = s
                                    , ib_tyvars = []
                                    , ib_pragmas = []
