@@ -1444,13 +1444,6 @@ non_coercible_class cls
                          , genClassKey, gen1ClassKey, typeableClassKey
                          , traversableClassKey ])
 
-new_dfun_name :: Class -> TyCon -> TcM Name
-new_dfun_name clas tycon        -- Just a simple wrapper
-  = do { loc <- getSrcSpanM     -- The location of the instance decl, not of the tycon
-        ; newDFunName clas [mkTyConApp tycon []] loc }
-        -- The type passed to newDFunName is only used to generate
-        -- a suitable string; hence the empty type arg list
-
 badCon :: DataCon -> SDoc -> SDoc
 badCon con msg = ptext (sLit "Constructor") <+> quotes (ppr con) <+> msg
 

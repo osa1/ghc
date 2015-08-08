@@ -112,10 +112,8 @@ genGenericMetaTyCons tc =
 -- both the tycon declarations and related instances
 metaTyConsToDerivStuff :: TyCon -> MetaTyCons -> TcM BagDerivStuff
 metaTyConsToDerivStuff tc metaDts =
-  do  loc <- getSrcSpanM
-      dflags <- getDynFlags
+  do  dflags <- getDynFlags
       dClas <- tcLookupClass datatypeClassName
-      let new_dfun_name clas tycon = newDFunName clas [mkTyConApp tycon []] loc
       d_dfun_name <- new_dfun_name dClas tc
       cClas <- tcLookupClass constructorClassName
       c_dfun_names <- sequence [ new_dfun_name cClas tc | _ <- metaC metaDts ]
