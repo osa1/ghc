@@ -60,7 +60,7 @@ module OccName (
         mkDerivedTyConOcc, mkNewTyCoOcc, mkClassOpAuxOcc,
         mkCon2TagOcc, mkTag2ConOcc, mkMaxTagOcc,
         mkClassDataConOcc, mkDictOcc, mkIPOcc,
-        mkSpecOcc, mkForeignExportOcc, mkRepEqOcc, mkGenOcc1, mkGenOcc2,
+        mkSpecOcc, mkForeignExportOcc, mkRepEqOcc,
         mkGenD, mkGenR, mkGen1R, mkGenRCo, mkGenC, mkGenS,
         mkDataTOcc, mkDataCOcc, mkDataConWorkerOcc,
         mkSuperDictSelOcc, mkSuperDictAuxOcc,
@@ -602,7 +602,7 @@ mkDataConWrapperOcc, mkWorkerOcc,
         mkMatcherOcc, mkBuilderOcc,
         mkDefaultMethodOcc,
         mkGenDefMethodOcc, mkDerivedTyConOcc, mkClassDataConOcc, mkDictOcc,
-        mkIPOcc, mkSpecOcc, mkForeignExportOcc, mkRepEqOcc, mkGenOcc1, mkGenOcc2,
+        mkIPOcc, mkSpecOcc, mkForeignExportOcc, mkRepEqOcc,
         mkGenR, mkGen1R, mkGenRCo,
         mkDataTOcc, mkDataCOcc, mkDataConWorkerOcc, mkNewTyCoOcc,
         mkInstTyCoOcc, mkEqPredCoOcc, mkClassOpAuxOcc,
@@ -633,10 +633,6 @@ mkEqPredCoOcc       = mk_simple_deriv tcName   "$co"
 mkCon2TagOcc        = mk_simple_deriv varName  "$con2tag_"
 mkTag2ConOcc        = mk_simple_deriv varName  "$tag2con_"
 mkMaxTagOcc         = mk_simple_deriv varName  "$maxtag_"
-
--- Generic derivable classes (old)
-mkGenOcc1           = mk_simple_deriv varName  "$gfrom"
-mkGenOcc2           = mk_simple_deriv varName  "$gto"
 
 -- Generic deriving mechanism (new)
 mkGenD :: String -> OccName -> OccName
