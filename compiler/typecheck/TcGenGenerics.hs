@@ -77,16 +77,14 @@ genGenericMetaTyCons tc =
       loc <- getSrcSpanM
       let
         tc_name   = tyConName tc
-        mod       = nameModule tc_name
         tc_cons   = tyConDataCons tc
         tc_arits  = map dataConSourceArity tc_cons
 
         tc_occ    = nameOccName tc_name
-        mod_name  = moduleNameString (moduleName mod)
-        d_occ     = mkGenD mod_name tc_occ
-        c_occ m   = mkGenC mod_name tc_occ m
-        s_occ m n = mkGenS mod_name tc_occ m n
+        c_occ m   = chooseUniqueOccTc (mkGenC tc_occ m)
+        s_occ m n = chooseUniqueOccTc (mkGenS tc_occ m n)
 
+        mkTyCon :: Name -> TyCon
         mkTyCon name = ASSERT( isExternalName name )
                        buildAlgTyCon name [] [] Nothing [] distinctAbstractTyConRhs
                                           NonRecursive
@@ -94,11 +92,15 @@ genGenericMetaTyCons tc =
                                           False          -- Not GADT syntax
                                           NoParentTyCon
 
+      d_occ <- chooseUniqueOccTc (mkGenD (occNameString tc_occ))
+
       d_name  <- newGlobalBinder currentMod d_occ loc
-      c_names <- forM (zip [0..] tc_cons) $ \(m,_) ->
-                    newGlobalBinder currentMod (c_occ m) loc
-      s_names <- forM (zip [0..] tc_arits) $ \(m,a) -> forM [0..a-1] $ \n ->
-                    newGlobalBinder currentMod (s_occ m n) loc
+      c_names <- forM (zip [0..] tc_cons) $ \(m,_) -> do
+                    unique_occ <- c_occ m
+                    newGlobalBinder currentMod unique_occ loc
+      s_names <- forM (zip [0..] tc_arits) $ \(m,a) -> forM [0..a-1] $ \n -> do
+                    unique_occ <- s_occ m n
+                    newGlobalBinder currentMod unique_occ loc
 
       let metaDTyCon  = mkTyCon d_name
           metaCTyCons = map mkTyCon c_names
