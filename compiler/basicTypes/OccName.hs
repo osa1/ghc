@@ -634,22 +634,19 @@ mkCon2TagOcc        = mk_simple_deriv varName  "$con2tag_"
 mkTag2ConOcc        = mk_simple_deriv varName  "$tag2con_"
 mkMaxTagOcc         = mk_simple_deriv varName  "$maxtag_"
 
--- Generic deriving mechanism
-mkGenD :: String -- ^ Usually just the data type name that we derive Generic for
-       -> OccSet -- ^ Avoid these Occs
-       -> OccName
-mkGenD info_str =
-  chooseUniqueOcc VarName ("D1_GenDerivOutput_" ++ info_str)
+-- Generic deriving mechanism (new)
+mkGenD :: String -> OccName -> OccName
+mkGenD modName = mk_simple_deriv tcName ("D1_" ++ modName ++ "_")
 
-mkGenC :: OccName -> Int -> OccSet -> OccName
-mkGenC occ m =
-  chooseUniqueOcc VarName $
-    "C1_" ++ show m ++ "GenDerivOutput_" ++ occNameString occ
+mkGenC :: String -> OccName -> Int -> OccName
+mkGenC modName occ m   =
+  mk_deriv tcName ("C1_" ++ show m) $
+    modName ++ "_" ++ occNameString occ
 
-mkGenS :: OccName -> Int -> Int -> OccSet -> OccName
-mkGenS occ m n =
-  chooseUniqueOcc VarName $
-    "S1_" ++ show m ++ "_" ++ show n ++ "GenDerivOutput_" ++ occNameString occ
+mkGenS :: String -> OccName -> Int -> Int -> OccName
+mkGenS modName occ m n =
+  mk_deriv tcName ("S1_" ++ show m ++ "_" ++ show n) $
+    modName ++ "_" ++ occNameString occ
 
 mkGenR   = mk_simple_deriv tcName "Rep_"
 mkGen1R  = mk_simple_deriv tcName "Rep1_"
