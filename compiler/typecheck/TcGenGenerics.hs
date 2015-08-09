@@ -107,7 +107,6 @@ genGenericMetaTyCons tc =
 
           metaDts = MetaTyCons metaDTyCon metaCTyCons metaSTyCons
 
-      -- pprTrace "rep0" (ppr rep0_tycon) $
       (,) metaDts `fmap` metaTyConsToDerivStuff tc metaDts
 
 -- both the tycon declarations and related instances
