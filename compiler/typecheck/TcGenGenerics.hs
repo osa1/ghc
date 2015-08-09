@@ -78,11 +78,12 @@ genGenericMetaTyCons tc =
       let
         tc_name   = tyConName tc
         mod       = nameModule tc_name
+        pk        = packageKeyString (modulePackageKey mod)
         tc_cons   = tyConDataCons tc
         tc_arits  = map dataConSourceArity tc_cons
 
         tc_occ    = nameOccName tc_name
-        mod_name  = moduleNameString (moduleName mod)
+        mod_name  = pk ++ "_" ++ moduleNameString (moduleName mod)
         d_occ     = mkGenD mod_name tc_occ
         c_occ m   = mkGenC mod_name tc_occ m
         s_occ m n = mkGenS mod_name tc_occ m n

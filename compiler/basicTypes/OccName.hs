@@ -634,19 +634,19 @@ mkCon2TagOcc        = mk_simple_deriv varName  "$con2tag_"
 mkTag2ConOcc        = mk_simple_deriv varName  "$tag2con_"
 mkMaxTagOcc         = mk_simple_deriv varName  "$maxtag_"
 
--- Generic deriving mechanism (new)
+-- Generic deriving mechanism
 mkGenD :: String -> OccName -> OccName
-mkGenD modName = mk_simple_deriv tcName ("D1_" ++ modName ++ "_")
+mkGenD prefix = mk_simple_deriv tcName ("D1_" ++ prefix ++ "_")
 
 mkGenC :: String -> OccName -> Int -> OccName
-mkGenC modName occ m   =
+mkGenC prefix occ m   =
   mk_deriv tcName ("C1_" ++ show m) $
-    modName ++ "_" ++ occNameString occ
+    prefix ++ "_" ++ occNameString occ
 
 mkGenS :: String -> OccName -> Int -> Int -> OccName
-mkGenS modName occ m n =
+mkGenS prefix occ m n =
   mk_deriv tcName ("S1_" ++ show m ++ "_" ++ show n) $
-    modName ++ "_" ++ occNameString occ
+    prefix ++ "_" ++ occNameString occ
 
 mkGenR   = mk_simple_deriv tcName "Rep_"
 mkGen1R  = mk_simple_deriv tcName "Rep1_"
