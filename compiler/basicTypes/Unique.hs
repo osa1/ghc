@@ -43,6 +43,7 @@ module Unique (
         mkAlphaTyVarUnique,
         mkPrimOpIdUnique,
         mkTupleTyConUnique, mkTupleDataConUnique,
+        mkSumTyConUnique, mkSumDataConUnique,
         mkCTupleTyConUnique,
         mkPreludeMiscIdUnique, mkPreludeDataConUnique,
         mkPreludeTyConUnique, mkPreludeClassUnique,
@@ -298,15 +299,20 @@ Allocation of unique supply characters:
         n       Native codegen
         r       Hsc name cache
         s       simplifier
+        z       unboxed sums
 -}
 
 mkAlphaTyVarUnique     :: Int -> Unique
 mkPreludeClassUnique   :: Int -> Unique
 mkPreludeTyConUnique   :: Int -> Unique
 mkTupleTyConUnique     :: Boxity -> Arity -> Unique
+mkSumTyConUnique       :: Arity -> Unique
 mkCTupleTyConUnique    :: Arity -> Unique
 mkPreludeDataConUnique :: Arity -> Unique
 mkTupleDataConUnique   :: Boxity -> Arity -> Unique
+mkSumDataConUnique     :: Int    -- ^ Alternative
+                       -> Arity  -- ^ Arity
+                       -> Unique
 mkPrimOpIdUnique       :: Int -> Unique
 mkPreludeMiscIdUnique  :: Int -> Unique
 mkPArrDataConUnique    :: Int -> Unique
@@ -324,6 +330,7 @@ mkPreludeTyConUnique i                = mkUnique '3' (2*i)
 mkTupleTyConUnique Boxed           a  = mkUnique '4' (2*a)
 mkTupleTyConUnique Unboxed         a  = mkUnique '5' (2*a)
 mkCTupleTyConUnique                a  = mkUnique 'k' (2*a)
+mkSumTyConUnique                   a  = mkUnique 'z' (3*a)
 
 tyConRepNameUnique :: Unique -> Unique
 tyConRepNameUnique  u = incrUnique u
@@ -344,6 +351,10 @@ tyConRepNameUnique  u = incrUnique u
 mkPreludeDataConUnique i              = mkUnique '6' (3*i)    -- Must be alphabetic
 mkTupleDataConUnique Boxed          a = mkUnique '7' (3*a)    -- ditto (*may* be used in C labels)
 mkTupleDataConUnique Unboxed        a = mkUnique '8' (3*a)
+mkSumDataConUnique a b | a >= b =
+    panic ("mkSumDataConUnique: index out of bounds: "
+           ++ show a ++ " >= " ++ show b)
+mkSumDataConUnique         a b = mkUnique 'z' (2*a*b)
 
 dataConRepNameUnique, dataConWorkerUnique :: Unique -> Unique
 dataConWorkerUnique  u = incrUnique u
