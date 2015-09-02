@@ -410,6 +410,11 @@ rnHsTyKi what doc tupleTy@(HsTupleTy tup_con tys)
        ; (tys', fvs) <- mapFvRn (rnLHsTyKi what doc) tys
        ; return (HsTupleTy tup_con tys', fvs) }
 
+rnHsTyKi what doc (HsUSumTy tys)
+  = do { unless (isRnType what) (addErr (text "Unboxed sum kinds not supported"))
+       ; (tys', fvs) <- mapFvRn (rnLHsTyKi what doc) tys
+       ; return (HsUSumTy tys', fvs) }
+
 -- Ensure that a type-level integer is nonnegative (#8306, #8412)
 rnHsTyKi what _ tyLit@(HsTyLit t)
   = do { data_kinds <- xoptM Opt_DataKinds
@@ -1239,6 +1244,7 @@ extract_lty (L _ ty) acc
       HsListTy ty               -> extract_lty ty acc
       HsPArrTy ty               -> extract_lty ty acc
       HsTupleTy _ tys           -> extract_ltys tys acc
+      HsUSumTy tys              -> extract_ltys tys acc
       HsFunTy ty1 ty2           -> extract_lty ty1 (extract_lty ty2 acc)
       HsIParamTy _ ty           -> extract_lty ty acc
       HsEqTy ty1 ty2            -> extract_lty ty1 (extract_lty ty2 acc)
