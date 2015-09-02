@@ -27,6 +27,7 @@ module TyCon(
         mkKindTyCon,
         mkLiftedPrimTyCon,
         mkTupleTyCon,
+        mkSumTyCon,
         mkSynonymTyCon,
         mkFamilyTyCon,
         mkPromotedDataCon,
@@ -631,6 +632,10 @@ data AlgTyConRhs
                                    -- tuple?
     }
 
+  | SumTyCon {                  -- ^ An unboxed sum
+        data_cons :: [DataCon]
+    }
+
   -- | Information about those 'TyCon's derived from a @newtype@ declaration
   | NewTyCon {
         data_con :: DataCon,    -- ^ The unique constructor for the @newtype@.
@@ -670,6 +675,7 @@ visibleDataCons (AbstractTyCon {})            = []
 visibleDataCons (DataTyCon{ data_cons = cs }) = cs
 visibleDataCons (NewTyCon{ data_con = c })    = [c]
 visibleDataCons (TupleTyCon{ data_con = c })  = [c]
+visibleDataCons (SumTyCon{ data_cons = cs })  = cs
 
 -- ^ Both type classes as well as family instances imply implicit
 -- type constructors.  These implicit type constructors refer to their parent
@@ -1181,6 +1187,29 @@ mkTupleTyCon name kind arity tyvars con sort parent
         algTcGadtSyntax  = False
     }
 
+mkSumTyCon :: Name
+             -> Kind    -- ^ Kind of the resulting 'TyCon'
+             -> Arity   -- ^ Arity of the sum
+             -> [TyVar] -- ^ 'TyVar's scoped over: see 'tyConTyVars'
+             -> [DataCon]
+             -> AlgTyConFlav
+             -> TyCon
+mkSumTyCon name kind arity tyvars cons parent
+  = AlgTyCon {
+        tyConName        = name,
+        tyConUnique      = nameUnique name,
+        tyConKind        = kind,
+        tyConArity       = arity,
+        tyConTyVars      = tyvars,
+        tcRoles          = replicate arity Representational,
+        tyConCType       = Nothing,
+        algTcStupidTheta = [],
+        algTcRhs         = SumTyCon { data_cons = cons },
+        algTcParent      = parent,
+        algTcRec         = NonRecursive,
+        algTcGadtSyntax  = False
+    }
+
 -- | Makes a tycon suitable for use during type-checking.
 -- The only real need for this is for printing error messages during
 -- a recursive type/class type-checking knot. It has a kind because
@@ -1310,6 +1339,9 @@ isUnLiftedTyCon (PrimTyCon  {isUnLifted = is_unlifted})
 isUnLiftedTyCon (AlgTyCon { algTcRhs = rhs } )
   | TupleTyCon { tup_sort = sort } <- rhs
   = not (isBoxed (tupleSortBoxity sort))
+isUnLiftedTyCon (AlgTyCon { algTcRhs = rhs } )
+  | SumTyCon {} <- rhs
+  = True
 isUnLiftedTyCon _ = False
 
 -- | Returns @True@ if the supplied 'TyCon' resulted from either a
@@ -1339,6 +1371,7 @@ isDataTyCon (AlgTyCon {algTcRhs = rhs})
   = case rhs of
         TupleTyCon { tup_sort = sort }
                            -> isBoxed (tupleSortBoxity sort)
+        SumTyCon {}        -> False
         DataTyCon {}       -> True
         NewTyCon {}        -> False
         AbstractTyCon {}   -> False      -- We don't know, so return False
@@ -1379,6 +1412,7 @@ isGenerativeTyCon tc               r = isInjectiveTyCon tc r
 -- with respect to representational equality?
 isGenInjAlgRhs :: AlgTyConRhs -> Bool
 isGenInjAlgRhs (TupleTyCon {})          = True
+isGenInjAlgRhs (SumTyCon {})            = True
 isGenInjAlgRhs (DataTyCon {})           = True
 isGenInjAlgRhs (AbstractTyCon distinct) = distinct
 isGenInjAlgRhs (NewTyCon {})            = False
@@ -1640,6 +1674,7 @@ isImplicitTyCon (PrimTyCon {})       = True
 isImplicitTyCon (PromotedDataCon {}) = True
 isImplicitTyCon (AlgTyCon { algTcRhs = rhs, tyConName = name })
   | TupleTyCon {} <- rhs             = isWiredInName name
+  | SumTyCon {} <- rhs               = True
   | otherwise                        = False
 isImplicitTyCon (FamilyTyCon { famTcParent = parent }) = isJust parent
 isImplicitTyCon (SynonymTyCon {})    = False
@@ -1715,6 +1750,7 @@ tyConDataCons_maybe (AlgTyCon {algTcRhs = rhs})
        DataTyCon { data_cons = cons } -> Just cons
        NewTyCon { data_con = con }    -> Just [con]
        TupleTyCon { data_con = con }  -> Just [con]
+       SumTyCon { data_cons = cons }  -> Just cons
        _                              -> Nothing
 tyConDataCons_maybe _ = Nothing
 
@@ -1756,6 +1792,7 @@ tyConFamilySize tc@(AlgTyCon { algTcRhs = rhs })
       DataTyCon { data_cons = cons } -> length cons
       NewTyCon {}                    -> 1
       TupleTyCon {}                  -> 1
+      SumTyCon { data_cons = cons }  -> length cons
       _                              -> pprPanic "tyConFamilySize 1" (ppr tc)
 tyConFamilySize tc = pprPanic "tyConFamilySize 2" (ppr tc)
 
@@ -1932,6 +1969,7 @@ tyConFlavour (AlgTyCon { algTcParent = parent, algTcRhs = rhs })
                   TupleTyCon { tup_sort = sort }
                      | isBoxed (tupleSortBoxity sort) -> "tuple"
                      | otherwise                      -> "unboxed tuple"
+                  SumTyCon {}        -> "unboxed sum"
                   DataTyCon {}       -> "data type"
                   NewTyCon {}        -> "newtype"
                   AbstractTyCon {}   -> "abstract type"
