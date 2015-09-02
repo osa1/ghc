@@ -783,6 +783,7 @@ tcCheckPatSynPat = go
     go1   (PArrPat pats _)    = mapM_ go pats
     go1   (ListPat pats _ _)  = mapM_ go pats
     go1   (TuplePat pats _ _) = mapM_ go pats
+    go1   (SumPat pat _ _ _)  = go pat
     go1   LitPat{}            = return ()
     go1   NPat{}              = return ()
     go1   (SigPatIn pat _)    = go pat
@@ -861,6 +862,8 @@ tcPatToExpr args = go
     go1   (TuplePat pats box _)       = do { exprs <- mapM go pats
                                            ; return $ ExplicitTuple
                                                 (map (noLoc . Present) exprs) box }
+    go1   (SumPat pat alt arity _)    = do { expr <- go pat
+                                           ; return (HsSum alt arity expr PlaceHolder) }
     go1   (LitPat lit)                = return $ HsLit lit
     go1   (NPat (L _ n) Nothing _ _)  = return $ HsOverLit n
     go1   (NPat (L _ n) (Just neg) _ _)= return $ unLoc $ nlHsSyntaxApps neg [noLoc (HsOverLit n)]
@@ -888,6 +891,7 @@ tcCollectEx pat = go pat
     go1 (BangPat p)         = go p
     go1 (ListPat ps _ _)    = mconcat . map go $ ps
     go1 (TuplePat ps _ _)   = mconcat . map go $ ps
+    go1 (SumPat p _ _ _)    = go p
     go1 (PArrPat ps _)      = mconcat . map go $ ps
     go1 (ViewPat _ p _)     = go p
     go1 con@ConPatOut{}     = mappend (mkVarSet (pat_tvs con), pat_dicts con) $

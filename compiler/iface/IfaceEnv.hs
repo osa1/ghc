@@ -184,7 +184,7 @@ See Note [The Name Cache] above.
 
 Note [Built-in syntax and the OrigNameCache]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-You might think that usin isBuiltInOcc_maybe in lookupOrigNameCache is
+You might think that using isBuiltInOcc_maybe in lookupOrigNameCache is
 unnecessary because tuple TyCon/DataCons are parsed as Exact RdrNames
 and *don't* appear as original names in interface files (because
 serialization gives them special treatment), so we will never look

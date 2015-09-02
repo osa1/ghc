@@ -671,9 +671,11 @@ lintCoreExpr e@(Case scrut var alt_ty alts) =
      -- See Note [No alternatives lint check]
      ; when (null alts) $
      do { checkL (not (exprIsHNF scrut))
-          (text "No alternatives for a case scrutinee in head-normal form:" <+> ppr scrut)
+          (text "No alternatives for a case scrutinee in head-normal form:"
+            $$ ppr scrut $$ ppr e)
         ; checkL (exprIsBottom scrut)
-          (text "No alternatives for a case scrutinee not known to diverge for sure:" <+> ppr scrut)
+          (text "No alternatives for a case scrutinee not known to diverge for sure:"
+            $$ ppr scrut $$ ppr e)
         }
 
      -- See Note [Rules for floating-point comparisons] in PrelRules
@@ -1344,6 +1346,8 @@ lintCoercion co@(UnivCo prov r ty1 ty2)
      isUnBoxed :: PrimRep -> Bool
      isUnBoxed PtrRep = False
      isUnBoxed _      = True
+
+     checkTypes :: Type -> Type -> LintM ()
      checkTypes t1 t2
        = case (repType t1, repType t2) of
            (UnaryRep _, UnaryRep _) ->
@@ -1353,7 +1357,18 @@ lintCoercion co@(UnivCo prov r ty1 ty2)
               checkWarnL (length rep1 == length rep2)
                          (report "unboxed tuples of different length")
               zipWithM_ checkTypes rep1 rep2
+           (UbxSumRep ubx_fields1 bx_fields1, UbxSumRep ubx_fields2 bx_fields2) -> do
+              checkWarnL (length ubx_fields1 == length ubx_fields2)
+                         (report "unboxed sums of different number of unboxed fields")
+              checkWarnL (length bx_fields1 == length bx_fields2)
+                         (report "unboxed sums of different number of boxed fields")
+
+              -- This is currently useless: All unboxed fields have same type
+              -- and all boxed fields are 'Any'.
+              zipWithM_ checkTypes ubx_fields1 ubx_fields2
+              zipWithM_ checkTypes bx_fields1  bx_fields2
            _  -> addWarnL (report "unboxed tuple and ordinary type")
+
      validateCoercion :: PrimRep -> PrimRep -> LintM ()
      validateCoercion rep1 rep2
        = do { dflags <- getDynFlags
@@ -1812,9 +1827,11 @@ mkDefaultArgsMsg args
          4 (ppr args)
 
 mkCaseAltMsg :: CoreExpr -> Type -> Type -> MsgDoc
-mkCaseAltMsg e ty1 ty2
+mkCaseAltMsg expr actual_ty ann_ty
   = hang (text "Type of case alternatives not the same as the annotation on case:")
-         4 (vcat [ppr ty1, ppr ty2, ppr e])
+         4 (vcat [ text "actual ty:" <+> ppr actual_ty,
+                   text "annotated ty:" <+> ppr ann_ty,
+                   text "expr:" <+> ppr expr ])
 
 mkScrutMsg :: Id -> Type -> Type -> TCvSubst -> MsgDoc
 mkScrutMsg var var_ty scrut_ty subst

@@ -22,7 +22,7 @@ import DynFlags
 import Module           ( Module )
 import ErrUtils
 import SrcLoc
-import UniqSupply       ( mkSplitUniqSupply, splitUniqSupply )
+import UniqSupply       ( initUs_, mkSplitUniqSupply, splitUniqSupply )
 import Outputable
 import Control.Monad
 
@@ -46,7 +46,12 @@ stg2stg dflags module_name binds
         ; (processed_binds, _, cost_centres)
                 <- foldM do_stg_pass (binds', us0, ccs) (getStgToDo dflags)
 
-        ; let un_binds = unarise us1 processed_binds
+        ; let (us2, us3) = splitUniqSupply us1
+
+        ; dumpIfSet_dyn dflags Opt_D_dump_stg "pre-unarisation:"
+                        (pprStgBindings processed_binds)
+
+        ; let un_binds = unarise us3 processed_binds
 
         ; dumpIfSet_dyn dflags Opt_D_dump_stg "STG syntax:"
                         (pprStgBindings un_binds)

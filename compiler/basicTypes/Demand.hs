@@ -5,10 +5,10 @@
 \section[Demand]{@Demand@: A decoupled implementation of a demand domain}
 -}
 
-{-# LANGUAGE CPP, FlexibleInstances, TypeSynonymInstances #-}
+{-# LANGUAGE CPP, FlexibleInstances, TypeSynonymInstances, TupleSections #-}
 
 module Demand (
-        StrDmd, UseDmd(..), Count(..),
+        StrDmd(..), UseDmd(..), Count(..), Str(..),
         countOnce, countMany,   -- cardinality
 
         Demand, CleanDemand, getStrDmd, getUseDmd,
@@ -18,8 +18,9 @@ module Demand (
         lubDmd, bothDmd,
         lazyApply1Dmd, lazyApply2Dmd, strictApply1Dmd,
         catchArgDmd,
-        isTopDmd, isAbsDmd, isSeqDmd,
+        isTopDmd, isAbsDmd, isSeqDmd, isLazyDmd,
         peelUseCall, cleanUseDmd_maybe, strictenDmd, bothCleanDmd,
+        insertSumDemands, extractSumDemandAlt,
         addCaseBndrDmd,
 
         DmdType(..), dmdTypeDepth, lubDmdType, bothDmdType,
@@ -32,11 +33,12 @@ module Demand (
 
         DmdResult, CPRResult,
         isBotRes, isTopRes,
-        topRes, botRes, exnRes, cprProdRes,
+        topRes, botRes, exnRes,
         vanillaCprProdRes, cprSumRes,
         appIsBottom, isBottomingSig, pprIfaceStrictSig,
         trimCPRInfo, returnsCPR_maybe,
         StrictSig(..), mkStrictSig, mkClosedStrictSig, nopSig, botSig, cprProdSig,
+        cprSumSig,
         isNopSig, splitStrictSig, increaseStrictSigArity,
 
         seqDemand, seqDemandList, seqDmdType, seqStrictSig,
@@ -53,7 +55,9 @@ module Demand (
 
         useCount, isUsedOnce, reuseEnv,
         killUsageDemand, killUsageSig, zapUsageDemand,
-        strictifyDictDmd
+        strictifyDictDmd,
+
+        mkSProd
 
      ) where
 
@@ -71,7 +75,13 @@ import Maybes           ( orElse )
 
 import Type            ( Type, isUnliftedType )
 import TyCon           ( isNewTyCon, isClassTyCon )
-import DataCon         ( splitDataProductType_maybe )
+import DataCon         ( splitDataProductType_maybe, dataConTag, DataCon )
+
+import CoreSyn
+
+import Data.List (foldl')
+import qualified Data.IntSet as IS
+import qualified Data.IntMap.Strict as IM
 
 {-
 ************************************************************************
@@ -177,6 +187,12 @@ data StrDmd
                          -- Invariant: not all components are HyperStr (use HyperStr)
                          --            not all components are Lazy     (use HeadStr)
 
+  | SSum (IM.IntMap StrDmd)
+                       -- Sum (map keys are ConTags)
+                       -- INVARIANT: Values of this int map always need to be
+                       -- either HyperStr, HeadStr <- in the case of nullary constructors
+                       --        or SProd          <- otherwise
+
   | HeadStr              -- Head-Strict
                          -- A polymorphic demand: used for values of all types,
                          --                       including a type variable
@@ -212,6 +228,14 @@ mkSProd sx
   | all isLazy     sx = HeadStr
   | otherwise         = SProd sx
 
+mkSProdExnStr :: [ArgStr] -> (StrDmd, ExnStr)
+mkSProdExnStr argStrs =
+    -- NOTE: We don't want to use mkSProd here, for reasons TODO: explain
+    (SProd argStrs, foldl' lubExnStr VanStr (map get_str argStrs))
+  where
+    get_str Lazy        = VanStr
+    get_str (Str exn _) = exn
+
 isLazy :: ArgStr -> Bool
 isLazy Lazy     = True
 isLazy (Str {}) = False
@@ -226,6 +250,8 @@ instance Outputable StrDmd where
   ppr (SCall s)     = char 'C' <> parens (ppr s)
   ppr HeadStr       = char 'S'
   ppr (SProd sx)    = char 'S' <> parens (hcat (map ppr sx))
+  ppr (SSum strs)   =
+    text "Sum" <> parens (pprWithBars ppr (IM.toList strs))
 
 instance Outputable ArgStr where
   ppr (Str x s)     = (case x of VanStr -> empty; ExnStr -> char 'x')
@@ -249,11 +275,25 @@ lubStr (SCall s1) (SCall s2)   = SCall (s1 `lubStr` s2)
 lubStr (SCall _)  (SProd _)    = HeadStr
 lubStr (SProd sx) HyperStr     = SProd sx
 lubStr (SProd _)  HeadStr      = HeadStr
-lubStr (SProd s1) (SProd s2)
+lubStr (SProd s1) (SProd s2) -- NOTE(osa): Why is this case not an error?
+                             -- Related with function types?
     | length s1 == length s2   = mkSProd (zipWith lubArgStr s1 s2)
     | otherwise                = HeadStr
 lubStr (SProd _) (SCall _)     = HeadStr
-lubStr HeadStr   _             = HeadStr
+
+lubStr (SSum s1) (SSum s2)     =
+  -- (lubStr should be on equaivalent sums, orStr should be this (make sure the
+  -- key setes are disjoint though))
+  SSum (IM.unionWith lubStr s1 s2)
+
+lubStr (SSum _) HeadStr       = HeadStr
+lubStr s@SSum{} HyperStr      = s
+
+lubStr s1@SSum{} s2@SProd{}   = pprPanic "lubStr" (ppr s1 $$ ppr s2)
+
+lubStr HeadStr   _            = HeadStr
+
+lubStr s1        s2           = pprPanic "lubStr" (ppr s1 $$ ppr s2)
 
 bothArgStr :: ArgStr -> ArgStr -> ArgStr
 bothArgStr Lazy        s           = s
@@ -277,12 +317,22 @@ bothStr (SProd s1) HeadStr     = SProd s1
 bothStr (SProd s1) (SProd s2)
     | length s1 == length s2   = mkSProd (zipWith bothArgStr s1 s2)
     | otherwise                = HyperStr  -- Weird
+
+
+bothStr (SSum s1) (SSum s2)    = SSum (IM.unionWith bothStr s1 s2)
+bothStr s1@SSum{} s2@SProd{}   = pprPanic "bothStr" (ppr s1 $$ ppr s2)
+bothStr s1@SSum{} HeadStr      = s1
+
+bothStr _         HyperStr     = HyperStr
 bothStr (SProd _) (SCall _)    = HyperStr
+
+bothStr s1        s2           = pprPanic "bothStr" (ppr s1 $$ ppr s2)
 
 -- utility functions to deal with memory leaks
 seqStrDmd :: StrDmd -> ()
 seqStrDmd (SProd ds)   = seqStrDmdList ds
-seqStrDmd (SCall s)     = s `seq` ()
+seqStrDmd (SSum s)     = s `seq` ()
+seqStrDmd (SCall s)    = s `seq` ()
 seqStrDmd _            = ()
 
 seqStrDmdList :: [ArgStr] -> ()
@@ -302,6 +352,7 @@ splitStrProdDmd :: Int -> StrDmd -> Maybe [ArgStr]
 splitStrProdDmd n HyperStr   = Just (replicate n strBot)
 splitStrProdDmd n HeadStr    = Just (replicate n strTop)
 splitStrProdDmd n (SProd ds) = ASSERT( ds `lengthIs` n) Just ds
+splitStrProdDmd _ dmd@SSum{} = pprPanic "found sum" (ppr dmd)
 splitStrProdDmd _ (SCall {}) = Nothing
       -- This can happen when the programmer uses unsafeCoerce,
       -- and we don't then want to crash the compiler (Trac #9208)
@@ -313,9 +364,9 @@ splitStrProdDmd _ (SCall {}) = Nothing
 *                                                                      *
 ************************************************************************
 
-         Used
-         /   \
-     UCall   UProd
+         Used -----
+         /   \     \
+     UCall   UProd USum
          \   /
          UHead
           |
@@ -334,6 +385,9 @@ data UseDmd
                          -- See Note [Don't optimise UProd(Used) to Used]
                          -- [Invariant] Not all components are Abs
                          --             (in that case, use UHead)
+
+  | USum (IM.IntMap UseDmd)
+                         -- INVARIANT: UseDmd is never UCall.
 
   | UHead                -- May be used; but its sub-components are
                          -- definitely *not* used.  Roughly U(AAA)
@@ -372,6 +426,7 @@ instance Outputable UseDmd where
   ppr (UCall c a)    = char 'C' <> ppr c <> parens (ppr a)
   ppr UHead          = char 'H'
   ppr (UProd as)     = char 'U' <> parens (hcat (punctuate (char ',') (map ppr as)))
+  ppr (USum as)      = char 'S' <> parens (pprWithBars ppr (IM.toList as))
 
 instance Outputable Count where
   ppr One  = char '1'
@@ -418,6 +473,16 @@ lubUse (UProd {}) (UCall {})       = Used
 -- lubUse (UProd {}) Used             = Used
 lubUse (UProd ux) Used             = UProd (map (`lubArgUse` useTop) ux)
 lubUse Used       (UProd ux)       = UProd (map (`lubArgUse` useTop) ux)
+
+lubUse (USum ux) Used              = USum (IM.map (`lubUse` Used) ux)
+lubUse (USum ux1) (USum ux2)       = USum (IM.unionWith lubUse ux1 ux2)
+lubUse Used (USum ux)              = USum (IM.map (`lubUse` Used) ux)
+
+lubUse dmd1@USum{} dmd2@UProd{}    = Used
+lubUse dmd1@UProd{} dmd2@USum{}    = Used
+lubUse dmd1@USum{} dmd2@UCall{}    = Used
+lubUse dmd1@USum{} UHead{}         = dmd1
+
 lubUse Used _                      = Used  -- Note [Used should win]
 
 -- `both` is different from `lub` in its treatment of counting; if
@@ -448,6 +513,15 @@ bothUse (UProd {}) (UCall {})       = Used
 -- bothUse (UProd {}) Used             = Used  -- Note [Used should win]
 bothUse Used (UProd ux)             = UProd (map (`bothArgUse` useTop) ux)
 bothUse (UProd ux) Used             = UProd (map (`bothArgUse` useTop) ux)
+
+bothUse Used       (USum ux)        = USum (IM.map (`bothUse` Used) ux)
+bothUse (USum ux)  Used             = USum (IM.map (`bothUse` Used) ux)
+bothUse (USum ux1) (USum ux2)       = USum (IM.unionWith bothUse ux1 ux2)
+bothUse UProd{}    USum{}           = Used
+bothUse USum{}     UProd{}          = Used
+bothUse USum{}     UCall{}          = Used
+bothUse u1@USum{}  UHead{}          = u1
+
 bothUse Used _                      = Used  -- Note [Used should win]
 
 peelUseCall :: UseDmd -> Maybe (Count, UseDmd)
@@ -458,15 +532,14 @@ addCaseBndrDmd :: Demand    -- On the case binder
                -> [Demand]  -- On the components of the constructor
                -> [Demand]  -- Final demands for the components of the constructor
 -- See Note [Demand on case-alternative binders]
-addCaseBndrDmd (JD { sd = ms, ud = mu }) alt_dmds
+addCaseBndrDmd case_bndr_dmd@(JD { sd = ms, ud = mu }) alt_dmds
   = case mu of
-     Abs     -> alt_dmds
-     Use _ u -> zipWith bothDmd alt_dmds (mkJointDmds ss us)
-             where
+      Abs     -> alt_dmds
+      Use _ u -> zipWith bothDmd alt_dmds (mkJointDmds ss us)
+              where
+                arity   = length alt_dmds
                 Just ss = splitArgStrProdDmd arity ms  -- Guaranteed not to be a call
-                Just us = splitUseProdDmd      arity u   -- Ditto
-  where
-    arity = length alt_dmds
+                Just us = splitUseProdDmd    arity u   -- Ditto
 
 {- Note [Demand on case-alternative binders]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -554,6 +627,7 @@ markReusedDmd (Use _ a)   = Use Many (markReused a)
 markReused :: UseDmd -> UseDmd
 markReused (UCall _ u)      = UCall Many u   -- No need to recurse here
 markReused (UProd ux)       = UProd (map markReusedDmd ux)
+markReused (USum ux)        = USum (IM.map markReused ux)
 markReused u                = u
 
 isUsedMU :: ArgUse -> Bool
@@ -567,12 +641,14 @@ isUsedU :: UseDmd -> Bool
 isUsedU Used           = True
 isUsedU UHead          = True
 isUsedU (UProd us)     = all isUsedMU us
+isUsedU (USum ux)      = all isUsedU (IM.elems ux)
 isUsedU (UCall One _)  = False
 isUsedU (UCall Many _) = True  -- No need to recurse
 
 -- Squashing usage demand demands
 seqUseDmd :: UseDmd -> ()
 seqUseDmd (UProd ds)   = seqArgUseList ds
+seqUseDmd (USum m)     = IM.map seqUseDmd m `seq` ()
 seqUseDmd (UCall c d)  = c `seq` seqUseDmd d
 seqUseDmd _            = ()
 
@@ -590,6 +666,7 @@ splitUseProdDmd n Used        = Just (replicate n useTop)
 splitUseProdDmd n UHead       = Just (replicate n Abs)
 splitUseProdDmd n (UProd ds)  = ASSERT2( ds `lengthIs` n, text "splitUseProdDmd" $$ ppr n $$ ppr ds )
                                 Just ds
+splitUseProdDmd _ dmd@USum{}  = pprPanic "splitUseProdDmd" (text "found sum:" <+> ppr dmd)
 splitUseProdDmd _ (UCall _ _) = Nothing
       -- This can happen when the programmer uses unsafeCoerce,
       -- and we don't then want to crash the compiler (Trac #9208)
@@ -736,6 +813,10 @@ isTopDmd :: Demand -> Bool
 isTopDmd (JD {sd = Lazy, ud = Use Many Used}) = True
 isTopDmd _                                    = False
 
+isLazyDmd :: Demand -> Bool
+isLazyDmd (JD {sd = Lazy}) = True
+isLazyDmd _                = False
+
 isAbsDmd :: Demand -> Bool
 isAbsDmd (JD {ud = Abs}) = True   -- The strictness part can be HyperStr
 isAbsDmd _               = False  -- for a bottom demand
@@ -770,6 +851,55 @@ cleanUseDmd_maybe :: Demand -> Maybe UseDmd
 cleanUseDmd_maybe (JD { ud = Use _ u }) = Just u
 cleanUseDmd_maybe _                     = Nothing
 
+-- Definition 7.11 of Ralf Hinze's thesis
+insertSumDemands :: ConTag -> [ConTag] -> Demand -> [Demand] -> Demand
+insertSumDemands tag all_tags scrt_dmd prod_dmds =
+    let
+      bndrs_prod_ty :: StrDmd
+      (bndrs_prod_ty, exn) = mkSProdExnStr (map getStrDmd prod_dmds)
+
+      bndrs_use_dmd :: UseDmd
+      bndrs_use_dmd = mkUProd (map getUseDmd prod_dmds)
+
+      case_bndr_exn = case getStrDmd scrt_dmd of
+                        Lazy -> VanStr
+                        Str exn _ -> exn
+
+      final_exn = lubExnStr exn case_bndr_exn
+
+      sum_dmd = SSum (IM.fromList ((tag, bndrs_prod_ty) : map (,HyperStr) all_tags))
+      sum_use = USum (IM.fromList ((tag, bndrs_use_dmd) : map (,UHead) all_tags))
+
+      sum_use_amt :: ArgUse
+      sum_use_amt = markReusedDmd (getUseDmd scrt_dmd)
+    in
+      mkJointDmd (Str final_exn sum_dmd) (Use (useCount sum_use_amt) sum_use)
+
+-- Definition 7.10 of Ralf Hinze's thesis
+extractSumDemandAlt :: Demand -> ConTag -> Demand
+extractSumDemandAlt dmd@(JD { sd = s, ud = u }) tag =
+    JD (extractSumArgStr s tag) (extractSumArgUse u tag)
+
+extractSumArgStr :: ArgStr -> ConTag -> ArgStr
+extractSumArgStr Lazy _
+  = Lazy
+extractSumArgStr str@(Str exn (SSum m)) tag
+  | Just altDmd <- IM.lookup tag m
+  = Str exn altDmd
+  | otherwise
+  = pprPanic "extractSumArgStr" (ppr str <+> ppr tag)
+extractSumArgStr dmd _ = dmd -- TODO: Should we panic here?
+
+extractSumArgUse :: ArgUse -> ConTag -> ArgUse
+extractSumArgUse Abs _
+  = Abs
+extractSumArgUse use@(Use c (USum m)) tag
+  | Just altUse <- IM.lookup tag m
+  = Use c altUse
+  | otherwise
+  = pprPanic "extractSumArgUse" (ppr use <+> ppr tag)
+extractSumArgUse use _ = use -- TODO: Should we panic here?
+
 splitFVs :: Bool   -- Thunk
          -> DmdEnv -> (DmdEnv, DmdEnv)
 splitFVs is_thunk rhs_fvs
@@ -783,11 +913,13 @@ splitFVs is_thunk rhs_fvs
 
 data TypeShape = TsFun TypeShape
                | TsProd [TypeShape]
+               | TsSum [(ConTag, TypeShape)]
                | TsUnk
 
 instance Outputable TypeShape where
   ppr TsUnk        = text "TsUnk"
   ppr (TsFun ts)   = text "TsFun" <> parens (ppr ts)
+  ppr (TsSum alts) = text "TsSum" <> braces (hsep (map ppr alts))
   ppr (TsProd tss) = parens (hsep $ punctuate comma $ map ppr tss)
 
 trimToType :: Demand -> TypeShape -> Demand
@@ -804,6 +936,9 @@ trimToType (JD { sd = ms, ud = mu }) ts
     go_s (SCall s)   (TsFun ts)   = SCall (go_s s ts)
     go_s (SProd mss) (TsProd tss)
       | equalLength mss tss       = SProd (zipWith go_ms mss tss)
+    go_s (SSum m)    (TsSum m')
+      | IM.keysSet m == IS.fromList (map fst m')
+      = SSum (IM.intersectionWith (\strDmd tyS -> go_s strDmd tyS) m (IM.fromList m'))
     go_s _           _            = HeadStr
 
     go_mu :: ArgUse -> TypeShape -> ArgUse
@@ -815,6 +950,10 @@ trimToType (JD { sd = ms, ud = mu }) ts
     go_u (UCall c u) (TsFun ts) = UCall c (go_u u ts)
     go_u (UProd mus) (TsProd tss)
       | equalLength mus tss      = UProd (zipWith go_mu mus tss)
+    go_u (USum ux) (TsSum tss)
+      | IM.keysSet ux == IS.fromList (map fst tss)
+      = USum (IM.intersectionWith (\useDmd tyS -> go_u useDmd tyS) ux (IM.fromList tss))
+
     go_u _           _           = Used
 
 {-
@@ -909,12 +1048,11 @@ type DmdResult = Termination CPRResult
 
 data CPRResult = NoCPR          -- Top of the lattice
                | RetProd        -- Returns a constructor from a product type
-               | RetSum ConTag  -- Returns a constructor from a data type
+               | RetSum IS.IntSet  -- Returns a constructor from a data type
                deriving( Eq, Show )
 
 lubCPR :: CPRResult -> CPRResult -> CPRResult
-lubCPR (RetSum t1) (RetSum t2)
-  | t1 == t2                       = RetSum t1
+lubCPR (RetSum t1) (RetSum t2) = RetSum (IS.union t1 t2)
 lubCPR RetProd     RetProd     = RetProd
 lubCPR _ _                     = NoCPR
 
@@ -945,7 +1083,7 @@ instance Outputable r => Outputable (Termination r) where
 
 instance Outputable CPRResult where
   ppr NoCPR        = empty
-  ppr (RetSum n)   = char 'm' <> int n
+  ppr (RetSum n)   = char 's' <> parens (ppr (IS.toList n))
   ppr RetProd      = char 'm'
 
 seqDmdResult :: DmdResult -> ()
@@ -971,13 +1109,13 @@ exnRes = ThrowsExn
 botRes = Diverges
 
 cprSumRes :: ConTag -> DmdResult
-cprSumRes tag = Dunno $ RetSum tag
-
-cprProdRes :: [DmdType] -> DmdResult
-cprProdRes _arg_tys = Dunno $ RetProd
+cprSumRes tag = Dunno $ RetSum (IS.singleton tag)
 
 vanillaCprProdRes :: Arity -> DmdResult
 vanillaCprProdRes _arity = Dunno $ RetProd
+
+vanillaCprSumRes :: DmdResult
+vanillaCprSumRes = Dunno (RetSum IS.empty)
 
 isTopRes :: DmdResult -> Bool
 isTopRes (Dunno NoCPR) = True
@@ -1002,13 +1140,15 @@ trimCPRInfo trim_all trim_sums res
                        | otherwise = RetProd
     trimC NoCPR = NoCPR
 
-returnsCPR_maybe :: DmdResult -> Maybe ConTag
+returnsCPR_maybe :: DmdResult -> Maybe IS.IntSet
 returnsCPR_maybe (Dunno c) = retCPR_maybe c
 returnsCPR_maybe _         = Nothing
 
-retCPR_maybe :: CPRResult -> Maybe ConTag
-retCPR_maybe (RetSum t)  = Just t
-retCPR_maybe RetProd     = Just fIRST_TAG
+retCPR_maybe :: CPRResult -> Maybe IS.IntSet
+retCPR_maybe (RetSum t)
+  | IS.null t = Nothing -- FIXME(osa): Why is this happening?
+  | otherwise = Just t
+retCPR_maybe RetProd     = Just (IS.singleton fIRST_TAG)
 retCPR_maybe NoCPR       = Nothing
 
 -- See Notes [Default demand on free variables]
@@ -1240,7 +1380,7 @@ bothDmdType (DmdType fv1 ds1 r1) (fv2, t2)
 instance Outputable DmdType where
   ppr (DmdType fv ds res)
     = hsep [text "DmdType",
-            hcat (map ppr ds) <> ppr res,
+            parens (text "args:" <+> hcat (map ppr ds)) <+> parens (text "res:" <+> ppr res),
             if null fv_elts then empty
             else braces (fsep (map pp_elt fv_elts))]
     where
@@ -1261,6 +1401,10 @@ botDmdType = DmdType emptyDmdEnv [] botRes
 cprProdDmdType :: Arity -> DmdType
 cprProdDmdType arity
   = DmdType emptyDmdEnv [] (vanillaCprProdRes arity)
+
+cprSumDmdType :: DmdType
+cprSumDmdType
+  = DmdType emptyDmdEnv [] vanillaCprSumRes
 
 isNopDmdType :: DmdType -> Bool
 isNopDmdType (DmdType env [] res)
@@ -1683,6 +1827,9 @@ botSig = StrictSig botDmdType
 cprProdSig :: Arity -> StrictSig
 cprProdSig arity = StrictSig (cprProdDmdType arity)
 
+cprSumSig :: StrictSig
+cprSumSig = StrictSig cprSumDmdType
+
 seqStrictSig :: StrictSig -> ()
 seqStrictSig (StrictSig ty) = seqDmdType ty
 
@@ -1694,13 +1841,13 @@ dmdTransformSig (StrictSig dmd_ty@(DmdType _ arg_ds _)) cd
   = postProcessUnsat (peelManyCalls (length arg_ds) cd) dmd_ty
     -- see Note [Demands from unsaturated function calls]
 
-dmdTransformDataConSig :: Arity -> StrictSig -> CleanDemand -> DmdType
+dmdTransformDataConSig :: Arity -> ConTag -> StrictSig -> CleanDemand -> DmdType
 -- Same as dmdTransformSig but for a data constructor (worker),
 -- which has a special kind of demand transformer.
 -- If the constructor is saturated, we feed the demand on
 -- the result into the constructor arguments.
-dmdTransformDataConSig arity (StrictSig (DmdType _ _ con_res))
-                             (JD { sd = str, ud = abs })
+dmdTransformDataConSig arity tag sig@(StrictSig (DmdType _ _ con_res))
+                             dmd@(JD { sd = str, ud = abs })
   | Just str_dmds <- go_str arity str
   , Just abs_dmds <- go_abs arity abs
   = DmdType emptyDmdEnv (mkJointDmds str_dmds abs_dmds) con_res
@@ -1709,10 +1856,23 @@ dmdTransformDataConSig arity (StrictSig (DmdType _ _ con_res))
   | otherwise   -- Not saturated
   = nopDmdType
   where
+    go_str :: Int -> StrDmd -> Maybe [ArgStr]
+    go_str 0 (SSum m)
+      | Just str <- IM.lookup tag m
+      = splitStrProdDmd arity str
+      | otherwise
+      = pprPanic "dmdTransformDataConSig" (ppr arity $$ ppr sig $$ ppr dmd)
+
     go_str 0 dmd        = splitStrProdDmd arity dmd
     go_str n (SCall s') = go_str (n-1) s'
     go_str n HyperStr   = go_str (n-1) HyperStr
     go_str _ _          = Nothing
+
+    go_abs 0 (USum m)
+      | Just dmd <- IM.lookup tag m
+      = splitUseProdDmd arity dmd
+      | otherwise
+      = pprPanic "dmdTransformDataConSig" (ppr arity $$ ppr sig $$ ppr dmd)
 
     go_abs 0 dmd            = splitUseProdDmd arity dmd
     go_abs n (UCall One u') = go_abs (n-1) u'
@@ -1944,6 +2104,9 @@ instance Binary StrDmd where
                             put_ bh s
   put_ bh (SProd sx)   = do putByte bh 3
                             put_ bh sx
+  put_ bh (SSum ts)    = do putByte bh 4
+                            put_ bh (IM.toList ts)
+
   get bh = do
          h <- getByte bh
          case h of
@@ -1951,8 +2114,10 @@ instance Binary StrDmd where
            1 -> do return HeadStr
            2 -> do s  <- get bh
                    return (SCall s)
-           _ -> do sx <- get bh
+           3 -> do sx <- get bh
                    return (SProd sx)
+           4 -> SSum . IM.fromList <$> get bh
+           _ -> pprPanic "Binary instance of StrDmd" (text "unexpected tag byte:" <+> text (show h))
 
 instance Binary ExnStr where
   put_ bh VanStr = putByte bh 0
@@ -2016,6 +2181,9 @@ instance Binary UseDmd where
     put_ bh (UProd ux)   = do
             putByte bh 3
             put_ bh ux
+    put_ bh (USum m) = do
+            putByte bh 4
+            put_ bh (IM.toList m)
 
     get  bh = do
             h <- getByte bh
@@ -2025,8 +2193,11 @@ instance Binary UseDmd where
               2 -> do c <- get bh
                       u <- get bh
                       return (UCall c u)
-              _ -> do ux <- get bh
+              3 -> do ux <- get bh
                       return (UProd ux)
+              4 -> do ux <- get bh
+                      return (USum (IM.fromList ux))
+              _ -> pprPanic "UseDmd get: Wrong tag:" (text (show h))
 
 instance (Binary s, Binary u) => Binary (JointDmd s u) where
     put_ bh (JD { sd = x, ud = y }) = do put_ bh x; put_ bh y
@@ -2064,13 +2235,13 @@ instance Binary DmdResult where
                   _ -> return Diverges }
 
 instance Binary CPRResult where
-    put_ bh (RetSum n)   = do { putByte bh 0; put_ bh n }
+    put_ bh (RetSum n)   = do { putByte bh 0; put_ bh (IS.toList n) }
     put_ bh RetProd      = putByte bh 1
     put_ bh NoCPR        = putByte bh 2
 
     get  bh = do
             h <- getByte bh
             case h of
-              0 -> do { n <- get bh; return (RetSum n) }
+              0 -> do { n <- get bh; return (RetSum (IS.fromList n)) }
               1 -> return RetProd
               _ -> return NoCPR

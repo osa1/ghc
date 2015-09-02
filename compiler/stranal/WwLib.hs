@@ -4,10 +4,12 @@
 \section[WwLib]{A library for the ``worker\/wrapper'' back-end to the strictness analyser}
 -}
 
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE BangPatterns, CPP, MultiWayIf, NondecreasingIndentation,
+             ScopedTypeVariables #-}
 
 module WwLib ( mkWwBodies, mkWWstr, mkWorkerArgs
-             , deepSplitProductType_maybe, findTypeShape
+             , deepSplitProductType_maybe, deepSplitSumType_maybe
+             , findTypeShape
  ) where
 
 #include "HsVersions.h"
@@ -18,10 +20,10 @@ import Id
 import IdInfo           ( vanillaIdInfo )
 import DataCon
 import Demand
-import MkCore           ( mkRuntimeErrorApp, aBSENT_ERROR_ID, mkCoreUbxTup )
-import MkId             ( voidArgId, voidPrimId )
-import TysPrim          ( voidPrimTy )
-import TysWiredIn       ( tupleDataCon )
+import MkCore           ( mkRuntimeErrorApp, aBSENT_ERROR_ID, mkCoreUbxTup, mkCoreUbxSum, mkCoreConApps )
+import MkId             ( voidArgId, voidPrimId, isUnpackableType )
+import TysPrim          ( voidPrimTy, floatPrimTy, doublePrimTy )
+import TysWiredIn       ( tupleDataCon, mkSumTy, sumDataCon, mkTupleTy )
 import Type
 import Coercion
 import FamInstEnv
@@ -36,6 +38,12 @@ import Outputable
 import DynFlags
 import FastString
 import ListSetOps
+
+import ElimUbxSums (mkUbxSumAltTy)
+
+import qualified Data.IntMap as IM
+import qualified Data.IntSet as IS
+import Data.List (sortOn)
 
 {-
 ************************************************************************
@@ -107,6 +115,7 @@ the unusable strictness-info into the interfaces.
 -}
 
 mkWwBodies :: DynFlags
+           -> Id
            -> FamInstEnvs
            -> Type                                  -- Type of original function
            -> [Demand]                              -- Strictness of original function
@@ -127,22 +136,36 @@ mkWwBodies :: DynFlags
 --                        let x = (a,b) in
 --                        E
 
-mkWwBodies dflags fam_envs fun_ty demands res_info one_shots
+mkWwBodies dflags fn_id fam_envs fun_ty demands res_info one_shots
   = do  { let arg_info = demands `zip` (one_shots ++ repeat NoOneShotInfo)
               all_one_shots = foldr (worstOneShot . snd) OneShotLam arg_info
-        ; (wrap_args, wrap_fn_args, work_fn_args, res_ty) <- mkWWargs emptyTCvSubst fun_ty arg_info
+        ; -- Q: Why do this eta expansion?
+          -- A: If you look at wwBind, it's passing only the RHS to tryWW, then
+          -- tryWW is calling splitFun using that rhs etc.. so in the end we're
+          -- having only the body in splitFun, which is calling mkWwBodies using
+          -- that RHS.
+          (wrap_args, wrap_fn_args, work_fn_args, res_ty) <- mkWWargs emptyTCvSubst fun_ty arg_info
+
         ; (useful1, work_args, wrap_fn_str, work_fn_str) <- mkWWstr dflags fam_envs wrap_args
 
         -- Do CPR w/w.  See Note [Always do CPR w/w]
         ; (useful2, wrap_fn_cpr, work_fn_cpr, cpr_res_ty)
-              <- mkWWcpr (gopt Opt_CprAnal dflags) fam_envs res_ty res_info
+              <- mkWWcpr dflags fn_id fam_envs res_ty res_info
 
-        ; let (work_lam_args, work_call_args) = mkWorkerArgs dflags work_args all_one_shots cpr_res_ty
+        ; let (work_lam_args, work_call_args) =
+                mkWorkerArgs dflags work_args all_one_shots cpr_res_ty
               worker_args_dmds = [idDemandInfo v | v <- work_call_args, isId v]
-              wrapper_body = wrap_fn_args . wrap_fn_cpr . wrap_fn_str . applyToVars work_call_args . Var
-              worker_body = mkLams work_lam_args. work_fn_str . work_fn_cpr . work_fn_args
 
-        ; if useful1 && not (only_one_void_argument) || useful2
+              -- Lacking worker Id
+              wrapper_body :: Var -> CoreExpr
+              wrapper_body =
+                wrap_fn_args .  wrap_fn_cpr .  wrap_fn_str .  applyToVars work_call_args .  Var
+
+              -- Lacking original function body
+              worker_body :: CoreExpr -> CoreExpr
+              worker_body = mkLams work_lam_args .  work_fn_str .  work_fn_cpr .  work_fn_args
+
+        ; if (useful1 && not (only_one_void_argument)) || useful2
           then return (Just (worker_args_dmds, wrapper_body, worker_body))
           else return Nothing
         }
@@ -430,7 +453,9 @@ as-yet-un-filled-in pkgState files.
 --   * work_fn assumes work_args are in scope, a
 --        brings into scope wrap_arg (via lets)
 mkWWstr_one :: DynFlags -> FamInstEnvs -> Var
-    -> UniqSM (Bool, [Var], CoreExpr -> CoreExpr, CoreExpr -> CoreExpr)
+    -> UniqSM (Bool, [Var],
+               CoreExpr -> CoreExpr, -- wrapper
+               CoreExpr -> CoreExpr) -- worker
 mkWWstr_one dflags fam_envs arg
   | isTyVar arg
   = return (False, [arg],  nop_fn, nop_fn)
@@ -464,7 +489,7 @@ mkWWstr_one dflags fam_envs arg
                 -- during simplification, so for now I've just nuked this whole case
 
   | isStrictDmd dmd
-  , Just cs <- splitProdDmd_maybe dmd
+  , Just (cs :: [Demand]) <- splitProdDmd_maybe dmd
       -- See Note [Unpacking arguments with product and polymorphic demands]
   , Just (data_con, inst_tys, inst_con_arg_tys, co)
              <- deepSplitProductType_maybe fam_envs (idType arg)
@@ -472,14 +497,140 @@ mkWWstr_one dflags fam_envs arg
       -- See Note [mkWWstr and unsafeCoerce]
   =  do { (uniq1:uniqs) <- getUniquesM
         ; let   unpk_args      = zipWith mk_ww_local uniqs inst_con_arg_tys
+
                 unpk_args_w_ds = zipWithEqual "mkWWstr" set_worker_arg_info unpk_args cs
+
+                ---
+                unbox_fn :: CoreExpr -> CoreExpr
                 unbox_fn       = mkUnpackCase (Var arg) co uniq1
                                               data_con unpk_args
-                rebox_fn       = Let (NonRec arg con_app)
+
+                ---
                 con_app        = mkConApp2 data_con inst_tys unpk_args `mkCast` mkSymCo co
-         ; (_, worker_args, wrap_fn, work_fn) <- mkWWstr dflags fam_envs unpk_args_w_ds
-         ; return (True, worker_args, unbox_fn . wrap_fn, work_fn . rebox_fn) }
+
+                rebox_fn :: CoreExpr -> CoreExpr
+                rebox_fn       = Let (NonRec arg con_app)
+
+         ; -- Recursively unpack con fields
+           (_, worker_args, wrap_fn, work_fn) <- mkWWstr dflags fam_envs unpk_args_w_ds
+
+         ; return (True, worker_args,
+                         unbox_fn . wrap_fn, -- wrapper
+                         work_fn . rebox_fn  -- worker
+                         ) }
                            -- Don't pass the arg, rebox instead
+
+  | isStrictDmd dmd
+  , Str _ (SSum m) <- getStrDmd dmd -- FIXME(osa): This part needs to be updated, probably.
+                                    -- in the product case above, we do things
+                                    -- differently, we check use flags etc.
+  , isUnpackableType dflags fam_envs (idType arg)
+  , Just (data_cons, inst_tys, co)
+            <- deepSplitSumType_maybe fam_envs (idType arg)
+  , IM.keysSet m == IS.fromList (map dataConTag data_cons)
+  , pprTrace "====mkWWdmd====" (text "Demand WW on sum type. arg:" <+>
+                                ppr arg <+> parens (ppr (idType arg))) True
+  , if not (doSumDmdWw dflags)
+      then pprTrace "mkWWdmd" (text "Not doing WW, no -fdo-sum-dmd-ww.") False
+      else True
+  = do
+       let  --------------------------------------------------------------------------
+
+            data_cons_sorted = sortOn dataConTag data_cons
+
+            rep_tys :: [[Type]]
+            rep_tys = map (\con -> dataConInstArgTys con inst_tys) data_cons_sorted
+
+            sum_alt_tys :: [Type]
+            sum_alt_tys = map mkUbxSumAltTy rep_tys
+
+            ubx_sum_ty :: Type
+            ubx_sum_ty = mkSumTy sum_alt_tys
+
+            --------------------------------------------------------------------------
+
+       -- FIXME: Not unpacking floats...
+       if any (any (\ty -> eqType floatPrimTy ty || eqType doublePrimTy ty)) rep_tys
+         then pprTrace "mkWWdmd" (text "Not doing WW (found float).") $
+                return (False, [arg], nop_fn, nop_fn)
+         else do
+
+       let  scrut = Var arg
+            scrut_ty = exprType scrut
+
+       ubx_sum_scrut_bndr <- mkWwLocalM ubx_sum_ty
+
+       -- Unpack original sum argument, bind ubx_sum_bndr.
+       let
+            mkUnboxAlt :: DataCon -> UniqSM CoreAlt
+            mkUnboxAlt con
+              = do let con_args = rep_tys !! (dataConTag con - 1)
+                   con_field_bndrs <- mapM mkWwLocalM con_args
+                   return
+                     ( DataAlt con
+                     , con_field_bndrs
+                     , mkCoreUbxSum sum_alt_tys (dataConTag con) $
+                         case con_field_bndrs of
+                           []     -> Var voidPrimId -- FIXME: lifted or unlifted void?
+                           [bndr] -> Var bndr
+                           _      -> mkCoreUbxTup con_args (map Var con_field_bndrs)
+                     )
+
+            unbox_fn :: UniqSM (CoreExpr -> CoreExpr)
+            unbox_fn
+              = do alts <- mapM mkUnboxAlt data_cons_sorted
+                   let casted_scrut = scrut `mkCast` co
+                       casted_scrut_ty = exprType casted_scrut
+                   scrut_bndr <- mkWwLocalM casted_scrut_ty
+                   return $ \body ->
+                     Case (Case casted_scrut scrut_bndr ubx_sum_ty alts)
+                          ubx_sum_scrut_bndr
+                          (exprType body)
+                          [(DEFAULT, [], body)]
+
+       --------
+
+       -- Pack unboxed sum argument, unboxed version is bound to ubx_sum_bndr.
+       let
+            mkBoxAlt :: DataCon -> UniqSM CoreAlt
+            mkBoxAlt con
+              = do let con_arg_tys = rep_tys !! (dataConTag con - 1)
+                       alt_con     = DataAlt (sumDataCon (dataConTag con) (length data_cons_sorted))
+                   case con_arg_tys of
+                     []   -> do
+                       field_bndr <- mkWwLocalM voidPrimTy
+                       return (alt_con, [field_bndr],
+                               mkConApp2 con inst_tys [] `mkCast` mkSymCo co)
+                     [ty] -> do
+                       field_bndr <- mkWwLocalM ty
+                       return (alt_con, [field_bndr],
+                               mkConApp2 con inst_tys [field_bndr] `mkCast` mkSymCo co)
+                     _    -> do
+                       field_bndrs <- mapM mkWwLocalM con_arg_tys
+                       tup_bndr    <- mkWwLocalM (mkTupleTy Unboxed con_arg_tys)
+                       return (alt_con, [tup_bndr],
+                               -- NOTE: tup_bndr as both binder and scrutinee,
+                               -- it that OK?
+                               Case (Var tup_bndr) tup_bndr scrut_ty
+                                 [(DataAlt (tupleDataCon Unboxed (length con_arg_tys)),
+                                   field_bndrs,
+                                   mkConApp2 con inst_tys field_bndrs `mkCast` mkSymCo co)])
+
+            rebox_fn :: UniqSM (CoreExpr -> CoreExpr)
+            rebox_fn
+              = do -- NOTE: re-using ubx_sum_scrut_bndr here
+                   alts <- mapM mkBoxAlt data_cons_sorted
+                   return $ \body ->
+                     Let (NonRec arg
+                                 (Case (Var ubx_sum_scrut_bndr)
+                                       ubx_sum_scrut_bndr
+                                       scrut_ty alts))
+                         body
+
+       -- TODO: We may need to recursively unpack for deep unpacking.
+       unbox_fn' <- unbox_fn
+       rebox_fn' <- rebox_fn
+       return (True, [ubx_sum_scrut_bndr], unbox_fn', rebox_fn')
 
   | otherwise   -- Other cases
   = return (False, [arg], nop_fn, nop_fn)
@@ -546,20 +697,31 @@ deepSplitProductType_maybe fam_envs ty
   = Just (con, tc_args, dataConInstArgTys con tc_args, co)
 deepSplitProductType_maybe _ _ = Nothing
 
-deepSplitCprType_maybe :: FamInstEnvs -> ConTag -> Type -> Maybe (DataCon, [Type], [Type], Coercion)
+deepSplitSumType_maybe :: FamInstEnvs -> Type -> Maybe ([DataCon], [Type], Coercion)
+deepSplitSumType_maybe fam_envs ty
+  | let (co, ty1) = topNormaliseType_maybe fam_envs ty
+                    `orElse` (mkRepReflCo ty, ty)
+  , Just (tc, tc_args) <- splitTyConApp_maybe ty1
+  , Just cons <- isDataSumTyCon_maybe tc
+  = Just (cons, tc_args, co)
+deepSplitSumType_maybe _ _ = Nothing
+
+deepSplitCprType_maybe :: FamInstEnvs -> [ConTag] -> Type
+                       -> Maybe ([DataCon], [Type], Coercion)
 -- If    deepSplitCprType_maybe n ty = Just (dc, tys, arg_tys, co)
 -- then  dc @ tys (args::arg_tys) :: rep_ty
 --       co :: ty ~ rep_ty
-deepSplitCprType_maybe fam_envs con_tag ty
+deepSplitCprType_maybe fam_envs con_tags ty
   | let (co, ty1) = topNormaliseType_maybe fam_envs ty
                     `orElse` (mkRepReflCo ty, ty)
   , Just (tc, tc_args) <- splitTyConApp_maybe ty1
   , isDataTyCon tc
-  , let cons = tyConDataCons tc
-  , cons `lengthAtLeast` con_tag -- This might not be true if we import the
+  , let all_cons = tyConDataCons tc
+  , all_cons `lengthAtLeast` (maximum con_tags)
+                                 -- This might not be true if we import the
                                  -- type constructor via a .hs-bool file (#8743)
-  , let con  = cons `getNth` (con_tag - fIRST_TAG)
-  = Just (con, tc_args, dataConInstArgTys con tc_args, co)
+  , let cons  = map (\con_tag -> all_cons `getNth` (con_tag - fIRST_TAG)) con_tags
+  = Just (cons, tc_args, co)
 deepSplitCprType_maybe _ _ _ = Nothing
 
 findTypeShape :: FamInstEnvs -> Type -> TypeShape
@@ -570,6 +732,16 @@ findTypeShape fam_envs ty
   | Just (tc, tc_args)  <- splitTyConApp_maybe ty
   , Just con <- isDataProductTyCon_maybe tc
   = TsProd (map (findTypeShape fam_envs) $ dataConInstArgTys con tc_args)
+
+  | Just (tc, tc_args) <- splitTyConApp_maybe ty
+  , Just cons <- isDataSumTyCon_maybe tc
+  , not (isRecursiveTyCon tc)
+  = TsSum (map (\con -> (dataConTag con,
+                         -- FIXME(osa): I think this loops if the type is
+                         -- recursive. (isRecursiveTyCon is not checking
+                         -- recursive types)
+                         TsProd (map (findTypeShape fam_envs) (dataConInstArgTys con tc_args))))
+               cons)
 
   | Just (_, res) <- splitFunTy_maybe ty
   = TsFun (findTypeShape fam_envs res)
@@ -600,7 +772,8 @@ The non-CPR results appear ordered in the unboxed tuple as if by a
 left-to-right traversal of the result structure.
 -}
 
-mkWWcpr :: Bool
+mkWWcpr :: DynFlags
+        -> Id
         -> FamInstEnvs
         -> Type                              -- function body type
         -> DmdResult                         -- CPR analysis results
@@ -609,53 +782,166 @@ mkWWcpr :: Bool
                    CoreExpr -> CoreExpr,     -- New worker
                    Type)                     -- Type of worker's body
 
-mkWWcpr opt_CprAnal fam_envs body_ty res
+mkWWcpr dflags fn_id fam_envs body_ty res
     -- CPR explicitly turned off (or in -O0)
-  | not opt_CprAnal = return (False, id, id, body_ty)
+  | not (gopt Opt_CprAnal dflags) = return (False, id, id, body_ty)
     -- CPR is turned on by default for -O and O2
   | otherwise
   = case returnsCPR_maybe res of
-       Nothing      -> return (False, id, id, body_ty)  -- No CPR info
-       Just con_tag | Just stuff <- deepSplitCprType_maybe fam_envs con_tag body_ty
-                    -> mkWWcpr_help stuff
-                    |  otherwise
-                       -- See Note [non-algebraic or open body type warning]
-                    -> WARN( True, text "mkWWcpr: non-algebraic or open body type" <+> ppr body_ty )
-                       return (False, id, id, body_ty)
+       Nothing       -> return (False, id, id, body_ty)  -- No CPR info
+       Just con_tags | Just (used_cons, tc_args, co) <-
+                         deepSplitCprType_maybe fam_envs (IS.toList con_tags) body_ty
+                     -> case used_cons of
+                          [used_con] ->
+                            mkWWcpr_help used_con tc_args (dataConInstArgTys used_con tc_args) co
+                          _ | isUnpackableType dflags fam_envs body_ty ->
+                              pprTrace "====mkWWcpr===="
+                                (text "CPR on sum type in function:" <+> ppr fn_id) $
+                                if doSumCprWw dflags
+                                  then mkWWcpr_sum_help used_cons tc_args co body_ty
+                                  else pprTrace "mkWWcpr" (text "Not doing WW, no -fdo-sum-cpr-ww.") $
+                                         return (False, id, id, body_ty)
+                            | otherwise ->
+                              return (False, id, id, body_ty)
 
-mkWWcpr_help :: (DataCon, [Type], [Type], Coercion)
+                     |  otherwise
+                        -- See Note [non-algebraic or open body type warning]
+                     -> WARN( True, text "mkWWcpr: non-algebraic or open body type" <+> ppr body_ty )
+                        return (False, id, id, body_ty)
+
+mkWWcpr_sum_help :: [DataCon] -> [Type] -> Coercion -> Type
+                 -> UniqSM (Bool, CoreExpr -> CoreExpr, CoreExpr -> CoreExpr, Type)
+mkWWcpr_sum_help data_cons inst_tys co body_ty = do
+    let
+      data_cons_sorted = sortOn dataConTag data_cons
+
+      --------------------------------------------------------------------------
+      -- FIXME: This code is copied from MkId's unboxed sum parts
+
+      -- Note how we're only using data_cons instead of all of the cons if the
+      -- type here. This can do another optimizations when some of the
+      -- constructors are not returned by the ww'ed function.
+      rep_tys :: [[Type]]
+      rep_tys = map (\con -> dataConInstArgTys con inst_tys) data_cons_sorted
+
+      sum_alt_tys :: [Type]
+      sum_alt_tys = map mkUbxSumAltTy rep_tys
+
+      --------------------------------------------------------------------------
+
+      -- FIXME(osa): HACK alert. It seems like the prim floats are still not
+      -- handled correctly. I'm using this to disable worker/wrapper when
+      -- Float# is involved. (I'm also printing a warning so we can keep track)
+      has_float_hash :: Bool
+      has_float_hash = any (any (\ty -> eqType floatPrimTy ty || eqType doublePrimTy ty)) rep_tys
+
+      --------------------------------------------------------------------------
+
+      ubx_sum_ty = mkSumTy sum_alt_tys
+
+    if has_float_hash
+      then pprTrace "mkWWcpr_sum_help" (text "Not doing WW.") $
+             return (False, id, id, body_ty)
+      else do
+
+    sum_bndr <- mkWwLocalM ubx_sum_ty
+
+    let
+      mkUbxSumAlts :: [DataCon] -> ConTag -> UniqSM [CoreAlt]
+      mkUbxSumAlts [] _ = return []
+      mkUbxSumAlts (con : cons) !ubx_sum_tag = do
+        con_args <- mapM mkWwLocalM (dataConInstArgTys con inst_tys)
+        let
+          con_app = mkConApp2 con inst_tys con_args `mkCast` mkSymCo co
+          sum_con = sumDataCon ubx_sum_tag (length data_cons_sorted)
+
+        if | null con_args ->
+               pprPanic "WwLib.mkUbxSumAlts"
+                 (text $ "One of our invariants should have been invalidated! " ++
+                         "Found a nullary sum con!")
+           | length con_args == 1 ->
+               ((DataAlt sum_con, con_args, con_app) :) <$>
+                 mkUbxSumAlts cons (ubx_sum_tag + 1)
+           | otherwise -> do
+               let
+                 arg_tys  = dataConInstArgTys con inst_tys
+                 tup_ty   = mkTupleTy Unboxed arg_tys
+                 tup_con  = tupleDataCon Unboxed (length con_args)
+               tup_bndr <- mkWwLocalM tup_ty
+
+               ((DataAlt sum_con, [tup_bndr],
+                   Case (Var tup_bndr) tup_bndr body_ty
+                     [ (DataAlt tup_con, con_args, con_app) ]) :) <$>
+                 (mkUbxSumAlts cons (ubx_sum_tag + 1))
+
+      mkDataConAlts :: [DataCon] -> ConTag -> UniqSM [CoreAlt]
+      mkDataConAlts [] _ = return []
+      mkDataConAlts (con : cons) !con_tag = do
+        let
+          arg_tys = dataConInstArgTys con inst_tys
+
+        con_args <- mapM mkWwLocalM arg_tys
+
+        let
+          ubx_sum_con_app = mkCoreUbxSum sum_alt_tys con_tag
+                              (case con_args of
+                                 [arg] -> varToCoreExpr arg
+                                 _     -> mkCoreUbxTup arg_tys (varsToCoreExprs con_args))
+        ((DataAlt con, con_args, ubx_sum_con_app) :) <$>
+          mkDataConAlts cons (con_tag + 1)
+
+    ubxSumAlts <- mkUbxSumAlts data_cons_sorted 1
+    bxSumAlts <- mkDataConAlts data_cons_sorted 1
+
+    worker_body_bndr_uniq <- getUniqueM
+
+    let
+      wrapper wkr_call = Case wkr_call sum_bndr body_ty ubxSumAlts
+
+      worker body =
+        -- FIXME: something something about Note [Profiling and unpacking]
+        let
+          body' = body `mkCast` co
+          body_binder = mk_ww_local worker_body_bndr_uniq (exprType body')
+        in
+          Case body' body_binder ubx_sum_ty bxSumAlts
+
+    return (True, wrapper, worker, ubx_sum_ty)
+
+mkWWcpr_help :: DataCon -> [Type] -> [Type] -> Coercion
              -> UniqSM (Bool, CoreExpr -> CoreExpr, CoreExpr -> CoreExpr, Type)
 
-mkWWcpr_help (data_con, inst_tys, arg_tys, co)
+mkWWcpr_help data_con inst_tys arg_tys co
   | [arg_ty1] <- arg_tys
   , isUnliftedType arg_ty1
         -- Special case when there is a single result of unlifted type
         --
-        -- Wrapper:     case (..call worker..) of x -> C x
-        -- Worker:      case (   ..body..    ) of C x -> x
   = do { (work_uniq : arg_uniq : _) <- getUniquesM
        ; let arg       = mk_ww_local arg_uniq  arg_ty1
              con_app   = mkConApp2 data_con inst_tys [arg] `mkCast` mkSymCo co
 
        ; return ( True
-                , \ wkr_call -> Case wkr_call arg (exprType con_app) [(DEFAULT, [], con_app)]
-                , \ body     -> mkUnpackCase body co work_uniq data_con [arg] (varToCoreExpr arg)
+                , -- Wrapper:     case (..call worker..) of x -> C x
+                  \ wkr_call -> Case wkr_call arg (exprType con_app) [(DEFAULT, [], con_app)]
+                , -- Worker:      case (   ..body..    ) of C x -> x
+                  \ body     -> mkUnpackCase body co work_uniq data_con [arg] (varToCoreExpr arg)
                                 -- varToCoreExpr important here: arg can be a coercion
                                 -- Lacking this caused Trac #10658
                 , arg_ty1 ) }
 
   | otherwise   -- The general case
-        -- Wrapper: case (..call worker..) of (# a, b #) -> C a b
-        -- Worker:  case (   ...body...  ) of C a b -> (# a, b #)
   = do { (work_uniq : uniqs) <- getUniquesM
        ; let (wrap_wild : args) = zipWith mk_ww_local uniqs (ubx_tup_ty : arg_tys)
              ubx_tup_ty   = exprType ubx_tup_app
              ubx_tup_app  = mkCoreUbxTup arg_tys (map varToCoreExpr args)
              con_app      = mkConApp2 data_con inst_tys args `mkCast` mkSymCo co
 
-       ; return (True
-                , \ wkr_call -> Case wkr_call wrap_wild (exprType con_app)  [(DataAlt (tupleDataCon Unboxed (length arg_tys)), args, con_app)]
-                , \ body     -> mkUnpackCase body co work_uniq data_con args ubx_tup_app
+       ; return ( True
+                , -- Wrapper: case (..call worker..) of (# a, b #) -> C a b
+                  \ wkr_call -> Case wkr_call wrap_wild (exprType con_app)
+                                  [(DataAlt (tupleDataCon Unboxed (length arg_tys)), args, con_app)]
+                , -- Worker:  case (   ...body...  ) of C a b -> (# a, b #)
+                  \ body     -> mkUnpackCase body co work_uniq data_con args ubx_tup_app
                 , ubx_tup_ty ) }
 
 mkUnpackCase ::  CoreExpr -> Coercion -> Unique -> DataCon -> [Id] -> CoreExpr -> CoreExpr
@@ -773,3 +1059,6 @@ sanitiseCaseBndr id = id `setIdInfo` vanillaIdInfo
 
 mk_ww_local :: Unique -> Type -> Id
 mk_ww_local uniq ty = mkSysLocalOrCoVar (fsLit "ww") uniq ty
+
+mkWwLocalM :: Type -> UniqSM Id
+mkWwLocalM = mkSysLocalOrCoVarM (fsLit "ww")

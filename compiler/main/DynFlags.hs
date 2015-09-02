@@ -177,6 +177,7 @@ import {-# SOURCE #-} ErrUtils ( Severity(..), MsgDoc, mkLocMessageAnn )
 
 import System.IO.Unsafe ( unsafePerformIO )
 import Data.IORef
+import Control.Applicative (Alternative(..))
 import Control.Arrow ((&&&))
 import Control.Monad
 import Control.Monad.Trans.Class
@@ -414,6 +415,7 @@ data GeneralFlag
    | Opt_CaseMerge
    | Opt_UnboxStrictFields
    | Opt_UnboxSmallStrictFields
+   | Opt_UnboxStrictSums
    | Opt_DictsCheap
    | Opt_EnableRewriteRules             -- Apply rewrite rules during simplification
    | Opt_Vectorise
@@ -886,7 +888,17 @@ data DynFlags = DynFlags {
 
   -- | Unique supply configuration for testing build determinism
   initialUnique         :: Int,
-  uniqueIncrement       :: Int
+  uniqueIncrement       :: Int,
+
+  -- | Max flattened size, in words, of sum types that can be unpacked
+  unboxSmallStrictSums :: Maybe Int,
+
+  -- | Demand analysis on sums
+  doSumDmd :: Bool,
+
+  -- | Worker/wrapper for unboxed sums
+  doSumCprWw :: Bool,
+  doSumDmdWw :: Bool
 }
 
 class HasDynFlags m where
@@ -1595,7 +1607,13 @@ defaultDynFlags mySettings =
         initialUnique = 0,
         uniqueIncrement = 1,
 
-        reverseErrors = False
+        reverseErrors = False,
+
+        unboxSmallStrictSums = Nothing,
+
+        doSumDmd   = False,
+        doSumCprWw = False,
+        doSumDmdWw = False
       }
 
 defaultWays :: Settings -> [Way]
@@ -2885,6 +2903,18 @@ dynamic_flags_deps = [
   , make_ord_flag defGhcFlag "dunique-increment"
       (intSuffix (\n d -> d { uniqueIncrement = n }))
 
+    -- If the user specifies -funbox-small-strict-sums without an argument,
+    -- use a default size of two words
+  , make_ord_flag defFlag "funbox-small-strict-sums"
+      (optIntSuffix (\mi d -> d { unboxSmallStrictSums = mi <|> Just 2 }))
+
+  , make_ord_flag defFlag "fdo-sum-dmd"
+      (noArg (\d -> d { doSumDmd = True }))
+  , make_ord_flag defFlag "fdo-sum-cpr-ww"
+      (noArg (\d -> d { doSumCprWw = True } ))
+  , make_ord_flag defFlag "fdo-sum-dmd-ww"
+      (noArg (\d -> d { doSumDmdWw = True } ))
+
         ------ Profiling ----------------------------------------------------
 
         -- OLD profiling flags
@@ -3374,6 +3404,7 @@ fFlagsDeps = [
   flagSpec "write-interface"                  Opt_WriteInterface,
   flagSpec "unbox-small-strict-fields"        Opt_UnboxSmallStrictFields,
   flagSpec "unbox-strict-fields"              Opt_UnboxStrictFields,
+  flagSpec "unbox-strict-sums"                Opt_UnboxStrictSums,
   flagSpec "vectorisation-avoidance"          Opt_VectorisationAvoidance,
   flagSpec "vectorise"                        Opt_Vectorise,
   flagSpec "worker-wrapper"                   Opt_WorkerWrapper,
@@ -3595,6 +3626,7 @@ xFlagsDeps = [
   flagSpec "TypeOperators"                    LangExt.TypeOperators,
   flagSpec "TypeSynonymInstances"             LangExt.TypeSynonymInstances,
   flagSpec "UnboxedTuples"                    LangExt.UnboxedTuples,
+  flagSpec "UnboxedSums"                      LangExt.UnboxedSums,
   flagSpec "UndecidableInstances"             LangExt.UndecidableInstances,
   flagSpec "UndecidableSuperClasses"          LangExt.UndecidableSuperClasses,
   flagSpec "UnicodeSyntax"                    LangExt.UnicodeSyntax,
@@ -3777,6 +3809,15 @@ Simple solution: just let the simplifier do eta-reduction even in -O0.
 After all, CorePrep does it unconditionally!  Not a big deal, but
 removes an assertion failure. -}
 
+-- Default to unboxing sums with a flattened size of at most two words if
+-- given Nothing
+setUnboxSmallStrictSums :: Maybe Int -> DynFlags -> DynFlags
+setUnboxSmallStrictSums mws d =
+    d { unboxSmallStrictSums = mws <|> Just smallSumSize }
+
+smallFieldSize, smallSumSize :: Int
+smallFieldSize = 1
+smallSumSize   = 2
 
 -- -----------------------------------------------------------------------------
 -- Standard sets of warning options
@@ -3959,6 +4000,7 @@ glasgowExtsFlags = [
            , LangExt.TypeOperators
            , LangExt.TypeSynonymInstances
            , LangExt.UnboxedTuples
+           , LangExt.UnboxedSums
            , LangExt.UnicodeSyntax
            , LangExt.UnliftedFFITypes ]
 
@@ -4070,6 +4112,10 @@ intSuffixM fn = IntSuffix (\n -> updM (fn n))
 
 floatSuffix :: (Float -> DynFlags -> DynFlags) -> OptKind (CmdLineP DynFlags)
 floatSuffix fn = FloatSuffix (\n -> upd (fn n))
+
+optIntSuffix :: (Maybe Int -> DynFlags -> DynFlags)
+             -> OptKind (CmdLineP DynFlags)
+optIntSuffix fn = OptIntSuffix (\mi -> upd (fn mi))
 
 optIntSuffixM :: (Maybe Int -> DynFlags -> DynP DynFlags)
               -> OptKind (CmdLineP DynFlags)

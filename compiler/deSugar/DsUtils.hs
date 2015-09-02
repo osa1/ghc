@@ -753,6 +753,7 @@ is_simple_pat :: Pat a -> Bool
 is_simple_pat (VarPat _)                   = True
 is_simple_pat (ParPat p)                   = is_simple_lpat p
 is_simple_pat (TuplePat ps Boxed _)        = all is_triv_lpat ps
+is_simple_pat (SumPat p _ _ _)             = is_triv_lpat p
 is_simple_pat (ConPatOut { pat_con = con
                          , pat_args = ps}) = is_simple_con_pat con ps
 is_simple_pat _ = False

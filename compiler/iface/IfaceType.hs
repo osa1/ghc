@@ -135,6 +135,7 @@ data IfaceType     -- A kind of universal type, used for types and kinds
        TupleSort IfaceTyConInfo   -- A bit like IfaceTyCon
        IfaceTcArgs                -- arity = length args
           -- For promoted data cons, the kind args are omitted
+  | IfaceSumTy IfaceTyConInfo IfaceTcArgs -- arity = length args
 
 type IfacePredType = IfaceType
 type IfaceContext = [IfacePredType]
@@ -293,6 +294,7 @@ ifTyVarsOfType ty
         -> ifTyVarsOfType ty `unionUniqSets` ifTyVarsOfCoercion co
       IfaceCoercionTy co    -> ifTyVarsOfCoercion co
       IfaceTupleTy _ _ args -> ifTyVarsOfArgs args
+      IfaceSumTy _ args     -> ifTyVarsOfArgs args
 
 ifTyVarsOfForAllBndr :: IfaceForAllBndr
                      -> ( UniqSet IfLclName   -- names used free in the binder
@@ -363,6 +365,7 @@ substIfaceType env ty
     go ty@(IfaceLitTy {})     = ty
     go (IfaceTyConApp tc tys) = IfaceTyConApp tc (substIfaceTcArgs env tys)
     go (IfaceTupleTy s i tys) = IfaceTupleTy s i (substIfaceTcArgs env tys)
+    go (IfaceSumTy c tys)     = IfaceSumTy c (substIfaceTcArgs env tys)
     go (IfaceForAllTy {})     = pprPanic "substIfaceType" (ppr ty)
     go (IfaceCastTy ty co)    = IfaceCastTy (go ty) (go_co co)
     go (IfaceCoercionTy co)   = IfaceCoercionTy (go_co co)
@@ -470,6 +473,8 @@ eqIfaceType env (IfaceTyConApp tc1 tys1) (IfaceTyConApp tc2 tys2)
     = tc1 == tc2 && eqIfaceTcArgs env tys1 tys2
 eqIfaceType env (IfaceTupleTy s1 tc1 tys1) (IfaceTupleTy s2 tc2 tys2)
     = s1 == s2 && tc1 == tc2 && eqIfaceTcArgs env tys1 tys2
+eqIfaceType env (IfaceSumTy c1 tys1) (IfaceSumTy c2 tys2)
+    = c1 == c2 && eqIfaceTcArgs env tys1 tys2
 eqIfaceType env (IfaceCastTy t1 _) (IfaceCastTy t2 _)
     = eqIfaceType env t1 t2
 eqIfaceType _   (IfaceCoercionTy {}) (IfaceCoercionTy {})
@@ -651,6 +656,7 @@ ppr_ty :: TyPrec -> IfaceType -> SDoc
 ppr_ty _         (IfaceTyVar tyvar)     = ppr tyvar
 ppr_ty ctxt_prec (IfaceTyConApp tc tys) = sdocWithDynFlags (pprTyTcApp ctxt_prec tc tys)
 ppr_ty _         (IfaceTupleTy s i tys) = pprTuple s i tys
+ppr_ty _         (IfaceSumTy c tys)       = text "sum" -- FIXME
 ppr_ty _         (IfaceLitTy n)         = ppr_tylit n
         -- Function types
 ppr_ty ctxt_prec (IfaceFunTy ty1 ty2)
@@ -1082,6 +1088,8 @@ instance Binary IfaceType where
       = do { putByte bh 8; put_ bh s; put_ bh i; put_ bh tys }
     put_ bh (IfaceLitTy n)
       = do { putByte bh 9; put_ bh n }
+    put_ bh (IfaceSumTy c tys)
+      = do { putByte bh 10; put_ bh c; put_ bh tys }
 
     get bh = do
             h <- getByte bh
@@ -1109,6 +1117,9 @@ instance Binary IfaceType where
 
               8 -> do { s <- get bh; i <- get bh; tys <- get bh
                       ; return (IfaceTupleTy s i tys) }
+              10 -> do { c <- get bh
+                       ; tys <- get bh
+                       ; return (IfaceSumTy c tys) }
               _  -> do n <- get bh
                        return (IfaceLitTy n)
 
@@ -1327,6 +1338,10 @@ toIfaceType (TyConApp tc tys)  -- Look for the two sorts of saturated tuple
   , isTupleDataCon dc
   , n_tys == 2*arity
   = IfaceTupleTy BoxedTuple IfacePromotedDataCon (toIfaceTcArgs tc (drop arity tys))
+
+  | isUnboxedSumTyCon tc
+  , n_tys == arity
+  = IfaceSumTy NoIfaceTyConInfo (toIfaceTcArgs tc tys)
 
   | otherwise
   = IfaceTyConApp (toIfaceTyCon tc) (toIfaceTcArgs tc tys)

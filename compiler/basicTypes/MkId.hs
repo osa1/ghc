@@ -34,7 +34,9 @@ module MkId (
         proxyHashId,
 
         -- Re-export error Ids
-        module PrelRules
+        module PrelRules,
+
+        isUnpackableType
     ) where
 
 #include "HsVersions.h"
@@ -48,7 +50,7 @@ import FamInstEnv
 import Coercion
 import TcType
 import MkCore
-import CoreUtils        ( exprType, mkCast )
+import CoreUtils        ( exprType, mkCast, coreAltsType )
 import CoreUnfold
 import Literal
 import TyCon
@@ -74,8 +76,10 @@ import DynFlags
 import Outputable
 import FastString
 import ListSetOps
+import ElimUbxSums
 import qualified GHC.LanguageExtensions as LangExt
 
+import Data.List        ( zipWith4 )
 import Data.Maybe       ( maybeToList )
 
 {-
@@ -455,11 +459,43 @@ dataConCPR con
 --------------------------------------------------
 -}
 
-type Unboxer = Var -> UniqSM ([Var], CoreExpr -> CoreExpr)
-  -- Unbox: bind rep vars by decomposing src var
+-- | Unboxer decomposes the "src var" (first argument), and generates two piece
+--   of data:
+--
+--   - [Var]: Variables that we bind by pattern matching the first argument of
+--     the function (the "src var").
+--
+--   - CoreExpr -> CoreExpr: A function that takes an expression that uses
+--     variables returned in the first element of the pair, and generates
+--     another expression that binds the variables before the input expression.
+--     (e.g. by wrapping the input expression with a case or let expression)
+--
+-- NOTE(osa): As a part of generalizing UNPACK support, I'm changing what second
+-- element of the pair does. It should now take, as argument, the data con, and
+-- it should apply the variables. Previously, the argument was the data con
+-- application, the variables were applied by the caller. Now we're handling
+-- that.
+--
+-- EDIT: Actually, since we're applying whatever we want to the constructor, we
+-- don't need to return variables. So I'm removing the pair, we now return just
+-- a `CoreExpr -> CoreExpr` functions.
+--
+type Unboxer = Var -> UniqSM (CoreExpr -> CoreExpr)
 
-data Boxer = UnitBox | Boxer (TCvSubst -> UniqSM ([Var], CoreExpr))
-  -- Box:   build src arg using these rep vars
+-- | Boxer packs fields of an unboxed type to generate the boxed version again.
+--   This is used when pattern matching on the unboxing constructor.
+--
+data Boxer
+  = UnitBox -- ^ The field is already boxed
+  | Boxer (TCvSubst -> UniqSM ([Var], CoreExpr))
+            -- ^ - [Var]: Variables to bind to build the boxed data again.
+            --
+            --   - CoreExpr: How to build the boxed data. Uses variables bound
+            --     in the [Var].
+            --
+            -- 'TCvSubst' is used for getting types of vars from the 'TyCon' and
+            -- for instantiating type argument of the DataCon we use to box the
+            -- data.
 
 newtype DataConBoxer = DCB ([Type] -> [Var] -> UniqSM ([Var], [CoreBind]))
                        -- Bind these src-level vars, returning the
@@ -496,7 +532,7 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
              wrap_sig = mkClosedStrictSig wrap_arg_dmds (dataConCPR data_con)
              wrap_arg_dmds = map mk_dmd arg_ibangs
              mk_dmd str | isBanged str = evalDmd
-                        | otherwise           = topDmd
+                        | otherwise    = topDmd
                  -- The Cpr info can be important inside INLINE rhss, where the
                  -- wrapper constructor isn't inlined.
                  -- And the argument strictness can be important too; we
@@ -539,7 +575,7 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
 
     arg_ibangs =
       case mb_bangs of
-        Nothing    -> zipWith (dataConSrcToImplBang dflags fam_envs)
+        Nothing    -> zipWith (dataConSrcToImplBang dflags fam_envs data_con)
                               orig_arg_tys orig_bangs
         Just bangs -> bangs
 
@@ -583,9 +619,8 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
     mk_rep_app [] con_app
       = return con_app
     mk_rep_app ((wrap_arg, unboxer) : prs) con_app
-      = do { (rep_ids, unbox_fn) <- unboxer wrap_arg
-           ; expr <- mk_rep_app prs (mkVarApps con_app rep_ids)
-           ; return (unbox_fn expr) }
+      = do { unbox_fn <- unboxer wrap_arg
+           ; mk_rep_app prs (unbox_fn con_app) }
 
 {-
 Note [Bangs on imported data constructors]
@@ -617,22 +652,23 @@ newLocal ty = do { uniq <- getUniqueM
 dataConSrcToImplBang
    :: DynFlags
    -> FamInstEnvs
+   -> DataCon -- ^ TODO: This is added for debugging purposes.
    -> Type
    -> HsSrcBang
    -> HsImplBang
 
-dataConSrcToImplBang dflags fam_envs arg_ty
+dataConSrcToImplBang dflags fam_envs data_con arg_ty
               (HsSrcBang ann unpk NoSrcStrict)
   | xopt LangExt.StrictData dflags -- StrictData => strict field
-  = dataConSrcToImplBang dflags fam_envs arg_ty
+  = dataConSrcToImplBang dflags fam_envs data_con arg_ty
                   (HsSrcBang ann unpk SrcStrict)
   | otherwise -- no StrictData => lazy field
   = HsLazy
 
-dataConSrcToImplBang _ _ _ (HsSrcBang _ _ SrcLazy)
+dataConSrcToImplBang _ _ _ _ (HsSrcBang _ _ SrcLazy)
   = HsLazy
 
-dataConSrcToImplBang dflags fam_envs arg_ty
+dataConSrcToImplBang dflags fam_envs data_con arg_ty
     (HsSrcBang _ unpk_prag SrcStrict)
   | not (gopt Opt_OmitInterfacePragmas dflags) -- Don't unpack if -fomit-iface-pragmas
           -- Don't unpack if we aren't optimising; rather arbitrarily,
@@ -644,9 +680,47 @@ dataConSrcToImplBang dflags fam_envs arg_ty
   , (rep_tys, _) <- dataConArgUnpack arg_ty'
   , case unpk_prag of
       NoSrcUnpack ->
-        gopt Opt_UnboxStrictFields dflags
-            || (gopt Opt_UnboxSmallStrictFields dflags
-                && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
+        let
+          -- It's either a product type, in which case we use the existing
+          -- -funbox-small-strict-fields check:
+          prod_ty_check
+            | Just (tc, _) <- splitTyConApp_maybe arg_ty'
+            , length (tyConDataCons tc) == 1
+            = gopt Opt_UnboxStrictFields dflags
+                || (gopt Opt_UnboxSmallStrictFields dflags
+                    && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
+
+            | otherwise
+            = False
+
+          -- Or it's a sum type, in which case we use the new
+          -- -funbox-small-strict-sums.
+          sum_ty_check
+            | Just (tc, _) <- splitTyConApp_maybe arg_ty'
+            , -- Make sure we have at least two DataCons
+              -- * Prim types don't have any
+              -- * We don't want to run our sum unpacking test on product types,
+              --   so we make sure there's at least two (not one)
+              cons <- tyConDataCons tc
+            , length cons >= 2
+
+              -- Try not to unpack floats
+            , let con_rep_tys = map dataConRepArgTys cons
+            , not (any (any (\ty -> eqType floatPrimTy ty || eqType doublePrimTy ty)) con_rep_tys)
+
+            = unboxSmallStrictSums dflags >= Just (length (typeUnboxedSumRep cons))
+
+            | otherwise
+            = False
+        in
+          if sum_ty_check
+            then pprTrace ""
+                   ( text "Decided to unpack field with type" <+> ppr arg_ty $$
+                     text "in DataCon:" <+> ppr data_con <+>
+                     text "of type:" <+> ppr (dataConOrigResTy data_con) ) $
+                   prod_ty_check || sum_ty_check
+            else prod_ty_check || sum_ty_check
+
       srcUnpack -> isSrcUnpacked srcUnpack
   = case mb_co of
       Nothing     -> HsUnpack Nothing
@@ -686,9 +760,9 @@ wrapCo co rep_ty (unbox_rep, box_rep)  -- co :: arg_ty ~ rep_ty
   = (unboxer, boxer)
   where
     unboxer arg_id = do { rep_id <- newLocal rep_ty
-                        ; (rep_ids, rep_fn) <- unbox_rep rep_id
+                        ; rep_fn <- unbox_rep rep_id
                         ; let co_bind = NonRec rep_id (Var arg_id `Cast` co)
-                        ; return (rep_ids, Let co_bind . rep_fn) }
+                        ; return (Let co_bind . rep_fn) }
     boxer = Boxer $ \ subst ->
             do { (rep_ids, rep_expr)
                     <- case box_rep of
@@ -700,10 +774,13 @@ wrapCo co rep_ty (unbox_rep, box_rep)  -- co :: arg_ty ~ rep_ty
 
 ------------------------
 seqUnboxer :: Unboxer
-seqUnboxer v = return ([v], \e -> Case (Var v) v (exprType e) [(DEFAULT, [], e)])
+seqUnboxer v =
+    return $ \e ->
+      let app = mkVarApps e [v]
+       in Case (Var v) v (exprType app) [(DEFAULT, [], app)]
 
 unitUnboxer :: Unboxer
-unitUnboxer v = return ([v], \e -> e)
+unitUnboxer v = return (\e -> mkVarApps e [v])
 
 unitBoxer :: Boxer
 unitBoxer = UnitBox
@@ -721,19 +798,108 @@ dataConArgUnpack arg_ty
       -- A recursive newtype might mean that
       -- 'arg_ty' is a newtype
   , let rep_tys = dataConInstArgTys con tc_args
-  = ASSERT( isVanillaDataCon con )
+  = -- UNPACK a single datacon type
+    ASSERT( isVanillaDataCon con )
     ( rep_tys `zip` dataConRepStrictness con
     ,( \ arg_id ->
        do { rep_ids <- mapM newLocal rep_tys
           ; let unbox_fn body
-                  = Case (Var arg_id) arg_id (exprType body)
-                         [(DataAlt con, rep_ids, body)]
-          ; return (rep_ids, unbox_fn) }
+                  = let app = mkVarApps body rep_ids
+                     in Case (Var arg_id) arg_id (exprType app)
+                             [( DataAlt con, rep_ids, app )]
+          ; return unbox_fn }
      , Boxer $ \ subst ->
        do { rep_ids <- mapM (newLocal . TcType.substTyUnchecked subst) rep_tys
           ; return (rep_ids, Var (dataConWorkId con)
                              `mkTyApps` (substTysUnchecked subst tc_args)
                              `mkVarApps` rep_ids ) } ) )
+
+  | Just (tc, tc_args) <- splitTyConApp_maybe arg_ty
+  = -- UNPACK a sum type
+    let
+      cons :: [DataCon]
+      cons = tyConDataCons tc
+
+      ubx_sum_arity = length cons
+
+      rep_tys :: [[Type]]
+      rep_tys = map (\con -> dataConInstArgTys con tc_args) cons
+
+      sum_alt_tys :: [Type]
+      sum_alt_tys = map mkUbxSumAltTy rep_tys
+
+      sum_ty :: Type
+      sum_ty = mkSumTy sum_alt_tys
+
+      unboxer :: Unboxer
+      unboxer arg_id = do
+        con_arg_binders <- mapM (mapM newLocal) rep_tys
+        ubx_sum_bndr <- newLocal sum_ty
+
+        let
+          mkUbxSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
+          mkUbxSumAlt alt con [] =
+            ( DataAlt con, [], mkCoreUbxSum sum_alt_tys alt (Var voidPrimId) )
+
+          mkUbxSumAlt alt con [bndr] =
+            ( DataAlt con, [bndr], mkCoreUbxSum sum_alt_tys alt (Var bndr) )
+
+          mkUbxSumAlt alt con bndrs =
+            let tuple = mkCoreUbxTup (map idType bndrs) (map Var bndrs)
+             in ( DataAlt con, bndrs, mkCoreUbxSum sum_alt_tys alt tuple )
+
+          ubxSum :: CoreExpr
+          ubxSum =
+            let alts = zipWith3 mkUbxSumAlt [ 1 .. ] cons con_arg_binders
+             in Case (Var arg_id) arg_id (coreAltsType alts) alts
+
+          unbox_fn :: CoreExpr -> CoreExpr
+          unbox_fn body =
+            let rhs = App body (Var ubx_sum_bndr)
+             in Case ubxSum ubx_sum_bndr (exprType rhs) [ ( DEFAULT, [], rhs ) ]
+
+        return unbox_fn
+
+      boxer :: Boxer
+      boxer = Boxer $ \ subst -> do
+                unboxed_field_id <- newLocal (TcType.substTy subst sum_ty)
+                tuple_bndrs <- mapM (newLocal . TcType.substTy subst) sum_alt_tys
+
+                let tc_args' = substTys subst tc_args
+                    arg_ty' = substTy subst arg_ty
+
+                con_arg_binders <-
+                  mapM (mapM newLocal . map (TcType.substTy subst)) rep_tys
+
+                -- TODO: remove duplication
+                let mkSumAlt :: Int -> DataCon -> Var -> [Var] -> CoreAlt
+                    mkSumAlt alt con tuple_bndr [] =
+                      ( DataAlt (sumDataCon alt ubx_sum_arity), [tuple_bndr],
+                        Var (dataConWorkId con) `mkTyApps` tc_args' )
+
+                    mkSumAlt alt con _ [datacon_bndr] =
+                      ( DataAlt (sumDataCon alt ubx_sum_arity), [datacon_bndr],
+                        Var (dataConWorkId con) `mkTyApps`  tc_args'
+                                                `mkVarApps` [datacon_bndr] )
+
+                    mkSumAlt alt con tuple_bndr datacon_bndrs =
+                      ( DataAlt (sumDataCon alt ubx_sum_arity), [tuple_bndr],
+                        Case (Var tuple_bndr) tuple_bndr arg_ty'
+                          [ ( DataAlt (tupleDataCon Unboxed (length datacon_bndrs)), datacon_bndrs,
+                              Var (dataConWorkId con) `mkTyApps`  tc_args'
+                                                      `mkVarApps` datacon_bndrs ) ] )
+
+                return ( [unboxed_field_id],
+                         Case (Var unboxed_field_id) unboxed_field_id arg_ty'
+                              (zipWith4 mkSumAlt [ 1 .. ] cons tuple_bndrs con_arg_binders) )
+    in
+      ( [ (sum_ty, MarkedStrict) ] -- NOTE(osa): I don't completely understand
+                                   -- this part. The idea: Unpacked variant will
+                                   -- be one field only, and the type of the
+                                   -- field will be an unboxed sum. It's strict,
+                                   -- because it's a hash type.
+      , ( unboxer, boxer ) )
+
   | otherwise
   = pprPanic "dataConArgUnpack" (ppr arg_ty)
     -- An interface file specified Unpacked, but we couldn't unpack it
@@ -746,31 +912,38 @@ isUnpackableType :: DynFlags -> FamInstEnvs -> Type -> Bool
 -- end up relying on ourselves!
 isUnpackableType dflags fam_envs ty
   | Just (tc, _) <- splitTyConApp_maybe ty
-  , Just con <- tyConSingleAlgDataCon_maybe tc
-  , isVanillaDataCon con
-  = ok_con_args (unitNameSet (getName tc)) con
+  , -- guess how many constructors prim types have?
+    cons@(_ : _) <- tyConDataCons tc
+  , all isVanillaDataCon cons
+  = all (ok_con_args (unitNameSet (getName tc))) cons
+
   | otherwise
   = False
   where
+    ok_arg :: NameSet -> (Type, HsSrcBang) -> Bool
     ok_arg tcs (ty, bang) = not (attempt_unpack bang) || ok_ty tcs norm_ty
         where
           norm_ty = topNormaliseType fam_envs ty
+
+    ok_ty :: NameSet -> Type -> Bool
     ok_ty tcs ty
       | Just (tc, _) <- splitTyConApp_maybe ty
       , let tc_name = getName tc
-      =  not (tc_name `elemNameSet` tcs)
-      && case tyConSingleAlgDataCon_maybe tc of
-            Just con | isVanillaDataCon con
-                    -> ok_con_args (tcs `extendNameSet` getName tc) con
-            _ -> True
+      , cons@(_ : _) <- tyConDataCons tc
+      = not (tc_name `elemNameSet` tcs)
+        && all (\con -> isVanillaDataCon con &&
+                        ok_con_args (tcs `extendNameSet` getName tc) con) cons
+
       | otherwise
       = True
 
+    ok_con_args :: NameSet -> DataCon -> Bool
     ok_con_args tcs con
        = all (ok_arg tcs) (dataConOrigArgTys con `zip` dataConSrcBangs con)
          -- NB: dataConSrcBangs gives the *user* request;
          -- We'd get a black hole if we used dataConImplBangs
 
+    attempt_unpack :: HsSrcBang -> Bool
     attempt_unpack (HsSrcBang _ SrcUnpack NoSrcStrict)
       = xopt LangExt.StrictData dflags
     attempt_unpack (HsSrcBang _ SrcUnpack SrcStrict)
@@ -784,7 +957,7 @@ isUnpackableType dflags fam_envs ty
 {-
 Note [Unpack one-wide fields]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The flag UnboxSmallStrictFields ensures that any field that can
+The flag -funbox-small-strict-fields ensures that any field that can
 (safely) be unboxed to a word-sized unboxed field, should be so unboxed.
 For example:
 

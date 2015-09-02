@@ -572,6 +572,13 @@ tc_hs_type mode (HsTupleTy hs_tup_sort tys) exp_kind
                   HsConstraintTuple -> ConstraintTuple
                   _                 -> panic "tc_hs_type HsTupleTy"
 
+tc_hs_type mode (HsUSumTy hs_tys) exp_kind
+  = do { let arity = length hs_tys
+       ; arg_kinds <- map tYPE `fmap` newFlexiTyVarTys arity runtimeRepTy
+       ; tau_tys <- zipWithM (tc_lhs_type mode) hs_tys arg_kinds
+       ; let arg_tys = map (getRuntimeRepFromKind "tc_hs_type HsUSumTy") arg_kinds ++ tau_tys
+       ; checkExpectedKind (mkTyConApp (sumTyCon arity) arg_tys) (tYPE unboxedSumRepDataConTy) exp_kind
+       }
 
 --------- Promoted lists and tuples
 tc_hs_type mode (HsExplicitListTy _k tys) exp_kind

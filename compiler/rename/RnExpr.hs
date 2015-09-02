@@ -274,6 +274,10 @@ rnExpr (RecordCon { rcon_con_name = con_id
     rn_field (L l fld) = do { (arg', fvs) <- rnLExpr (hsRecFieldArg fld)
                             ; return (L l (fld { hsRecFieldArg = arg' }), fvs) }
 
+rnExpr (HsSum alt arity expr _)
+  = do { (expr', fvs) <- rnLExpr expr
+       ; return (HsSum alt arity expr' PlaceHolder, fvs) }
+
 rnExpr (RecordUpd { rupd_expr = expr, rupd_flds = rbinds })
   = do  { (expr', fvExpr) <- rnLExpr expr
         ; (rbinds', fvRbinds) <- rnHsRecUpdFields rbinds

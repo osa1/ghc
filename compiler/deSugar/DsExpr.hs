@@ -316,6 +316,13 @@ dsExpr (ExplicitTuple tup_args boxity)
        ; return $ mkCoreLams lam_vars $
                   mkCoreTupBoxity boxity args }
 
+dsExpr (HsSum alt arity expr types)
+  = do { core_expr <- dsLExpr expr
+       ; return $ mkCoreConApps (sumDataCon alt arity)
+                                (map (Type . getRuntimeRep "dsExpr HsSum") types ++
+                                 map Type types ++
+                                 [core_expr]) }
+
 dsExpr (HsSCC _ cc expr@(L loc _)) = do
     dflags <- getDynFlags
     if gopt Opt_SccProfilingOn dflags

@@ -1686,8 +1686,8 @@ extendTvSubstBinder env (Named tv _) ty = extendTvSubst env tv ty
 unionTCvSubst :: TCvSubst -> TCvSubst -> TCvSubst
 -- Works when the ranges are disjoint
 unionTCvSubst (TCvSubst in_scope1 tenv1 cenv1) (TCvSubst in_scope2 tenv2 cenv2)
-  = ASSERT( not (tenv1 `intersectsVarEnv` tenv2)
-         && not (cenv1 `intersectsVarEnv` cenv2) )
+  = -- ASSERT( not (tenv1 `intersectsVarEnv` tenv2)
+    --      && not (cenv1 `intersectsVarEnv` cenv2) )
     TCvSubst (in_scope1 `unionInScope` in_scope2)
              (tenv1     `plusVarEnv`   tenv2)
              (cenv1     `plusVarEnv`   cenv2)
@@ -1941,24 +1941,7 @@ checkValidSubst ::
 #endif
     TCvSubst -> [Type] -> [Coercion] -> a -> a
 checkValidSubst subst@(TCvSubst in_scope tenv cenv) tys cos a
-  = ASSERT2( isValidTCvSubst subst,
-             text "in_scope" <+> ppr in_scope $$
-             text "tenv" <+> ppr tenv $$
-             text "tenvFVs"
-               <+> ppr (tyCoVarsOfTypes $ varEnvElts tenv) $$
-             text "cenv" <+> ppr cenv $$
-             text "cenvFVs"
-               <+> ppr (tyCoVarsOfCos $ varEnvElts cenv) $$
-             text "tys" <+> ppr tys $$
-             text "cos" <+> ppr cos )
-    ASSERT2( tysCosFVsInScope,
-             text "in_scope" <+> ppr in_scope $$
-             text "tenv" <+> ppr tenv $$
-             text "cenv" <+> ppr cenv $$
-             text "tys" <+> ppr tys $$
-             text "cos" <+> ppr cos $$
-             text "needInScope" <+> ppr needInScope )
-    a
+  = a
   where
   substDomain = varEnvKeys tenv ++ varEnvKeys cenv
   needInScope = (tyCoVarsOfTypes tys `unionVarSet` tyCoVarsOfCos cos)

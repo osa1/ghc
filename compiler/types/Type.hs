@@ -100,7 +100,8 @@ module Type (
         isPiTy,
 
         -- (Lifting and boxity)
-        isUnliftedType, isUnboxedTupleType, isAlgType, isClosedAlgType,
+        isUnliftedType, isUnboxedTupleType, isUnboxedSumType,
+        isAlgType, isClosedAlgType,
         isPrimitiveType, isStrictType,
         isRuntimeRepTy, isRuntimeRepVar, isRuntimeRepKindedTy,
         dropRuntimeRepArgs,
@@ -221,6 +222,7 @@ import FastString
 import Pair
 import ListSetOps
 import Digraph
+import {-# SOURCE #-} ElimUbxSums ( unboxedSumTyConFields )
 
 import Maybes           ( orElse )
 import Data.Maybe       ( isJust, mapMaybe )
@@ -258,7 +260,7 @@ import Control.Arrow    ( first, second )
 --
 -- Some primitive types are unboxed, such as @Int#@, whereas some are boxed
 -- but unlifted (such as @ByteArray#@).  The only primitive types that we
--- classify as algebraic are the unboxed tuples.
+-- classify as algebraic are the unboxed tuples and unboxed sums.
 --
 -- Some examples of type classifications that may make this a bit clearer are:
 --
@@ -267,7 +269,8 @@ import Control.Arrow    ( first, second )
 -- -----------------------------------------------------------------------------
 -- Int#         Yes             No              No              No
 -- ByteArray#   Yes             Yes             No              No
--- (\# a, b \#)   Yes             No              No              Yes
+-- (\# a, b \#) Yes             No              No              Yes
+-- (# a | b #)  Yes             No              No              Yes
 -- (  a, b  )   No              Yes             Yes             Yes
 -- [a]          No              Yes             Yes             Yes
 -- @
@@ -1184,15 +1187,25 @@ thunk and a function takes a nullary unboxed tuple as an argument!
 
 type UnaryType = Type
 
-data RepType = UbxTupleRep [UnaryType] -- INVARIANT: never an empty list (see Note [Nullary unboxed tuple])
+data RepType = UbxTupleRep [UnaryType]
+                 -- ^ INVARIANT: never an empty list
+                 -- (see Note [Nullary unboxed tuple])
+             | UbxSumRep [UnaryType] [UnaryType]
+                 -- ^ Unlifted fields, lifted fields
+                 -- INVARIANT: Unlifted fields list only contains an 'Int#' for
+                 -- the tag, and an unlifted type that is as big as all other
+                 -- unlifted types. Lifted fields list only contains 'Any'.
              | UnaryRep UnaryType
 
 instance Outputable RepType where
   ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
+  ppr (UbxSumRep ubx_tys bx_tys) =
+    text "UbxSumRep" <+> ppr ubx_tys <+> ppr bx_tys
   ppr (UnaryRep ty)     = text "UnaryRep"    <+> ppr ty
 
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (UbxTupleRep tys) = tys
+flattenRepType (UbxSumRep ubx_tys bx_tys) = ubx_tys ++ bx_tys
 flattenRepType (UnaryRep ty)     = [ty]
 
 -- | Looks through:
@@ -1223,9 +1236,17 @@ repType ty
       = go rec_nts' (newTyConInstRhs tc tys)
 
       | isUnboxedTupleTyCon tc
+      , let non_levity_tys = drop (length tys `div` 2) tys
+          -- See Note [Unboxed tuple levity vars] in TyCon
       = if null tys
          then UnaryRep voidPrimTy -- See Note [Nullary unboxed tuple]
          else UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
+
+      | isUnboxedSumTyCon tc
+      , let (ubx_fields, bx_fields) = unboxedSumTyConFields (drop (length tys `div` 2) tys)
+      = -- TODO: Currently all unlifted types are held as 'Int#'.
+        UbxSumRep (intPrimTy : replicate (ubx_fields - 1) intPrimTy)
+                  (replicate bx_fields (anyTypeOfKind liftedTypeKind))
       where
           -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
         non_rr_tys = dropRuntimeRepArgs tys
@@ -1964,6 +1985,11 @@ isUnboxedTupleType :: Type -> Bool
 isUnboxedTupleType ty = case tyConAppTyCon_maybe ty of
                            Just tc -> isUnboxedTupleTyCon tc
                            _       -> False
+
+isUnboxedSumType :: Type -> Bool
+isUnboxedSumType ty = case tyConAppTyCon_maybe ty of
+                        Just tc -> isUnboxedSumTyCon tc
+                        _       -> False
 
 -- | See "Type#type_classification" for what an algebraic type is.
 -- Should only be applied to /types/, as opposed to e.g. partially

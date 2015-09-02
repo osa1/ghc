@@ -49,6 +49,8 @@ module BasicTypes(
         TupleSort(..), tupleSortBoxity, boxityTupleSort,
         tupleParens,
 
+        sumParens, pprAlternative,
+
         -- ** The OneShotInfo type
         OneShotInfo(..),
         noOneShotInfo, hasNoOneShotInfo, isOneShotInfo,
@@ -608,6 +610,27 @@ tupleParens UnboxedTuple    p = text "(#" <+> p <+> ptext (sLit "#)")
 tupleParens ConstraintTuple p   -- In debug-style write (% Eq a, Ord b %)
   | opt_PprStyle_Debug        = text "(%" <+> p <+> ptext (sLit "%)")
   | otherwise                 = parens p
+
+{-
+************************************************************************
+*                                                                      *
+                Sums
+*                                                                      *
+************************************************************************
+-}
+
+sumParens :: SDoc -> SDoc
+sumParens p = ptext (sLit "(#") <+> p <+> ptext (sLit "#)")
+
+-- | Pretty print an alternative in an unboxed sum e.g. "| a | |".
+pprAlternative :: (a -> SDoc) -- ^ The pretty printing function to use
+               -> a           -- ^ The things to be pretty printed
+               -> Int         -- ^ Alternative (zero-based)
+               -> Int         -- ^ Arity
+               -> SDoc        -- ^ 'SDoc' where the alternative havs been pretty
+                              -- printed and finally packed into a paragraph.
+pprAlternative pp x alt arity =
+    fsep (replicate alt vbar ++ [pp x] ++ replicate (arity - alt) vbar)
 
 {-
 ************************************************************************

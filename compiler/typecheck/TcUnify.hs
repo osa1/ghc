@@ -29,7 +29,6 @@ module TcUnify (
   matchExpectedFunTys,
   matchActualFunTys, matchActualFunTysPart,
   matchExpectedFunKind,
-
   wrapFunResCoercion
 
   ) where

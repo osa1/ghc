@@ -140,7 +140,7 @@ cgLetNoEscapeRhsBody
     -> Id
     -> StgRhs
     -> FCode (CgIdInfo, FCode ())
-cgLetNoEscapeRhsBody local_cc bndr (StgRhsClosure cc _bi _ _upd args body)
+cgLetNoEscapeRhsBody local_cc bndr (StgRhsClosure cc _bi _ _upd args body _)
   = cgLetNoEscapeClosure bndr local_cc cc (nonVoidIds args) body
 cgLetNoEscapeRhsBody local_cc bndr (StgRhsCon cc con args)
   = cgLetNoEscapeClosure bndr local_cc cc [] (StgConApp con args)
@@ -358,7 +358,7 @@ of compilation (i.e. at the Core level).
 Note [Scrutinising VoidRep]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Suppose we have this STG code:
-   f = \[s : State# RealWorld] -> 
+   f = \[s : State# RealWorld] ->
        case s of _ -> blah
 This is very odd.  Why are we scrutinising a state token?  But it
 can arise with bizarre NOINLINE pragmas (Trac #9964)
@@ -369,7 +369,7 @@ can arise with bizarre NOINLINE pragmas (Trac #9964)
 
 Now the trouble is that 's' has VoidRep, and we do not bind void
 arguments in the environment; they don't live anywhere.  See the
-calls to nonVoidIds in various places.  So we must not look up 
+calls to nonVoidIds in various places.  So we must not look up
 's' in the environment.  Instead, just evaluate the RHS!  Simple.
 -}
 
@@ -380,7 +380,7 @@ cgCase (StgApp v []) _ (PrimAlt _) alts
 
 {- Note [Dodgy unsafeCoerce 1]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Consider 
+Consider
     case (x :: HValue) |> co of (y :: MutVar# Int)
         DEFAULT -> ...
 We want to gnerate an assignment
@@ -399,8 +399,10 @@ cgCase (StgApp v []) bndr alt_type@(PrimAlt _) alts
   || reps_compatible
   = -- assignment suffices for unlifted types
     do { dflags <- getDynFlags
-       ; unless reps_compatible $
-           panic "cgCase: reps do not match, perhaps a dodgy unsafeCoerce?"
+       ; unless (sizes_compatible dflags) $
+           pprPanic "cgCase: reps do not match, perhaps a dodgy unsafeCoerce?"
+             (text "v:" <+> ppr v <> parens (ppr (idType v)) $$
+              text "bndr:" <+> ppr bndr <> parens (ppr (idType bndr)))
        ; v_info <- getCgIdInfo v
        ; emitAssign (CmmLocal (idToReg dflags (NonVoid bndr)))
                     (idInfoToAmode v_info)
@@ -408,6 +410,8 @@ cgCase (StgApp v []) bndr alt_type@(PrimAlt _) alts
        ; cgAlts (NoGcInAlts,AssignedDirectly) (NonVoid bndr) alt_type alts }
   where
     reps_compatible = idPrimRep v == idPrimRep bndr
+    sizes_compatible dflags =
+      primRepSizeW dflags (idPrimRep v) <= primRepSizeW dflags (idPrimRep bndr)
 
 {- Note [Dodgy unsafeCoerce 2, #3132]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -529,8 +533,9 @@ chooseReturnBndrs :: Id -> AltType -> [StgAlt] -> [NonVoid Id]
 chooseReturnBndrs bndr (PrimAlt _) _alts
   = nonVoidIds [bndr]
 
-chooseReturnBndrs _bndr (UbxTupAlt _) [(_, ids, _)]
-  = nonVoidIds ids      -- 'bndr' is not assigned!
+chooseReturnBndrs _bndr (UbxTupAlt n) [(_, ids, _)]
+  = ASSERT2(n == length ids, ppr n $$ ppr ids $$ ppr _bndr)
+    nonVoidIds ids      -- 'bndr' is not assigned!
 
 chooseReturnBndrs bndr (AlgAlt _) _alts
   = nonVoidIds [bndr]   -- Only 'bndr' is assigned

@@ -23,6 +23,8 @@ module MkCore (
         mkCoreVarTup, mkCoreVarTupTy, mkCoreTup, mkCoreUbxTup,
         mkCoreTupBoxity,
 
+        mkCoreUbxSum,
+
         -- * Constructing big tuples
         mkBigCoreVarTup, mkBigCoreVarTup1,
         mkBigCoreVarTupTy, mkBigCoreTupTy,
@@ -140,11 +142,13 @@ mkCoreApps orig_fun orig_args
   where
     go fun _      []               = fun
     go fun fun_ty (Type ty : args) = go (App fun (Type ty)) (piResultTy fun_ty ty) args
-    go fun fun_ty (arg     : args) = ASSERT2( isFunTy fun_ty, ppr fun_ty $$ ppr orig_fun
-                                                              $$ ppr orig_args )
-                                     go (mk_val_app fun arg arg_ty res_ty) res_ty args
-                                   where
-                                     (arg_ty, res_ty) = splitFunTy fun_ty
+    go fun fun_ty (arg     : args) =
+      ASSERT2( isFunTy fun_ty, text "fun_ty:" <+> ppr fun_ty $$
+                               text "orig_fun:" <+> ppr orig_fun $$
+                               text "orig_args:" <+> ppr orig_args )
+      go (mk_val_app fun arg arg_ty res_ty) res_ty args
+        where
+          (arg_ty, res_ty) = splitFunTy fun_ty
 
 -- | Construct an expression which represents the application of a number of
 -- expressions to that of a data constructor expression. The leftmost expression
@@ -355,6 +359,14 @@ mkCoreUbxTup tys exps
 mkCoreTupBoxity :: Boxity -> [CoreExpr] -> CoreExpr
 mkCoreTupBoxity Boxed   exps = mkCoreTup exps
 mkCoreTupBoxity Unboxed exps = mkCoreUbxTup (map exprType exps) exps
+
+mkCoreUbxSum :: [Type] -> AltIx -> CoreExpr -> CoreExpr
+mkCoreUbxSum alt_tys alt arg
+  = ASSERT( alt > 0 && alt <= length alt_tys )
+    mkCoreConApps (sumDataCon alt (length alt_tys))
+      (map (Type . getRuntimeRep "mkCoreUbxSum") alt_tys ++
+       map Type alt_tys ++
+       [arg])
 
 -- | Build a big tuple holding the specified variables
 -- One-tuples are flattened; see Note [Flattening of one-tuples]
