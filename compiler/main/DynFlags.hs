@@ -3555,6 +3555,7 @@ xFlagsDeps = [
   flagSpec "TypeOperators"                    LangExt.TypeOperators,
   flagSpec "TypeSynonymInstances"             LangExt.TypeSynonymInstances,
   flagSpec "UnboxedTuples"                    LangExt.UnboxedTuples,
+  flagSpec "UnboxedSums"                      LangExt.UnboxedSums,
   flagSpec "UndecidableInstances"             LangExt.UndecidableInstances,
   flagSpec "UndecidableSuperClasses"          LangExt.UndecidableSuperClasses,
   flagSpec "UnicodeSyntax"                    LangExt.UnicodeSyntax,
@@ -3873,6 +3874,7 @@ glasgowExtsFlags = [
            , LangExt.TypeOperators
            , LangExt.TypeSynonymInstances
            , LangExt.UnboxedTuples
+           , LangExt.UnboxedSums
            , LangExt.UnicodeSyntax
            , LangExt.UnliftedFFITypes ]
 

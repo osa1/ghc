@@ -409,9 +409,9 @@ $tab          { warnTab }
 }
 
 <0> {
-  "(#" / { ifExtension unboxedTuplesEnabled }
+  "(#" / { ifExtension (\ b -> unboxedTuplesEnabled b || unboxedSumsEnabled b) }
          { token IToubxparen }
-  "#)" / { ifExtension unboxedTuplesEnabled }
+  "#)" / { ifExtension (\ b -> unboxedTuplesEnabled b || unboxedSumsEnabled b) }
          { token ITcubxparen }
 }
 
@@ -2034,6 +2034,7 @@ data ExtBits
   | RecursiveDoBit -- mdo
   | UnicodeSyntaxBit -- the forall symbol, arrow symbols, etc
   | UnboxedTuplesBit -- (# and #)
+  | UnboxedSumsBit -- Same as UnboxedTuplesBit
   | DatatypeContextsBit
   | TransformComprehensionsBit
   | QqBit -- enable quasiquoting
@@ -2080,6 +2081,8 @@ unicodeSyntaxEnabled :: ExtsBitmap -> Bool
 unicodeSyntaxEnabled = xtest UnicodeSyntaxBit
 unboxedTuplesEnabled :: ExtsBitmap -> Bool
 unboxedTuplesEnabled = xtest UnboxedTuplesBit
+unboxedSumsEnabled :: ExtsBitmap -> Bool
+unboxedSumsEnabled = xtest UnboxedSumsBit
 datatypeContextsEnabled :: ExtsBitmap -> Bool
 datatypeContextsEnabled = xtest DatatypeContextsBit
 qqEnabled :: ExtsBitmap -> Bool
@@ -2167,6 +2170,7 @@ mkPState flags buf loc =
                .|. RecursiveDoBit              `setBitIf` xopt LangExt.RecursiveDo              flags
                .|. UnicodeSyntaxBit            `setBitIf` xopt LangExt.UnicodeSyntax            flags
                .|. UnboxedTuplesBit            `setBitIf` xopt LangExt.UnboxedTuples            flags
+               .|. UnboxedSumsBit              `setBitIf` xopt LangExt.UnboxedSums              flags
                .|. DatatypeContextsBit         `setBitIf` xopt LangExt.DatatypeContexts         flags
                .|. TransformComprehensionsBit  `setBitIf` xopt LangExt.TransformListComp        flags
                .|. TransformComprehensionsBit  `setBitIf` xopt LangExt.MonadComprehensions      flags
