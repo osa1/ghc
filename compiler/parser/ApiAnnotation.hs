@@ -190,7 +190,6 @@ data AnnKeywordId
     | AnnAt
     | AnnBang  -- ^ '!'
     | AnnBackquote -- ^ '`'
-    | AnnBar -- ^ '|' as a sum separator
     | AnnBy
     | AnnCase -- ^ case or lambda case
     | AnnClass
