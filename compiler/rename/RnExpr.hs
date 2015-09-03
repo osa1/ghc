@@ -272,7 +272,7 @@ rnExpr (RecordCon { rcon_con_name = con_id
                             ; return (L l (fld { hsRecFieldArg = arg' }), fvs) }
 
 rnExpr (HsSum selector arity expr _)
-  = do { (expr', fvs) <- rnExpr expr
+  = do { (expr', fvs) <- rnLExpr expr
        ; return (HsSum selector arity expr' PlaceHolder, fvs) }
 
 rnExpr (RecordUpd { rupd_expr = expr, rupd_flds = rbinds })
