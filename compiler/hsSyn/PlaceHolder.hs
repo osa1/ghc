@@ -109,6 +109,7 @@ type DataId id =
 --  , Data (PostRn id [id])
   , Data (PostRn id id)
   , Data (PostTc id Type)
+  , Data (PostTc id [Type])
   , Data (PostTc id Coercion)
   , Data (PostTc id id)
   , Data (PostTc id [Type])
