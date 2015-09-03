@@ -256,7 +256,7 @@ rnExpr (ExplicitTuple tup_args boxity)
                                         , emptyFVs)
 
 rnExpr (HsSum selector arity expr _)
-  = do { (expr', fvs) <- rnExpr expr
+  = do { (expr', fvs) <- rnLExpr expr
        ; return (HsSum selector arity expr' PlaceHolder, fvs) }
 
 rnExpr (RecordCon { rcon_con_name = con_id, rcon_flds = rbinds })
