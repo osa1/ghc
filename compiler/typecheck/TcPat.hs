@@ -50,6 +50,7 @@ import Maybes( orElse )
 import qualified GHC.LanguageExtensions as LangExt
 import Control.Monad
 import Control.Arrow  ( second )
+import ListSetOps
 
 {-
 ************************************************************************
@@ -485,9 +486,10 @@ tc_pat penv (TuplePat pats boxity _) pat_ty thing_inside
         }
 
 tc_pat penv (SumPat pat alt arity _) pat_ty thing_inside
-  = do  { (coi, arg_ty) <- matchExpectedPatTy (matchExpectedSumTyR alt arity) pat_ty
-        ; (pat', res) <- tc_lpat pat arg_ty penv thing_inside
-        ; return (mkHsWrapPat coi (SumPat pat' alt arity arg_ty) pat_ty, res)
+  = do  { let tc = sumTyCon arity
+        ; (coi, arg_tys) <- matchExpectedPatTy (matchExpectedTyConAppR tc) pat_ty
+        ; (pat', res) <- tc_lpat pat (arg_tys `getNth` alt) penv thing_inside
+        ; return (mkHsWrapPat coi (SumPat pat' alt arity arg_tys) pat_ty, res)
         }
 
 ------------------------

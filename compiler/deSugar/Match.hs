@@ -454,6 +454,11 @@ tidy1 _ (TuplePat pats boxity tys)
     arity = length pats
     tuple_ConPat = mkPrefixConPat (tupleDataCon boxity arity) pats tys
 
+tidy1 _ (SumPat pat alt arity tys)
+  = return (idDsWrapper, unLoc sum_ConPat)
+  where
+    sum_ConPat = mkPrefixConPat (sumDataCon alt arity) [pat] tys
+
 -- LitPats: we *might* be able to replace these w/ a simpler form
 tidy1 _ (LitPat lit)
   = return (idDsWrapper, tidyLitPat lit)
@@ -483,6 +488,7 @@ tidy_bang_pat v l (CoPat w p t) = tidy1 v (CoPat w (BangPat (L l p)) t)
 tidy_bang_pat v _ p@(LitPat {})    = tidy1 v p
 tidy_bang_pat v _ p@(ListPat {})   = tidy1 v p
 tidy_bang_pat v _ p@(TuplePat {})  = tidy1 v p
+tidy_bang_pat v _ p@(SumPat {})  = tidy1 v p
 tidy_bang_pat v _ p@(PArrPat {})   = tidy1 v p
 
 -- Data/newtype constructors
@@ -936,6 +942,7 @@ viewLExprEq (e1,_) (e2,_) = lexp e1 e2
         lexp e1 e1' && lexp e2 e2'
     exp (ExplicitTuple es1 _) (ExplicitTuple es2 _) =
         eq_list tup_arg es1 es2
+    exp (HsSum _ _ e _) (HsSum _ _ e' _) = lexp e e'
     exp (HsIf _ e e1 e2) (HsIf _ e' e1' e2') =
         lexp e e' && lexp e1 e1' && lexp e2 e2'
 
