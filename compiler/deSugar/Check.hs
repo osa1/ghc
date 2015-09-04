@@ -181,6 +181,7 @@ initial_uncovered vars = do
   where
     simpleToTmCs :: (Id, PmExpr) -> PmConstraint
     simpleToTmCs (x,e) = TmConstraint (PmExprVar x) e
+
 {-
 %************************************************************************
 %*                                                                      *
