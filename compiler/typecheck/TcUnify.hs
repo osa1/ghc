@@ -29,7 +29,6 @@ module TcUnify (
   matchExpectedFunTys,
   matchActualFunTys, matchActualFunTysPart,
   matchExpectedFunKind,
-  matchExpectedSumTy,
   wrapFunResCoercion
 
   ) where
@@ -59,7 +58,6 @@ import Bag
 import Util
 import Outputable
 import FastString
-import ListSetOps ( getNth )
 
 import Control.Monad
 
@@ -295,14 +293,6 @@ matchExpectedListTy :: TcRhoType -> TcM (TcCoercionN, TcRhoType)
 matchExpectedListTy exp_ty
  = do { (co, [elt_ty]) <- matchExpectedTyConApp listTyCon exp_ty
       ; return (co, elt_ty) }
-
-----------------------
-matchExpectedSumTy :: Int -> Int -> TcRhoType -> TcM (TcCoercionN, TcRhoType)
--- Special case for sums
-matchExpectedSumTy alt arity exp_ty
- = do { let tc = sumTyCon arity
-      ; (coi, arg_tys) <- matchExpectedTyConApp tc exp_ty
-      ; return (coi, arg_tys `getNth` alt) }
 
 ----------------------
 matchExpectedPArrTy :: TcRhoType -> TcM (TcCoercionN, TcRhoType)
