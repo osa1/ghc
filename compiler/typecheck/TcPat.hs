@@ -459,8 +459,7 @@ tc_pat penv (TuplePat pats boxity _) pat_ty thing_inside
         }
 
 tc_pat penv (SumPat pat alt arity _) pat_ty thing_inside
-  = do  { let tc = sumTyCon arity
-        ; (coi, [arg_ty]) <- matchExpectedPatTy (matchExpectedTyConAppR tc) pat_ty
+  = do  { (coi, arg_ty) <- matchExpectedPatTy (matchExpectedSumTyR alt arity) pat_ty
         ; (pat', res) <- tc_lpat pat arg_ty penv thing_inside
         ; return (mkHsWrapPat coi (SumPat pat' alt arity arg_ty) pat_ty, res)
         }
