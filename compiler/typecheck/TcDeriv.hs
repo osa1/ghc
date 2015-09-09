@@ -995,7 +995,7 @@ mk_data_eqn :: Maybe OverlapMode -> [TyVar] -> Class
             -> TcM EarlyDerivSpec
 mk_data_eqn overlap_mode tvs cls tycon tc_args rep_tc rep_tc_args mtheta
   = do loc                  <- getSrcSpanM
-       dfun_name            <- new_dfun_name cls tycon
+       dfun_name            <- newDFunName' cls tycon
        case mtheta of
         Nothing -> do --Infer context
             inferred_constraints <- inferConstraints cls inst_tys rep_tc rep_tc_args
@@ -1527,7 +1527,7 @@ mkNewTypeEqn dflags overlap_mode tvs
     might_derive_via_coercible && ((newtype_deriving && not deriveAnyClass)
                                   || std_class_via_coercible cls)
   = do traceTc "newtype deriving:" (ppr tycon <+> ppr rep_tys <+> ppr all_preds)
-       dfun_name <- new_dfun_name cls tycon
+       dfun_name <- newDFunName' cls tycon
        loc <- getSrcSpanM
        case mtheta of
         Just theta -> return $ GivenTheta $ DS

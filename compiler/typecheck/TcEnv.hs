@@ -53,7 +53,7 @@ module TcEnv(
         topIdLvl, isBrackStage,
 
         -- New Ids
-        newLocalName, newDFunName, new_dfun_name, newFamInstTyConName,
+        newLocalName, newDFunName, newDFunName', newFamInstTyConName,
         newFamInstAxiomName,
         mkStableIdFromString, mkStableIdFromName,
         mkWrapperName
@@ -735,8 +735,8 @@ newDFunName clas tys loc
         ; newGlobalBinder mod dfun_occ loc }
 
 -- | Special case of 'newDFunName' to generate dict fun name for a single TyCon.
-new_dfun_name :: Class -> TyCon -> TcM Name
-new_dfun_name clas tycon        -- Just a simple wrapper
+newDFunName' :: Class -> TyCon -> TcM Name
+newDFunName' clas tycon        -- Just a simple wrapper
   = do { loc <- getSrcSpanM     -- The location of the instance decl,
                                 -- not of the tycon
        ; newDFunName clas [mkTyConApp tycon []] loc }

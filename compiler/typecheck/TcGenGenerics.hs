@@ -114,13 +114,13 @@ metaTyConsToDerivStuff :: TyCon -> MetaTyCons -> TcM BagDerivStuff
 metaTyConsToDerivStuff tc metaDts =
   do  dflags <- getDynFlags
       dClas <- tcLookupClass datatypeClassName
-      d_dfun_name <- new_dfun_name dClas tc
+      d_dfun_name <- newDFunName' dClas tc
       cClas <- tcLookupClass constructorClassName
-      c_dfun_names <- sequence [ (conTy,) <$> new_dfun_name cClas tc
+      c_dfun_names <- sequence [ (conTy,) <$> newDFunName' cClas tc
                                | conTy <- metaC metaDts ]
       sClas <- tcLookupClass selectorClassName
       s_dfun_names <-
-        sequence (map sequence [ [ (selector,) <$> new_dfun_name sClas tc
+        sequence (map sequence [ [ (selector,) <$> newDFunName' sClas tc
                                  | selector <- selectors ]
                                | selectors <- metaS metaDts ])
       fix_env <- getFixityEnv
