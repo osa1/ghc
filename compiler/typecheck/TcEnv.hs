@@ -722,11 +722,9 @@ simpleInstInfoTyCon :: InstInfo a -> TyCon
   -- i.e. one of the form       instance (...) => C (T a b c) where ...
 simpleInstInfoTyCon inst = tcTyConAppTyCon (simpleInstInfoTy inst)
 
-{-
-Make a name for the dict fun for an instance decl.  It's an *external*
-name, like otber top-level names, and hence must be made with newGlobalBinder.
--}
-
+-- | Make a name for the dict fun for an instance decl.  It's an *external*
+-- name, like other top-level names, and hence must be made with
+-- newGlobalBinder.
 newDFunName :: Class -> [Type] -> SrcSpan -> TcM Name
 newDFunName clas tys loc
   = do  { is_boot <- tcIsHsBootOrSig
@@ -736,6 +734,7 @@ newDFunName clas tys loc
         ; dfun_occ <- chooseUniqueOccTc (mkDFunOcc info_string is_boot)
         ; newGlobalBinder mod dfun_occ loc }
 
+-- | Special case of 'newDFunName' to generate dict fun name for a single TyCon.
 new_dfun_name :: Class -> TyCon -> TcM Name
 new_dfun_name clas tycon        -- Just a simple wrapper
   = do { loc <- getSrcSpanM     -- The location of the instance decl,
