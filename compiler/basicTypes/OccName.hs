@@ -109,6 +109,7 @@ import FastString
 import Outputable
 import Lexeme
 import Binary
+import Module
 import Data.Char
 import Data.Data
 
@@ -635,18 +636,28 @@ mkTag2ConOcc        = mk_simple_deriv varName  "$tag2con_"
 mkMaxTagOcc         = mk_simple_deriv varName  "$maxtag_"
 
 -- Generic deriving mechanism
-mkGenD :: String -> OccName -> OccName
-mkGenD prefix = mk_simple_deriv tcName ("D1_" ++ prefix ++ "_")
 
-mkGenC :: String -> OccName -> Int -> OccName
-mkGenC prefix occ m   =
+-- | Generate a module-unique name, to be used e.g. while generating new names
+-- for Generics types. We use module package key to avoid name clashes when
+-- package imports is used.
+mkModPrefix :: Module -> String
+mkModPrefix mod = pk ++ "_" ++ mn
+  where
+    pk = packageKeyString (modulePackageKey mod)
+    mn = moduleNameString (moduleName mod)
+
+mkGenD :: Module -> OccName -> OccName
+mkGenD mod = mk_simple_deriv tcName ("D1_" ++ mkModPrefix mod ++ "_")
+
+mkGenC :: Module -> OccName -> Int -> OccName
+mkGenC mod occ m   =
   mk_deriv tcName ("C1_" ++ show m) $
-    prefix ++ "_" ++ occNameString occ
+    mkModPrefix mod ++ "_" ++ occNameString occ
 
-mkGenS :: String -> OccName -> Int -> Int -> OccName
-mkGenS prefix occ m n =
+mkGenS :: Module -> OccName -> Int -> Int -> OccName
+mkGenS mod occ m n =
   mk_deriv tcName ("S1_" ++ show m ++ "_" ++ show n) $
-    prefix ++ "_" ++ occNameString occ
+    mkModPrefix mod ++ "_" ++ occNameString occ
 
 mkGenR   = mk_simple_deriv tcName "Rep_"
 mkGen1R  = mk_simple_deriv tcName "Rep1_"
