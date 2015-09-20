@@ -29,7 +29,9 @@ test :: ()
 test =
   $(let
       display :: Name -> Q ()
-      display q = do { i <- reify q; runIO $ hPutStrLn stderr (pprint i) }
+      display q = do
+        i <- reify q
+        runIO (hPutStrLn stderr (pprint i) >> hFlush stderr)
     in do
       display ''C
       display ''C'
