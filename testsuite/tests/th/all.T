@@ -363,3 +363,4 @@ test('T10891',
      extra_clean(['T10891_Classes.hi', 'T10891_Classes.o']),
      multimod_compile_and_run,
      ['T10891.hs', '-v0 ' + config.ghc_th_way_flags])
+test('T10891', normal, compile, ['-v0'])
