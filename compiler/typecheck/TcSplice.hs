@@ -1237,7 +1237,6 @@ reifyClass cls
 
     tfNames :: TH.Dec -> (TH.Name, [TH.Name])
     tfNames (TH.OpenTypeFamilyD   n args _ _)   = (n, map bndrName args)
-    tfNames (TH.ClosedTypeFamilyD n args _ _ _) = (n, map bndrName args)
     tfNames d = pprPanic "tfNames" (text (show d))
 
     bndrName :: TH.TyVarBndr -> TH.Name
