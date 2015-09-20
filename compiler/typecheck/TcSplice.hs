@@ -1202,7 +1202,7 @@ reifyClass cls
   = do  { cxt <- reifyCxt theta
         ; inst_envs <- tcGetInstEnvs
         ; insts <- reifyClassInstances cls (InstEnv.classInstances inst_envs cls)
-        ; assocTys <- concat `fmap` mapM reifyAT ats
+        ; assocTys <- concatMapM reifyAT ats
         ; ops <- concatMapM reify_op op_stuff
         ; tvs' <- reifyTyVars tvs
         ; let dec = TH.ClassD cxt (reifyName cls) tvs' fds' (assocTys ++ ops)
