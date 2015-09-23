@@ -119,7 +119,7 @@ dmdAnalStar env dmd e
   , (dmd_ty, e')        <- dmdAnal env cd e
   = (postProcessDmdTypeM defer_and_use dmd_ty, e')
 
--- Main Demand Analsysis machinery
+-- Main Demand Analysis machinery
 dmdAnal, dmdAnal' :: AnalEnv
         -> CleanDemand         -- The main one takes a *CleanDemand*
         -> CoreExpr -> (DmdType, CoreExpr)
@@ -548,6 +548,9 @@ dmdFix top_lvl env orig_pairs
                 -- The occurrence analyser has arranged them in a good order
                 -- so this can significantly reduce the number of iterations needed
 
+        my_downRhs :: (AnalEnv, VarEnv Demand)
+                   -> (CoreBndr, CoreExpr)
+                   -> ((AnalEnv, VarEnv Demand), (CoreBndr, CoreExpr))
         my_downRhs (env, lazy_fv) (id,rhs)
           = ((env', lazy_fv'), (id', rhs'))
           where

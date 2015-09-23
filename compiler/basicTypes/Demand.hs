@@ -1058,7 +1058,7 @@ For comparison,
   b1 x = x `seq` error (show x)
 has a strictness signature of
   <S>b
-and "b1 1 `seq` ()" is known to terminate.
+and "b1 1 `seq` ()" is known to diverge.
 
 Now consider a function h with signature "<C(S)>", and the expression
   e1 = h b1
