@@ -1227,7 +1227,7 @@ reifyClass cls
         TH.FamilyI dec _ -> do
           let (tyName, tyArgs) = tfNames dec
           (dec :) <$> maybe (return [])
-                            (fmap (:[]) . reifyDefImpl tyName tyArgs)
+                            (fmap (:[]) . reifyDefImpl tyName tyArgs . fst)
                             def
         _ -> pprPanic "reifyAT" (text (show tycon'))
 
