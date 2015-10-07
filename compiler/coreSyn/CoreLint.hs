@@ -1548,7 +1548,7 @@ addWarnL :: MsgDoc -> LintM ()
 addWarnL msg = LintM $ \ env (warns,errs) ->
               (Just (), (addMsg env warns msg, errs))
 
-addMsg :: LintEnv ->  Bag MsgDoc -> MsgDoc -> Bag MsgDoc
+addMsg :: LintEnv -> Bag MsgDoc -> MsgDoc -> Bag MsgDoc
 addMsg env msgs msg
   = ASSERT( notNull locs )
     msgs `snocBag` mk_msg msg
@@ -1560,7 +1560,7 @@ addMsg env msgs msg
                                       ptext (sLit "Substitution:") <+> ppr (le_subst env)
                | otherwise          = cxt1
 
-   mk_msg msg = mkLocMessage SevWarning (mkSrcSpan loc loc) (context $$ msg)
+   mk_msg msg = mkLocMessage (SevWarning Nothing) (mkSrcSpan loc loc) (context $$ msg)
 
 addLoc :: LintLocInfo -> LintM a -> LintM a
 addLoc extra_loc m

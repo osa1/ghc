@@ -1374,7 +1374,8 @@ checkMissingFields data_con rbinds
 
     warn <- woptM Opt_WarnMissingFields
     unless (not (warn && notNull missing_ns_fields))
-           (warnTc True (missingFields data_con missing_ns_fields))
+           (warnTc True (missingFields data_con missing_ns_fields)
+                   (Just Opt_WarnMissingFields))
 
   where
     missing_s_fields

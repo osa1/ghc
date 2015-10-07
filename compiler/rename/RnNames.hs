@@ -228,6 +228,7 @@ rnImportDecl this_mod
            | qual_only  -> return ()
            | otherwise  -> whenWOptM Opt_WarnMissingImportList $
                            addWarn (missingImportListWarn imp_mod_name)
+                                   (Just Opt_WarnMissingImportList)
 
     iface <- loadSrcInterface doc imp_mod_name want_boot (fmap sl_fs mb_pkg)
 
@@ -245,7 +246,7 @@ rnImportDecl this_mod
     -- is not deterministic.  The hs-boot test can show this up.
     dflags <- getDynFlags
     warnIf (want_boot && not (mi_boot iface) && isOneShot (ghcMode dflags))
-           (warnRedundantSourceImport imp_mod_name)
+           (warnRedundantSourceImport imp_mod_name) Nothing
     when (mod_safe && not (safeImportsOn dflags)) $
         addErr (ptext (sLit "safe import can't be used as Safe Haskell isn't on!")
                 $+$ ptext (sLit $ "please enable Safe Haskell through either "
@@ -278,8 +279,9 @@ rnImportDecl this_mod
 
     -- Complain if we import a deprecated module
     whenWOptM Opt_WarnWarningsDeprecations (
-       case (mi_warns iface) of
-          WarnAll txt -> addWarn $ moduleWarn imp_mod_name txt
+       case mi_warns iface of
+          WarnAll txt -> addWarn (moduleWarn imp_mod_name txt)
+                                 (Just Opt_WarnWarningsDeprecations)
           _           -> return ()
      )
 
@@ -721,11 +723,11 @@ filterImports iface decl_spec (Just (want_hiding, L l import_items))
         where
             -- Warn when importing T(..) if T was exported abstractly
             emit_warning (DodgyImport n) = whenWOptM Opt_WarnDodgyImports $
-              addWarn (dodgyImportWarn n)
+              addWarn (dodgyImportWarn n) (Just Opt_WarnDodgyImports)
             emit_warning MissingImportList = whenWOptM Opt_WarnMissingImportList $
-              addWarn (missingImportListItem ieRdr)
+              addWarn (missingImportListItem ieRdr) (Just Opt_WarnMissingImportList)
             emit_warning BadImportW = whenWOptM Opt_WarnDodgyImports $
-              addWarn (lookup_err_msg BadImport)
+              addWarn (lookup_err_msg BadImport) (Just Opt_WarnDodgyImports)
 
             run_lookup :: IELookupM a -> TcRn (Maybe a)
             run_lookup m = case m of
@@ -1096,7 +1098,7 @@ exports_from_avail (Just (L _ rdr_items)) rdr_env imports this_mod
                              | (L _ (IEModuleContents (L _ mod))) <- ie_names ]
         , mod `elem` earlier_mods    -- Duplicate export of M
         = do { warn_dup_exports <- woptM Opt_WarnDuplicateExports ;
-               warnIf warn_dup_exports (dupModuleExport mod) ;
+               warnIf warn_dup_exports (dupModuleExport mod) (Just Opt_WarnDuplicateExports) ;
                return acc }
 
         | otherwise
@@ -1111,7 +1113,7 @@ exports_from_avail (Just (L _ rdr_items)) rdr_env imports this_mod
 
              ; checkErr exportValid (moduleNotImported mod)
              ; warnIf (warnDodgyExports && exportValid && null names)
-                      (nullModuleExport mod)
+                      (nullModuleExport mod) (Just Opt_WarnDodgyImports)
 
              ; addUsedRdrNames (concat [ [mkRdrQual mod occ, mkRdrUnqual occ]
                                        | occ <- map nameOccName names ])
@@ -1162,7 +1164,9 @@ exports_from_avail (Just (L _ rdr_items)) rdr_env imports this_mod
              warnDodgyExports <- woptM Opt_WarnDodgyExports
              when (null kids) $
                   if isTyConName name
-                  then when warnDodgyExports $ addWarn (dodgyExportWarn name)
+                  then when warnDodgyExports $
+                        addWarn (dodgyExportWarn name)
+                                (Just Opt_WarnDodgyImports)
                   else -- This occurs when you export T(..), but
                        -- only import T abstractly, or T is a synonym.
                        addErr (exportItemErr ie)
@@ -1246,6 +1250,7 @@ check_occs ie occs names  -- 'names' are the entities specifed by 'ie'
             -> do unless (dupExport_ok name ie ie') $ do
                       warn_dup_exports <- woptM Opt_WarnDuplicateExports
                       warnIf warn_dup_exports (dupExportWarn name_occ ie ie')
+                             (Just Opt_WarnDuplicateExports)
                   return occs
 
             | otherwise    -- Same occ name but different names: an error
@@ -1501,10 +1506,11 @@ warnUnusedImport (L loc decl, used, unused)
   , not (null hides)
   , pRELUDE_NAME == unLoc (ideclName decl)
                 = return ()            -- Note [Do not warn about Prelude hiding]
-  | null used   = addWarnAt loc msg1   -- Nothing used; drop entire decl
+  | null used   = addWarnAt loc msg1 f -- Nothing used; drop entire decl
   | null unused = return ()            -- Everything imported is used; nop
-  | otherwise   = addWarnAt loc msg2   -- Some imports are unused
+  | otherwise   = addWarnAt loc msg2 f -- Some imports are unused
   where
+    f = Just Opt_WarnUnusedImports
     msg1 = vcat [pp_herald <+> quotes pp_mod <+> pp_not_used,
                  nest 2 (ptext (sLit "except perhaps to import instances from")
                                    <+> quotes pp_mod),

@@ -824,10 +824,10 @@ msg sev doc
        ; loc    <- getSrcSpanM
        ; unqual <- getPrintUnqualified
        ; let sty = case sev of
-                     SevError   -> err_sty
-                     SevWarning -> err_sty
-                     SevDump    -> dump_sty
-                     _          -> user_sty
+                     SevError     -> err_sty
+                     SevWarning{} -> err_sty
+                     SevDump      -> dump_sty
+                     _            -> user_sty
              err_sty  = mkErrStyle dflags unqual
              user_sty = mkUserStyle unqual AllTheWay
              dump_sty = mkDumpStyle unqual
@@ -850,8 +850,8 @@ errorMsgS = errorMsg . text
 errorMsg :: SDoc -> CoreM ()
 errorMsg = msg SevError
 
-warnMsg :: SDoc -> CoreM ()
-warnMsg = msg SevWarning
+warnMsg :: SDoc -> Maybe WarningFlag -> CoreM ()
+warnMsg doc flag = msg (SevWarning flag) doc
 
 -- | Output a fatal string error to the screen. Note this does not by itself cause the compiler to die
 fatalErrorMsgS :: String -> CoreM ()

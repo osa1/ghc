@@ -444,10 +444,10 @@ tcInstDecls1 tycl_decls inst_decls deriv_decls
            if isHsBoot (tcg_src env)
              then
                do warn <- woptM Opt_WarnDerivingTypeable
-                  when warn $ addWarnTc $ vcat
+                  when warn $ addWarnTc (vcat
                     [ ptext (sLit "`Typeable` instances in .hs-boot files are ignored.")
                     , ptext (sLit "This warning will become an error in future versions of the compiler.")
-                    ]
+                    ]) (Just Opt_WarnDerivingTypeable)
              else addErrTc $ ptext (sLit "Class `Typeable` does not support user-specified instances.")
 
 addClsInsts :: [InstInfo Name] -> TcM a -> TcM a
@@ -1533,7 +1533,7 @@ derivBindCtxt sel_id clas tys
 warnUnsatisfiedMinimalDefinition :: ClassMinimalDef -> TcM ()
 warnUnsatisfiedMinimalDefinition mindef
   = do { warn <- woptM Opt_WarnMissingMethods
-       ; warnTc warn message
+       ; warnTc warn message (Just Opt_WarnMissingMethods)
        }
   where
     message = vcat [ptext (sLit "No explicit implementation for")

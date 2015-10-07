@@ -639,8 +639,9 @@ warnUselessTypeable :: TcM ()
 warnUselessTypeable
   = do { warn <- woptM Opt_WarnDerivingTypeable
        ; when warn $ addWarnTc
-                   $ ptext (sLit "Deriving") <+> quotes (ppr typeableClassName) <+>
-                     ptext (sLit "has no effect: all types now auto-derive Typeable") }
+                     (ptext (sLit "Deriving") <+> quotes (ppr typeableClassName) <+>
+                      ptext (sLit "has no effect: all types now auto-derive Typeable"))
+                     (Just Opt_WarnDerivingTypeable) }
 
 ------------------------------------------------------------------
 deriveTyData :: [TyVar] -> TyCon -> [Type]   -- LHS of data or data instance
@@ -1501,7 +1502,7 @@ mkNewTypeEqn dflags overlap_mode tvs
       -- CanDerive/DerivableViaInstance
       _ -> do when (newtype_deriving && deriveAnyClass) $
                 addWarnTc (sep [ ptext (sLit "Both DeriveAnyClass and GeneralizedNewtypeDeriving are enabled")
-                               , ptext (sLit "Defaulting to the DeriveAnyClass strategy for instantiating") <+> ppr cls ])
+                               , ptext (sLit "Defaulting to the DeriveAnyClass strategy for instantiating") <+> ppr cls ]) Nothing -- TODO(osa): Flags are not WarningFlags
               go_for_it
   where
         newtype_deriving  = xopt Opt_GeneralizedNewtypeDeriving dflags

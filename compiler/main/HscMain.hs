@@ -418,12 +418,15 @@ tcRnModule' hsc_env sum save_rn_syntax mod = do
             safe <- liftIO $ fst <$> readIORef (tcg_safeInfer tcg_res')
             when safe $ do
               case wopt Opt_WarnSafe dflags of
-                True -> (logWarnings $ unitBag $ mkPlainWarnMsg dflags
-                       (warnSafeOnLoc dflags) $ errSafe tcg_res')
+                True ->
+                  logWarnings $ unitBag $ mkPlainWarnMsg dflags
+                    (warnSafeOnLoc dflags) (errSafe tcg_res')
+                    (Just Opt_WarnSafe)
                 False | safeHaskell dflags == Sf_Trustworthy &&
                         wopt Opt_WarnTrustworthySafe dflags ->
-                  (logWarnings $ unitBag $ mkPlainWarnMsg dflags
-                    (trustworthyOnLoc dflags) $ errTwthySafe tcg_res')
+                  logWarnings $ unitBag $ mkPlainWarnMsg dflags
+                    (trustworthyOnLoc dflags) (errTwthySafe tcg_res')
+                    (Just Opt_WarnTrustworthySafe)
                 False -> return ()
             return tcg_res'
   where
@@ -887,9 +890,10 @@ hscCheckSafeImports tcg_env = do
 
     warns dflags rules = listToBag $ map (warnRules dflags) rules
     warnRules dflags (L loc (HsRule n _ _ _ _ _ _)) =
-        mkPlainWarnMsg dflags loc $
-            text "Rule \"" <> ftext (snd $ unLoc n) <> text "\" ignored" $+$
-            text "User defined rules are disabled under Safe Haskell"
+        mkPlainWarnMsg dflags loc
+           (text "Rule \"" <> ftext (snd $ unLoc n) <> text "\" ignored" $+$
+            text "User defined rules are disabled under Safe Haskell")
+           Nothing
 
 -- | Validate that safe imported modules are actually safe.  For modules in the
 -- HomePackage (the package the module we are compiling in resides) this just
@@ -1125,7 +1129,8 @@ markUnsafeInfer tcg_env whyUnsafe = do
 
     when (wopt Opt_WarnUnsafe dflags)
          (logWarnings $ unitBag $
-             mkPlainWarnMsg dflags (warnUnsafeOnLoc dflags) (whyUnsafe' dflags))
+             mkPlainWarnMsg dflags (warnUnsafeOnLoc dflags) (whyUnsafe' dflags)
+                            (Just Opt_WarnUnsafe))
 
     liftIO $ writeIORef (tcg_safeInfer tcg_env) (False, whyUnsafe)
     -- NOTE: Only wipe trust when not in an explicity safe haskell mode. Other

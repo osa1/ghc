@@ -610,6 +610,7 @@ check_valid_theta ctxt theta
   = do { dflags <- getDynFlags
        ; warnTc (wopt Opt_WarnDuplicateConstraints dflags &&
                  notNull dups) (dupPredWarn dups)
+                (Just Opt_WarnDuplicateConstraints)
        ; traceTc "check_valid_theta" (ppr theta)
        ; mapM_ (check_pred_ty dflags ctxt) theta }
   where
@@ -1238,8 +1239,8 @@ checkValidCoAxiom (CoAxiom { co_ax_tc = fam_tc, co_ax_branches = branches })
     --   (b) failure of injectivity
     check_branch_compat prev_branches cur_branch
       | cur_branch `isDominatedBy` prev_branches
-      = do { addWarnAt (coAxBranchSpan cur_branch) $
-             inaccessibleCoAxBranch fam_tc cur_branch
+      = do { addWarnAt (coAxBranchSpan cur_branch)
+              (inaccessibleCoAxBranch fam_tc cur_branch) Nothing
            ; return prev_branches }
       | otherwise
       = do { check_injectivity prev_branches cur_branch

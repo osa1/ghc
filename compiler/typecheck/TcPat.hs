@@ -395,7 +395,7 @@ addInlinePrags poly_id prags
        = setSrcSpan loc $
          addWarnTc (hang (ptext (sLit "Multiple INLINE pragmas for") <+> ppr poly_id)
                        2 (vcat (ptext (sLit "Ignoring all but the first")
-                                : map pp_inl (inl1:inl2:inls))))
+                                : map pp_inl (inl1:inl2:inls)))) Nothing
 
     pp_inl (L loc prag) = ppr prag <+> parens (ppr loc)
 

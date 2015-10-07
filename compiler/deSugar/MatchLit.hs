@@ -144,7 +144,7 @@ warnAboutIdentities dflags (Var conv_fn) type_of_conv
   = warnDs (vcat [ ptext (sLit "Call of") <+> ppr conv_fn <+> dcolon <+> ppr type_of_conv
                  , nest 2 $ ptext (sLit "can probably be omitted")
                  , parens (ptext (sLit "Use -fno-warn-identities to suppress this message"))
-           ])
+           ]) (Just Opt_WarnIdentities)
 warnAboutIdentities _ _ _ = return ()
 
 conversionNames :: [Name]
@@ -178,7 +178,7 @@ warnAboutOverflowedLiterals dflags lit
         warnDs (vcat [ ptext (sLit "Literal") <+> integer i
                        <+> ptext (sLit "is out of the") <+> ppr tc <+> ptext (sLit "range")
                        <+> integer minB <> ptext (sLit "..") <> integer maxB
-                     , sug ])
+                     , sug ]) (Just Opt_WarnOverflowedLiterals)
       where
         minB = toInteger (minBound :: a)
         maxB = toInteger (maxBound :: a)
@@ -211,7 +211,7 @@ warnAboutEmptyEnumerations dflags fromExpr mThnExpr toExpr
   , let check :: forall a. (Enum a, Num a) => a -> DsM ()
         check _proxy
           = when (null enumeration) $
-            warnDs (ptext (sLit "Enumeration is empty"))
+            warnDs (ptext (sLit "Enumeration is empty")) (Just Opt_WarnEmptyEnumerations)
           where
             enumeration :: [a]
             enumeration = case mThn of

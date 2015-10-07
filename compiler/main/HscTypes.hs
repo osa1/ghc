@@ -319,6 +319,7 @@ handleFlagWarnings dflags warns
         -- It would be nicer if warns :: [Located MsgDoc], but that
         -- has circular import problems.
       let bag = listToBag [ mkPlainWarnMsg dflags loc (text warn)
+                                           (Just Opt_WarnDeprecatedFlags)
                           | L loc warn <- warns ]
 
       printOrThrowWarnings dflags bag

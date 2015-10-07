@@ -29,7 +29,7 @@ module DynFlags (
         glasgowExtsFlags,
         dopt, dopt_set, dopt_unset,
         gopt, gopt_set, gopt_unset,
-        wopt, wopt_set, wopt_unset,
+        wopt, wopt_flag, wopt_set, wopt_unset,
         xopt, xopt_set, xopt_unset,
         lang_set,
         useUnicodeSyntax,
@@ -1773,6 +1773,12 @@ gopt_unset dfs f = dfs{ generalFlags = IntSet.delete (fromEnum f) (generalFlags 
 -- | Test whether a 'WarningFlag' is set
 wopt :: WarningFlag -> DynFlags -> Bool
 wopt f dflags  = fromEnum f `IntSet.member` warningFlags dflags
+
+wopt_flag :: WarningFlag -> DynFlags -> Maybe WarningFlag
+wopt_flag f dflags =
+    if fromEnum f `IntSet.member` warningFlags dflags
+      then Just f
+      else Nothing
 
 -- | Set a 'WarningFlag'
 wopt_set :: DynFlags -> WarningFlag -> DynFlags

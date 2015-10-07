@@ -2139,7 +2139,7 @@ mkPState flags buf loc =
 addWarning :: WarningFlag -> SrcSpan -> SDoc -> P ()
 addWarning option srcspan warning
  = P $ \s@PState{messages=(ws,es), dflags=d} ->
-       let warning' = mkWarnMsg d srcspan alwaysQualify warning
+       let warning' = mkWarnMsg d srcspan alwaysQualify warning (Just option)
            ws' = if wopt option d then ws `snocBag` warning' else ws
        in POk s{messages=(ws', es)} ()
 
@@ -2162,7 +2162,8 @@ mkTabWarning PState{tab_first=tf, tab_count=tc, dflags=d} =
                 <> middle
                 <> text "."
                 $+$ text "Please use spaces instead."
-  in fmap (\s -> mkWarnMsg d (RealSrcSpan s) alwaysQualify message) tf
+  in fmap (\s -> mkWarnMsg d (RealSrcSpan s) alwaysQualify
+                           message (Just Opt_WarnTabs)) tf
 
 getMessages :: PState -> Messages
 getMessages p@PState{messages=(ws,es)} =

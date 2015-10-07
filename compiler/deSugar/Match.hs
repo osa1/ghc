@@ -76,29 +76,30 @@ matchCheck_really :: DynFlags
                   -> DsM MatchResult
 matchCheck_really dflags ctx@(DsMatchContext hs_ctx _) vars ty qs
   = do { when shadow (dsShadowWarn ctx eqns_shadow)
-       ; when incomplete (dsIncompleteWarn ctx pats)
+       ; when incomplete (dsIncompleteWarn ctx pats warn_incompletes)
        ; match vars ty qs }
   where
     (pats, eqns_shadow) = check qs
-    incomplete = incomplete_flag hs_ctx && notNull pats
+    warn_incompletes = incomplete_flag hs_ctx
+    incomplete = isJust warn_incompletes && notNull pats
     shadow     = wopt Opt_WarnOverlappingPatterns dflags
               && notNull eqns_shadow
 
-    incomplete_flag :: HsMatchContext id -> Bool
-    incomplete_flag (FunRhs {})   = wopt Opt_WarnIncompletePatterns dflags
-    incomplete_flag CaseAlt       = wopt Opt_WarnIncompletePatterns dflags
-    incomplete_flag IfAlt         = False
+    incomplete_flag :: HsMatchContext id -> Maybe WarningFlag
+    incomplete_flag FunRhs{}      = wopt_flag Opt_WarnIncompletePatterns dflags
+    incomplete_flag CaseAlt       = wopt_flag Opt_WarnIncompletePatterns dflags
+    incomplete_flag IfAlt         = Nothing
 
-    incomplete_flag LambdaExpr    = wopt Opt_WarnIncompleteUniPatterns dflags
-    incomplete_flag PatBindRhs    = wopt Opt_WarnIncompleteUniPatterns dflags
-    incomplete_flag ProcExpr      = wopt Opt_WarnIncompleteUniPatterns dflags
+    incomplete_flag LambdaExpr    = wopt_flag Opt_WarnIncompleteUniPatterns dflags
+    incomplete_flag PatBindRhs    = wopt_flag Opt_WarnIncompleteUniPatterns dflags
+    incomplete_flag ProcExpr      = wopt_flag Opt_WarnIncompleteUniPatterns dflags
 
-    incomplete_flag RecUpd        = wopt Opt_WarnIncompletePatternsRecUpd dflags
+    incomplete_flag RecUpd        = wopt_flag Opt_WarnIncompletePatternsRecUpd dflags
 
-    incomplete_flag ThPatSplice   = False
-    incomplete_flag PatSyn        = False
-    incomplete_flag ThPatQuote    = False
-    incomplete_flag (StmtCtxt {}) = False  -- Don't warn about incomplete patterns
+    incomplete_flag ThPatSplice   = Nothing
+    incomplete_flag PatSyn        = Nothing
+    incomplete_flag ThPatQuote    = Nothing
+    incomplete_flag StmtCtxt{}    = Nothing-- Don't warn about incomplete patterns
                                            -- in list comprehensions, pattern guards
                                            -- etc.  They are often *supposed* to be
                                            -- incomplete
@@ -117,7 +118,7 @@ maximum_output = 4
 
 dsShadowWarn :: DsMatchContext -> [EquationInfo] -> DsM ()
 dsShadowWarn ctx@(DsMatchContext kind loc) qs
-  = putSrcSpanDs loc (warnDs warn)
+  = putSrcSpanDs loc (warnDs warn (Just Opt_WarnOverlappingPatterns))
   where
     warn | qs `lengthExceeds` maximum_output
          = pp_context ctx (ptext (sLit "are overlapped"))
@@ -128,9 +129,9 @@ dsShadowWarn ctx@(DsMatchContext kind loc) qs
                       (\ f -> vcat $ map (ppr_eqn f kind) qs)
 
 
-dsIncompleteWarn :: DsMatchContext -> [ExhaustivePat] -> DsM ()
-dsIncompleteWarn ctx@(DsMatchContext kind loc) pats
-  = putSrcSpanDs loc (warnDs warn)
+dsIncompleteWarn :: DsMatchContext -> [ExhaustivePat] -> Maybe WarningFlag -> DsM ()
+dsIncompleteWarn ctx@(DsMatchContext kind loc) pats flag
+  = putSrcSpanDs loc (warnDs warn flag)
         where
           warn = pp_context ctx (ptext (sLit "are non-exhaustive"))
                             (\_ -> hang (ptext (sLit "Patterns not matched:"))
@@ -337,10 +338,12 @@ match vars@(v:_) ty eqns    -- Eqns *can* be empty
                                            case p of PgView e _ -> e:acc
                                                      _ -> acc) [] group) eqns
             maybeWarn [] = return ()
-            maybeWarn l = warnDs (vcat l)
+            maybeWarn l = warnDs (vcat l) Nothing
+                          -- TODO(osa): This one is a dump message
         in
-          maybeWarn $ (map (\g -> text "Putting these view expressions into the same case:" <+> (ppr g))
-                       (filter (not . null) gs))
+          maybeWarn $
+            map (\g -> text "Putting these view expressions into the same case:"
+                         <+> (ppr g)) (filter (not . null) gs)
 
 matchEmpty :: Id -> Type -> DsM [MatchResult]
 -- See Note [Empty case expressions]

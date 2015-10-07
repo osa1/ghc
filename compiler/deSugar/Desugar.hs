@@ -371,7 +371,7 @@ dsRule (L loc (HsRule name rule_act vars lhs _tv_lhs rhs _fv_rhs))
         -- Substitute the dict bindings eagerly,
         -- and take the body apart into a (f args) form
         ; case decomposeRuleLhs bndrs'' lhs'' of {
-                Left msg -> do { warnDs msg; return Nothing } ;
+                Left msg -> do { warnDs msg Nothing; return Nothing } ;
                 Right (final_bndrs, fn_id, args) -> do
 
         { let is_local = isLocalId fn_id
@@ -413,6 +413,7 @@ warnRuleShadowing rule_name rule_act fn_id arg_ids
                      , ptext (sLit "Probable fix: add an INLINE[n] or NOINLINE[n] pragma for")
                        <+> quotes (ppr lhs_id)
                      , ifPprDebug (ppr (idInlineActivation lhs_id) $$ ppr rule_act) ])
+               (Just Opt_WarnInlineRuleShadowing)
 
       | check_rules_too
       , bad_rule : _ <- get_bad_rules lhs_id
@@ -423,6 +424,7 @@ warnRuleShadowing rule_name rule_act fn_id arg_ids
                                <+> ptext (sLit "might fire first"))
                       , ptext (sLit "Probable fix: add phase [n] or [~n] to the competing rule")
                       , ifPprDebug (ppr bad_rule) ])
+               (Just Opt_WarnInlineRuleShadowing)
 
       | otherwise
       = return ()

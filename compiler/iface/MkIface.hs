@@ -364,9 +364,13 @@ mkIface_ hsc_env maybe_old_fingerprint
         errs_and_warns = (orph_warnings, emptyBag)
         unqual = mkPrintUnqualified dflags rdr_env
         inst_warns = listToBag [ instOrphWarn dflags unqual d
+                                   (if warn_orphs then Opt_WarnOrphans
+                                                  else Opt_WarnAutoOrphans)
                                | (d,i) <- insts `zip` iface_insts
                                , isOrphan (ifInstOrph i) ]
         rule_warns = listToBag [ ruleOrphWarn dflags unqual this_mod r
+                                   (if ifRuleAuto r then Opt_WarnAutoOrphans
+                                                    else Opt_WarnOrphans)
                                | r <- iface_rules
                                , isOrphan (ifRuleOrph r)
                                , if ifRuleAuto r then warn_auto_orphs
@@ -945,22 +949,23 @@ oldMD5 dflags bh = do
         return $! readHexFingerprint hash_str
 -}
 
-instOrphWarn :: DynFlags -> PrintUnqualified -> ClsInst -> WarnMsg
-instOrphWarn dflags unqual inst
-  = mkWarnMsg dflags (getSrcSpan inst) unqual $
-    hang (ptext (sLit "Orphan instance:")) 2 (pprInstanceHdr inst)
-    $$ text "To avoid this"
-    $$ nest 4 (vcat possibilities)
+instOrphWarn :: DynFlags -> PrintUnqualified -> ClsInst -> WarningFlag -> WarnMsg
+instOrphWarn dflags unqual inst flag
+  = mkWarnMsg dflags (getSrcSpan inst) unqual
+      (hang (ptext (sLit "Orphan instance:")) 2 (pprInstanceHdr inst)
+       $$ text "To avoid this"
+       $$ nest 4 (vcat possibilities)) (Just flag)
   where
     possibilities =
       text "move the instance declaration to the module of the class or of the type, or" :
       text "wrap the type with a newtype and declare the instance on the new type." :
       []
 
-ruleOrphWarn :: DynFlags -> PrintUnqualified -> Module -> IfaceRule -> WarnMsg
-ruleOrphWarn dflags unqual mod rule
-  = mkWarnMsg dflags silly_loc unqual $
-    ptext (sLit "Orphan rule:") <+> ppr rule
+ruleOrphWarn :: DynFlags -> PrintUnqualified -> Module -> IfaceRule -> WarningFlag -> WarnMsg
+ruleOrphWarn dflags unqual mod rule flag
+  = mkWarnMsg dflags silly_loc unqual
+      (ptext (sLit "Orphan rule:") <+> ppr rule)
+      (Just flag)
   where
     silly_loc = srcLocSpan (mkSrcLoc (moduleNameFS (moduleName mod)) 1 1)
     -- We don't have a decent SrcSpan for a Rule, not even the CoreRule

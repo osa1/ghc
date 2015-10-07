@@ -299,7 +299,8 @@ tcRnModuleTcRnM hsc_env hsc_src
                                          implicit_prelude import_decls } ;
 
         whenWOptM Opt_WarnImplicitPrelude $
-             when (notNull prel_imports) $ addWarn (implicitPreludeWarn) ;
+             when (notNull prel_imports) $
+               addWarn (implicitPreludeWarn) (Just Opt_WarnImplicitPrelude) ;
 
         tcg_env <- {-# SCC "tcRnImports" #-}
                    tcRnImports hsc_env (prel_imports ++ import_decls) ;

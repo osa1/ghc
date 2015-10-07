@@ -1072,7 +1072,7 @@ tcSpecPrags poly_id prag_sigs
 
     warn_discarded_sigs
       = addWarnTc (hang (ptext (sLit "Discarding unexpected pragmas for") <+> ppr poly_id)
-                      2 (vcat (map (ppr . getLoc) bad_sigs)))
+                      2 (vcat (map (ppr . getLoc) bad_sigs))) Nothing
 
 --------------
 tcSpecPrag :: TcId -> Sig Name -> TcM [TcSpecPrag]
@@ -1087,7 +1087,7 @@ tcSpecPrag poly_id prag@(SpecSig fun_name hs_tys inl)
   = addErrCtxt (spec_ctxt prag) $
     do  { warnIf (not (isOverloadedTy poly_ty || isInlinePragma inl))
                  (ptext (sLit "SPECIALISE pragma for non-overloaded function")
-                  <+> quotes (ppr fun_name))
+                  <+> quotes (ppr fun_name)) Nothing
                   -- Note [SPECIALISE pragmas]
         ; spec_prags <- mapM tc_one hs_tys
         ; traceTc "tcSpecPrag" (ppr poly_id $$ nest 2 (vcat (map ppr spec_prags)))
@@ -1151,7 +1151,7 @@ tcImpSpec :: (Name, Sig Name) -> TcM [TcSpecPrag]
 tcImpSpec (name, prag)
  = do { id <- tcLookupId name
       ; unless (isAnyInlinePragma (idInlinePragma id))
-               (addWarnTc (impSpecErr name))
+               (addWarnTc (impSpecErr name) Nothing)
       ; tcSpecPrag id prag }
 
 impSpecErr :: Name -> SDoc

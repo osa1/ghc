@@ -413,7 +413,7 @@ dsSpec mb_poly_rhs (L loc (SpecPrag poly_id spec_co spec_inl))
   | isJust (isClassOpId_maybe poly_id)
   = putSrcSpanDs loc $
     do { warnDs (ptext (sLit "Ignoring useless SPECIALISE pragma for class method selector")
-                 <+> quotes (ppr poly_id))
+                 <+> quotes (ppr poly_id)) Nothing
        ; return Nothing  }  -- There is no point in trying to specialise a class op
                             -- Moreover, classops don't (currently) have an inl_sat arity set
                             -- (it would be Just 0) and that in turn makes makeCorePair bleat
@@ -421,7 +421,7 @@ dsSpec mb_poly_rhs (L loc (SpecPrag poly_id spec_co spec_inl))
   | no_act_spec && isNeverActive rule_act
   = putSrcSpanDs loc $
     do { warnDs (ptext (sLit "Ignoring useless SPECIALISE pragma for NOINLINE function:")
-                 <+> quotes (ppr poly_id))
+                 <+> quotes (ppr poly_id)) Nothing
        ; return Nothing  }  -- Function is NOINLINE, and the specialiation inherits that
                             -- See Note [Activation pragmas for SPECIALISE]
 
@@ -438,7 +438,7 @@ dsSpec mb_poly_rhs (L loc (SpecPrag poly_id spec_co spec_inl))
          --                         , ptext (sLit "spec_co:") <+> ppr spec_co
          --                         , ptext (sLit "ds_rhs:") <+> ppr ds_lhs ]) $
          case decomposeRuleLhs bndrs ds_lhs of {
-           Left msg -> do { warnDs msg; return Nothing } ;
+           Left msg -> do { warnDs msg Nothing; return Nothing } ;
            Right (rule_bndrs, _fn, args) -> do
 
        { dflags <- getDynFlags

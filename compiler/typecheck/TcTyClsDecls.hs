@@ -1704,13 +1704,19 @@ checkValidDataCon dflags existential_ok tc con
           (bad_bang n (ptext (sLit "Lazy annotation (~) without StrictData")))
     check_bang (HsSrcBang _ want_unpack strict_mark, rep_bang, n)
       | isSrcUnpacked want_unpack, not is_strict
-      = addWarnTc (bad_bang n (ptext (sLit "UNPACK pragma lacks '!'")))
+      = addWarnTc (bad_bang n (ptext (sLit "UNPACK pragma lacks '!'"))) Nothing
       | isSrcUnpacked want_unpack
       , case rep_bang of { HsUnpack {} -> False; _ -> True }
       , not (gopt Opt_OmitInterfacePragmas dflags)
            -- If not optimising, se don't unpack, so don't complain!
            -- See MkId.dataConArgRep, the (HsBang True) case
       = addWarnTc (bad_bang n (ptext (sLit "Ignoring unusable UNPACK pragma")))
+                  Nothing
+                  -- TODO(osa): This is not right, we print warning because the
+                  -- flag is NOT provided. We should probably do some
+                  -- refactoring to note this.
+                  -- Also, the flag is actually a GeneralFlag, even though this
+                  -- is a warning.
       where
         is_strict = case strict_mark of
                       NoSrcStrict -> xopt Opt_StrictData dflags

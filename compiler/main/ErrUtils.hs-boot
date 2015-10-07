@@ -2,6 +2,7 @@ module ErrUtils where
 
 import Outputable (SDoc)
 import SrcLoc (SrcSpan)
+import {-# SOURCE #-} DynFlags (WarningFlag)
 
 data Severity
   = SevOutput
@@ -9,7 +10,7 @@ data Severity
   | SevInteractive
   | SevDump
   | SevInfo
-  | SevWarning
+  | SevWarning (Maybe WarningFlag)
   | SevError
 
 

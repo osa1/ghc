@@ -721,26 +721,29 @@ specImport dflags this_mod top_env done callers rb fn calls_for_fn
 
        ; return (rules2 ++ rules1, final_binds) }
 
-  |  warnMissingSpecs dflags callers
-  = do { warnMsg (vcat [ hang (ptext (sLit "Could not specialise imported function") <+> quotes (ppr fn))
-                            2 (vcat [ ptext (sLit "when specialising") <+> quotes (ppr caller)
-                                    | caller <- callers])
-                      , ifPprDebug (ptext (sLit "calls:") <+> vcat (map (pprCallInfo fn) calls_for_fn))
-                      , ptext (sLit "Probable fix: add INLINEABLE pragma on") <+> quotes (ppr fn) ])
+  | Just flag <-warnMissingSpecs dflags callers
+  = do { let msg = vcat
+               [ hang (ptext (sLit "Could not specialise imported function") <+> quotes (ppr fn))
+                   2 (vcat [ ptext (sLit "when specialising") <+> quotes (ppr caller)
+                           | caller <- callers])
+               , ifPprDebug (ptext (sLit "calls:") <+> vcat (map (pprCallInfo fn) calls_for_fn))
+               , ptext (sLit "Probable fix: add INLINEABLE pragma on") <+> quotes (ppr fn) ]
+       ; warnMsg msg (Just flag)
        ; return ([], []) }
-
   | otherwise
   = return ([], [])
   where
     unfolding = realIdUnfolding fn   -- We want to see the unfolding even for loop breakers
 
-warnMissingSpecs :: DynFlags -> [Id] -> Bool
+warnMissingSpecs :: DynFlags -> [Id] -> Maybe WarningFlag
 -- See Note [Warning about missed specialisations]
 warnMissingSpecs dflags callers
-  | wopt Opt_WarnAllMissedSpecs dflags = True
-  | not (wopt Opt_WarnMissedSpecs dflags) = False
-  | null callers                       = False
-  | otherwise                          = all has_inline_prag callers
+  | wopt Opt_WarnAllMissedSpecs dflags = Just Opt_WarnAllMissedSpecs
+  | not (wopt Opt_WarnMissedSpecs dflags) = Nothing
+  | null callers                       = Nothing
+  | otherwise                          = if all has_inline_prag callers
+                                           then Just Opt_WarnMissedSpecs
+                                           else Nothing
   where
     has_inline_prag id = isAnyInlinePragma (idInlinePragma id)
 

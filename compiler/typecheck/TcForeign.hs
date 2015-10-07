@@ -343,6 +343,7 @@ checkMissingAmpersand dflags arg_tys res_ty
   | null arg_tys && isFunPtrTy res_ty &&
     wopt Opt_WarnDodgyForeignImports dflags
   = addWarn (ptext (sLit "possible missing & in foreign import of FunPtr"))
+            (Just Opt_WarnDodgyForeignImports)
   | otherwise
   = return ()
 
@@ -504,21 +505,27 @@ checkCg check = do
 checkCConv :: CCallConv -> TcM CCallConv
 checkCConv CCallConv    = return CCallConv
 checkCConv CApiConv     = return CApiConv
-checkCConv StdCallConv  = do dflags <- getDynFlags
-                             let platform = targetPlatform dflags
-                             if platformArch platform == ArchX86
-                                 then return StdCallConv
-                                 else do -- This is a warning, not an error. see #3336
-                                         when (wopt Opt_WarnUnsupportedCallingConventions dflags) $
-                                             addWarnTc (text "the 'stdcall' calling convention is unsupported on this platform," $$ text "treating as ccall")
-                                         return CCallConv
-checkCConv PrimCallConv = do addErrTc (text "The `prim' calling convention can only be used with `foreign import'")
-                             return PrimCallConv
-checkCConv JavaScriptCallConv = do dflags <- getDynFlags
-                                   if platformArch (targetPlatform dflags) == ArchJavaScript
-                                       then return JavaScriptCallConv
-                                       else do addErrTc (text "The `javascript' calling convention is unsupported on this platform")
-                                               return JavaScriptCallConv
+checkCConv StdCallConv  = do
+    dflags <- getDynFlags
+    let platform = targetPlatform dflags
+    if platformArch platform == ArchX86
+        then return StdCallConv
+        else do
+          -- This is a warning, not an error. see #3336
+          when (wopt Opt_WarnUnsupportedCallingConventions dflags) $
+            addWarnTc (text "the 'stdcall' calling convention is unsupported on this platform," $$ text "treating as ccall")
+                      (Just Opt_WarnUnsupportedCallingConventions)
+          return CCallConv
+checkCConv PrimCallConv = do
+    addErrTc (text "The `prim' calling convention can only be used with `foreign import'")
+    return PrimCallConv
+checkCConv JavaScriptCallConv = do
+    dflags <- getDynFlags
+    if platformArch (targetPlatform dflags) == ArchJavaScript
+        then return JavaScriptCallConv
+        else do
+          addErrTc (text "The `javascript' calling convention is unsupported on this platform")
+          return JavaScriptCallConv
 
 -- Warnings
 

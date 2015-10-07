@@ -1972,7 +1972,7 @@ warnDefaulting wanteds default_ty
              warn_msg  = hang (ptext (sLit "Defaulting the following constraint(s) to type")
                                 <+> quotes (ppr default_ty))
                             2 ppr_wanteds
-       ; setCtLocM loc $ warnTc warn_default warn_msg }
+       ; setCtLocM loc $ warnTc warn_default warn_msg (Just Opt_WarnTypeDefaults) }
 
 {-
 Note [Runtime skolems]

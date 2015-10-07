@@ -948,6 +948,7 @@ warnDiscardedDoBindings rhs rhs_ty
        ; if warn_unused && not (isUnitTy norm_elt_ty)
          then warnDs (badMonadBind rhs elt_ty
                            (ptext (sLit "-fno-warn-unused-do-bind")))
+                     (Just Opt_WarnUnusedDoBind)
          else
 
            -- Warn about discarding m a things in 'monadic' binding of the same type,
@@ -958,6 +959,7 @@ warnDiscardedDoBindings rhs rhs_ty
                             | m_ty `eqType` topNormaliseType fam_inst_envs elt_m_ty
                             -> warnDs (badMonadBind rhs elt_ty
                                            (ptext (sLit "-fno-warn-wrong-do-bind")))
+                                      (Just Opt_WarnWrongDoBind)
                          _ -> return () } } }
 
   | otherwise   -- RHS does have type of form (m ty), which is weird

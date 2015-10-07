@@ -115,7 +115,7 @@ data Severity
     -- Log messages intended for end users.
     -- No file/line/column stuff.
 
-  | SevWarning
+  | SevWarning (Maybe WarningFlag)
   | SevError
     -- SevWarning and SevError are used for warnings and errors
     --   o The message has a file/line/column heading,
@@ -144,13 +144,16 @@ mkLocMessage severity locn msg
     -- Add prefixes, like    Foo.hs:34: warning:
     --                           <the warning message>
     sev_info = case severity of
-                 SevWarning -> ptext (sLit "warning:")
+                 SevWarning Nothing -> ptext (sLit "warning:")
+                 SevWarning (Just f) -> ptext (sLit "warning:") <+> text (show f)
                  SevError -> ptext (sLit "error:")
                  SevFatal -> ptext (sLit "fatal:")
                  _ -> empty
 
 makeIntoWarning :: ErrMsg -> ErrMsg
-makeIntoWarning err = err { errMsgSeverity = SevWarning }
+makeIntoWarning err =
+    -- TODO(osa): Need to double check use sites
+    err { errMsgSeverity = SevWarning Nothing }
 
 -- -----------------------------------------------------------------------------
 -- Collecting up messages for later ordering and printing.
@@ -162,19 +165,34 @@ mk_err_msg  dflags sev locn print_unqual msg extra
           , errMsgExtraInfo = extra
           , errMsgSeverity = sev }
 
-mkLongErrMsg, mkLongWarnMsg   :: DynFlags -> SrcSpan -> PrintUnqualified -> MsgDoc -> MsgDoc -> ErrMsg
 -- A long (multi-line) error message
-mkErrMsg, mkWarnMsg           :: DynFlags -> SrcSpan -> PrintUnqualified -> MsgDoc            -> ErrMsg
--- A short (one-line) error message
-mkPlainErrMsg, mkPlainWarnMsg :: DynFlags -> SrcSpan ->                     MsgDoc            -> ErrMsg
--- Variant that doesn't care about qualified/unqualified names
+mkLongErrMsg :: DynFlags -> SrcSpan -> PrintUnqualified
+             -> MsgDoc -> MsgDoc -> ErrMsg
+mkLongErrMsg dflags locn unqual msg extra =
+    mk_err_msg dflags SevError   locn unqual        msg extra
 
-mkLongErrMsg   dflags locn unqual msg extra = mk_err_msg dflags SevError   locn unqual        msg extra
-mkErrMsg       dflags locn unqual msg       = mk_err_msg dflags SevError   locn unqual        msg empty
-mkPlainErrMsg  dflags locn        msg       = mk_err_msg dflags SevError   locn alwaysQualify msg empty
-mkLongWarnMsg  dflags locn unqual msg extra = mk_err_msg dflags SevWarning locn unqual        msg extra
-mkWarnMsg      dflags locn unqual msg       = mk_err_msg dflags SevWarning locn unqual        msg empty
-mkPlainWarnMsg dflags locn        msg       = mk_err_msg dflags SevWarning locn alwaysQualify msg empty
+-- A short (one-line) error message
+mkErrMsg  :: DynFlags -> SrcSpan -> PrintUnqualified -> MsgDoc -> ErrMsg
+mkErrMsg dflags locn unqual msg =
+    mk_err_msg dflags SevError locn unqual msg empty
+
+-- Variant that doesn't care about qualified/unqualified names
+mkPlainErrMsg :: DynFlags -> SrcSpan -> MsgDoc -> ErrMsg
+mkPlainErrMsg dflags locn msg =
+    mk_err_msg dflags SevError locn alwaysQualify msg empty
+
+mkLongWarnMsg :: DynFlags -> SrcSpan -> PrintUnqualified
+              -> MsgDoc -> MsgDoc -> Maybe WarningFlag -> ErrMsg
+mkLongWarnMsg dflags locn unqual msg extra flag =
+    mk_err_msg dflags (SevWarning flag) locn unqual msg extra
+
+mkWarnMsg :: DynFlags -> SrcSpan -> PrintUnqualified -> MsgDoc -> Maybe WarningFlag -> ErrMsg
+mkWarnMsg dflags locn unqual msg flag =
+    mk_err_msg dflags (SevWarning flag) locn unqual msg empty
+
+mkPlainWarnMsg :: DynFlags -> SrcSpan -> MsgDoc -> Maybe WarningFlag -> ErrMsg
+mkPlainWarnMsg dflags locn msg flag =
+    mk_err_msg dflags (SevWarning flag) locn alwaysQualify msg empty
 
 ----------------
 emptyMessages :: Messages
@@ -371,9 +389,9 @@ errorMsg :: DynFlags -> MsgDoc -> IO ()
 errorMsg dflags msg
    = log_action dflags dflags SevError noSrcSpan (defaultErrStyle dflags) msg
 
-warningMsg :: DynFlags -> MsgDoc -> IO ()
-warningMsg dflags msg
-   = log_action dflags dflags SevWarning noSrcSpan (defaultErrStyle dflags) msg
+warningMsg :: DynFlags -> MsgDoc -> Maybe WarningFlag -> IO ()
+warningMsg dflags msg flag
+   = log_action dflags dflags (SevWarning flag) noSrcSpan (defaultErrStyle dflags) msg
 
 fatalErrorMsg :: DynFlags -> MsgDoc -> IO ()
 fatalErrorMsg dflags msg = fatalErrorMsg' (log_action dflags) dflags msg

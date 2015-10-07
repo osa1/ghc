@@ -344,7 +344,7 @@ addErr errs_so_far msg locs
   = errs_so_far `snocBag` mk_msg locs
   where
     mk_msg (loc:_) = let (l,hdr) = dumpLoc loc
-                     in  mkLocMessage SevWarning l (hdr $$ msg)
+                     in  mkLocMessage SevError l (hdr $$ msg)
     mk_msg []      = msg
 
 addLoc :: LintLocInfo -> LintM a -> LintM a

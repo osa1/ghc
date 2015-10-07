@@ -708,6 +708,7 @@ lookup_demoted rdr_name
              | data_kinds ->
              do { whenWOptM Opt_WarnUntickedPromotedConstructors $
                   addWarn (untickedPromConstrWarn demoted_name)
+                          (Just Opt_WarnUntickedPromotedConstructors)
                 ; return demoted_name }
              | otherwise  -> unboundNameX WL_Any rdr_name suggest_dk }
 
@@ -929,7 +930,9 @@ warnIfDeprecated gre@(GRE { gre_name = name, gre_imp = iss })
                    -- See Note [Handling of deprecations]
          do { iface <- loadInterfaceForName doc name
             ; case lookupImpDeprec iface gre of
-                Just txt -> addWarn (mk_msg imp_spec txt)
+                Just txt ->
+                  addWarn (mk_msg imp_spec txt)
+                          (Just Opt_WarnWarningsDeprecations)
                 Nothing  -> return () } }
   | otherwise
   = return ()
@@ -1536,7 +1539,9 @@ checkShadowedOccs (global_env,local_env) get_loc_occ ns
                 -- we don't find any GREs that are in scope qualified-only
 
           complain []      = return ()
-          complain pp_locs = addWarnAt loc (shadowedNameWarn occ pp_locs)
+          complain pp_locs =
+            addWarnAt loc (shadowedNameWarn occ pp_locs)
+                          (Just Opt_WarnNameShadowing)
 
     is_shadowed_gre :: GlobalRdrElt -> RnM Bool
         -- Returns False for record selectors that are shadowed, when
@@ -1789,28 +1794,29 @@ warnUnusedMatches    = check_unused Opt_WarnUnusedMatches
 
 check_unused :: WarningFlag -> [Name] -> FreeVars -> RnM ()
 check_unused flag bound_names used_names
- = whenWOptM flag (warnUnusedLocals (filterOut (`elemNameSet` used_names) bound_names))
+ = whenWOptM flag $
+     warnUnusedLocals (filterOut (`elemNameSet` used_names) bound_names) flag
 
 -------------------------
 --      Helpers
 warnUnusedGREs :: [GlobalRdrElt] -> RnM ()
 warnUnusedGREs gres = mapM_ warnUnusedGRE gres
 
-warnUnusedLocals :: [Name] -> RnM ()
-warnUnusedLocals names = mapM_ warnUnusedLocal names
+warnUnusedLocals :: [Name] -> WarningFlag -> RnM ()
+warnUnusedLocals names flag = mapM_ (warnUnusedLocal flag) names
 
-warnUnusedLocal :: Name -> RnM ()
-warnUnusedLocal name
+warnUnusedLocal :: WarningFlag -> Name -> RnM ()
+warnUnusedLocal flag name
   = when (reportable name) $
     addUnusedWarning name (nameSrcSpan name)
-                     (ptext (sLit "Defined but not used"))
+                     (ptext (sLit "Defined but not used")) flag
 
 warnUnusedGRE :: GlobalRdrElt -> RnM ()
 warnUnusedGRE (GRE { gre_name = name, gre_lcl = lcl, gre_imp = is })
-  | lcl       = warnUnusedLocal name
+  | lcl       = warnUnusedLocal Opt_WarnUnusedTopBinds name
   | otherwise = when (reportable name) (mapM_ warn is)
   where
-    warn spec = addUnusedWarning name span msg
+    warn spec = addUnusedWarning name span msg Opt_WarnUnusedTopBinds
         where
            span = importSpecLoc spec
            pp_mod = quotes (ppr (importSpecModule spec))
@@ -1823,12 +1829,12 @@ reportable name
                                   -- from Data.Tuple
   | otherwise = not (startsWithUnderscore (nameOccName name))
 
-addUnusedWarning :: Name -> SrcSpan -> SDoc -> RnM ()
-addUnusedWarning name span msg
-  = addWarnAt span $
-    sep [msg <> colon,
-         nest 2 $ pprNonVarNameSpace (occNameSpace (nameOccName name))
-                        <+> quotes (ppr name)]
+addUnusedWarning :: Name -> SrcSpan -> SDoc -> WarningFlag -> RnM ()
+addUnusedWarning name span msg flag
+  = addWarnAt span
+      (sep [msg <> colon,
+            nest 2 $ pprNonVarNameSpace (occNameSpace (nameOccName name))
+                           <+> quotes (ppr name)]) (Just flag)
 
 addNameClashErrRn :: RdrName -> [GlobalRdrElt] -> RnM ()
 addNameClashErrRn rdr_name gres

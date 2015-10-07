@@ -763,7 +763,7 @@ instance TH.Quasi (IOEnv (Env TcGblEnv TcLclEnv)) where
   -- 'msg' is forced to ensure exceptions don't escape,
   -- see Note [Exceptions in TH]
   qReport True msg  = seqList msg $ addErr  (text msg)
-  qReport False msg = seqList msg $ addWarn (text msg)
+  qReport False msg = seqList msg $ addWarn (text msg) Nothing
 
   qLocation = do { m <- getModule
                  ; l <- getSrcSpanM

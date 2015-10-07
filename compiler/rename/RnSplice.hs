@@ -365,7 +365,7 @@ rnSplice (HsQuasiQuote splice_name quoter q_loc quote)
         ; quoter <- if ASSERT( not (null occ_str) )  -- Lexer ensures this
                        head occ_str /= '$'
                     then return quoter
-                    else do { addWarn (deprecatedDollar quoter)
+                    else do { addWarn (deprecatedDollar quoter) Nothing
                             ; return (mkRdrUnqual (mkVarOcc (tail occ_str))) }
 
           -- Rename the quoter; akin to the HsVar case of rnExpr

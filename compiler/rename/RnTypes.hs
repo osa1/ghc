@@ -1030,9 +1030,9 @@ warnUnusedForAlls in_doc bound mentioned_rdrs
     bound_but_not_used = filterOut ((`elem` mentioned_rdrs) . unLoc) bound_names
 
     add_warn (L loc tv)
-      = addWarnAt loc $
-        vcat [ ptext (sLit "Unused quantified type variable") <+> quotes (ppr tv)
-             , in_doc ]
+      = addWarnAt loc
+          (vcat [ ptext (sLit "Unused quantified type variable") <+> quotes (ppr tv)
+                , in_doc ]) (Just Opt_WarnUnusedMatches)
 
 warnContextQuantification :: SDoc -> [LHsTyVarBndr RdrName] -> TcM ()
 warnContextQuantification in_doc tvs
@@ -1040,12 +1040,12 @@ warnContextQuantification in_doc tvs
     mapM_ add_warn tvs
   where
     add_warn (L loc tv)
-      = addWarnAt loc $
-        vcat [ ptext (sLit "Variable") <+> quotes (ppr tv) <+>
-               ptext (sLit "is implicitly quantified due to a context") $$
-               ptext (sLit "Use explicit forall syntax instead.") $$
-               ptext (sLit "This will become an error in GHC 7.12.")
-             , in_doc ]
+      = addWarnAt loc
+          (vcat [ ptext (sLit "Variable") <+> quotes (ppr tv) <+>
+                  ptext (sLit "is implicitly quantified due to a context") $$
+                  ptext (sLit "Use explicit forall syntax instead.") $$
+                  ptext (sLit "This will become an error in GHC 7.12.")
+                , in_doc ]) (Just Opt_WarnContextQuantification)
 
 opTyErr :: RdrName -> HsType RdrName -> SDoc
 opTyErr op ty@(HsOpTy ty1 _ _)
