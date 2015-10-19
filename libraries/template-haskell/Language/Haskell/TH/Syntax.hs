@@ -31,7 +31,7 @@ import Control.Applicative( Applicative(..) )
 #endif
 import Data.IORef
 import System.IO.Unsafe ( unsafePerformIO )
-import Control.Monad (liftM)
+import Control.Monad    ( liftM )
 import System.IO        ( hPutStrLn, stderr )
 import Data.Char        ( isAlpha, isAlphaNum, isUpper )
 import Data.Int
