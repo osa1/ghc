@@ -671,19 +671,15 @@ dataToQa mkCon mkLit appCon antiQ t =
                       -- not mkNameG_d (for data constructors).
                       -- See Trac #10796.
                       fun@(x:_)   | startsVarSym x || startsVarId x
-                                  -> mkNameG_v tyconPkgId tyconMod fun
-                      con         -> mkNameG_d tyconPkgId tyconMod con
+                                  -> mkNameG_v tyconPackage tyconMod fun
+                      con         -> mkNameG_d tyconPackage tyconMod con
                   where
                     tycon :: TyCon
                     tycon = (typeRepTyCon . typeOf) t
 
-                    tyconPkgId :: PkgId
-                    tyconPkgId =
-                      -- 'tyConPackage' holds package id
-                      mkPkgId (tyConPackage tycon)
-
-                    tyconMod :: String
-                    tyconMod = tyConModule  tycon
+                    tyconPackage, tyconMod :: String
+                    tyconPackage = tyConPackage tycon
+                    tyconMod     = tyConModule  tycon
 
                 conArgs :: [Q q]
                 conArgs = gmapQ (dataToQa mkCon mkLit appCon antiQ) t
@@ -1060,10 +1056,10 @@ mkNameG ns pkg modu occ
 mkNameS :: String -> Name
 mkNameS n = Name (mkOccName n) NameS
 
-mkNameG_v, mkNameG_tc, mkNameG_d :: PkgId -> String -> String -> Name
-mkNameG_v  = mkNameG VarName
-mkNameG_tc = mkNameG TcClsName
-mkNameG_d  = mkNameG DataName
+mkNameG_v, mkNameG_tc, mkNameG_d :: String -> String -> String -> Name
+mkNameG_v  = mkNameG VarName . mkPkgId
+mkNameG_tc = mkNameG TcClsName . mkPkgId
+mkNameG_d  = mkNameG DataName . mkPkgId
 
 data NameIs = Alone | Applied | Infix
 

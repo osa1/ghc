@@ -1513,7 +1513,7 @@ reifyName thing
   where
     name    = getName thing
     mod     = ASSERT( isExternalName name ) nameModule name
-    pkg_id  = TH.mkPkgId (unitIdString (moduleUnitId mod))
+    pkg_id  = unitIdString (moduleUnitId mod)
     mod_str = moduleNameString (moduleName mod)
     occ_str = occNameString occ
     occ     = nameOccName name
