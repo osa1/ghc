@@ -772,9 +772,12 @@ appsE [] = error "appsE []"
 appsE [x] = x
 appsE (x:y:zs) = appsE ( (appE x y) : zs )
 
+thisPackageKey :: Q PkgId
+thisPackageKey = fmap (modulePkgId . mi_this_mod) . qReifyModule =<< thisModule
+
 -- | Return the Module at the place of splicing.  Can be used as an
 -- input for 'reifyModule'.
 thisModule :: Q Module
 thisModule = do
   loc <- location
-  return $ Module (mkPkgName $ loc_package loc) (mkModName $ loc_module loc)
+  return $ Module (mkPkgId $ loc_package loc) (mkModName $ loc_module loc)

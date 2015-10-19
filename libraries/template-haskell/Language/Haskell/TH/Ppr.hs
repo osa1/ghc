@@ -78,10 +78,10 @@ pprFixity v (Fixity i d) = ppr_fix d <+> int i <+> ppr v
 
 ------------------------------
 instance Ppr Module where
-  ppr (Module pkg m) = text (pkgString pkg) <+> text (modString m)
+  ppr (Module pkg m) = text (pkgIdString pkg) <+> text (modString m)
 
 instance Ppr ModuleInfo where
-  ppr (ModuleInfo imps) = text "Module" <+> vcat (map ppr imps)
+  ppr (ModuleInfo cur imps) = text "Module" <+> ppr cur <+> vcat (map ppr imps)
 
 ------------------------------
 instance Ppr Exp where

@@ -610,16 +610,16 @@ instance (Lift a, Lift b, Lift c, Lift d, Lift e, Lift f, Lift g)
 
 
 trueName, falseName :: Name
-trueName  = mkNameG DataName "ghc-prim" "GHC.Types" "True"
-falseName = mkNameG DataName "ghc-prim" "GHC.Types" "False"
+trueName  = mkNameG DataName primPkgId "GHC.Types" "True"
+falseName = mkNameG DataName primPkgId "GHC.Types" "False"
 
 nothingName, justName :: Name
-nothingName = mkNameG DataName "base" "GHC.Base" "Nothing"
-justName    = mkNameG DataName "base" "GHC.Base" "Just"
+nothingName = mkNameG DataName basePkgId "GHC.Base" "Nothing"
+justName    = mkNameG DataName basePkgId "GHC.Base" "Just"
 
 leftName, rightName :: Name
-leftName  = mkNameG DataName "base" "Data.Either" "Left"
-rightName = mkNameG DataName "base" "Data.Either" "Right"
+leftName  = mkNameG DataName basePkgId "Data.Either" "Left"
+rightName = mkNameG DataName basePkgId "Data.Either" "Right"
 
 -----------------------------------------------------
 --
@@ -654,15 +654,15 @@ dataToQa mkCon mkLit appCon antiQ t =
                     case showConstr constr of
                       "(:)"       -> Name (mkOccName ":")
                                           (NameG DataName
-                                                (mkPkgName "ghc-prim")
+                                                primPkgId
                                                 (mkModName "GHC.Types"))
                       con@"[]"    -> Name (mkOccName con)
                                           (NameG DataName
-                                                (mkPkgName "ghc-prim")
+                                                primPkgId
                                                 (mkModName "GHC.Types"))
                       con@('(':_) -> Name (mkOccName con)
                                           (NameG DataName
-                                                (mkPkgName "ghc-prim")
+                                                primPkgId
                                                 (mkModName "GHC.Tuple"))
                       -- It is possible for a Data instance to be defined such
                       -- that toConstr uses a Constr defined using a function,
@@ -671,14 +671,18 @@ dataToQa mkCon mkLit appCon antiQ t =
                       -- not mkNameG_d (for data constructors).
                       -- See Trac #10796.
                       fun@(x:_)   | startsVarSym x || startsVarId x
-                                  -> mkNameG_v tyconPkg tyconMod fun
-                      con         -> mkNameG_d tyconPkg tyconMod con
+                                  -> mkNameG_v tyconPkgId tyconMod fun
+                      con         -> mkNameG_d tyconPkgId tyconMod con
                   where
                     tycon :: TyCon
                     tycon = (typeRepTyCon . typeOf) t
 
-                    tyconPkg, tyconMod :: String
-                    tyconPkg = tyConPackage tycon
+                    tyconPkgId :: PkgId
+                    tyconPkgId =
+                      -- 'tyConPackage' holds package id
+                      mkPkgId (tyConPackage tycon)
+
+                    tyconMod :: String
                     tyconMod = tyConModule  tycon
 
                 conArgs :: [Q q]
@@ -746,15 +750,18 @@ dataToPatQ = dataToQa id litP conP
 newtype ModName = ModName String        -- Module name
  deriving (Show,Eq,Ord,Typeable,Data,Generic)
 
-newtype PkgName = PkgName String        -- package name
+newtype PkgId = PkgId String            -- package id
  deriving (Show,Eq,Ord,Typeable,Data,Generic)
 
 -- | Obtained from 'reifyModule' and 'thisModule'.
-data Module = Module PkgName ModName -- package qualified module name
+data Module = Module PkgId ModName -- package qualified module name
  deriving (Show,Eq,Ord,Typeable,Data,Generic)
 
 newtype OccName = OccName String
  deriving (Show,Eq,Ord,Typeable,Data,Generic)
+
+modulePkgId :: Module -> PkgId
+modulePkgId (Module pid _) = pid
 
 mkModName :: String -> ModName
 mkModName s = ModName s
@@ -763,12 +770,29 @@ modString :: ModName -> String
 modString (ModName m) = m
 
 
-mkPkgName :: String -> PkgName
-mkPkgName s = PkgName s
+mkPkgId :: String -> PkgId
+mkPkgId s = PkgId s
 
-pkgString :: PkgName -> String
-pkgString (PkgName m) = m
+pkgIdString :: PkgId -> String
+pkgIdString (PkgId m) = m
 
+-----------------------------------------------------
+--              PkgIds for wired-in packages
+-----------------------------------------------------
+
+primPkgId, basePkgId, rtsPkgId, thPkgId, dphSeqPkgId,
+  dphParPkgId, ghcPkgId, interactivePkgId :: PkgId
+
+-- TODO(osa): Can't add this, because can't import Config(in ghc package)
+-- integerPkgId        = mkPkgId "integer-gmp"
+primPkgId           = mkPkgId "ghc-prim"
+basePkgId           = mkPkgId "base"
+rtsPkgId            = mkPkgId "rts"
+thPkgId             = mkPkgId "template-haskell"
+dphSeqPkgId         = mkPkgId "dph-seq"
+dphParPkgId         = mkPkgId "dph-par"
+ghcPkgId            = mkPkgId "ghc"
+interactivePkgId    = mkPkgId "interactive"
 
 -----------------------------------------------------
 --              OccName
@@ -877,7 +901,7 @@ data NameFlavour
   | NameQ ModName   -- ^ A qualified name; dynamically bound
   | NameU !Int      -- ^ A unique local name
   | NameL !Int      -- ^ Local name bound outside of the TH AST
-  | NameG NameSpace PkgName ModName -- ^ Global name bound outside of the TH AST:
+  | NameG NameSpace PkgId ModName -- ^ Global name bound outside of the TH AST:
                 -- An original name (occurrences only, not binders)
                 -- Need the namespace too to be sure which
                 -- thing we are naming
@@ -930,7 +954,7 @@ nameModule _                      = Nothing
 -- >>> namePackage (mkName "Module.foo")
 -- Nothing
 namePackage :: Name -> Maybe String
-namePackage (Name _ (NameG _ p _)) = Just (pkgString p)
+namePackage (Name _ (NameG _ p _)) = Just (pkgIdString p)
 namePackage _                      = Nothing
 
 -- | Returns whether a name represents an occurrence of a top-level variable
@@ -1029,14 +1053,14 @@ mkNameL :: String -> Uniq -> Name
 mkNameL s u = Name (mkOccName s) (NameL u)
 
 -- | Used for 'x etc, but not available to the programmer
-mkNameG :: NameSpace -> String -> String -> String -> Name
+mkNameG :: NameSpace -> PkgId -> String -> String -> Name
 mkNameG ns pkg modu occ
-  = Name (mkOccName occ) (NameG ns (mkPkgName pkg) (mkModName modu))
+  = Name (mkOccName occ) (NameG ns pkg (mkModName modu))
 
 mkNameS :: String -> Name
 mkNameS n = Name (mkOccName n) NameS
 
-mkNameG_v, mkNameG_tc, mkNameG_d :: String -> String -> String -> Name
+mkNameG_v, mkNameG_tc, mkNameG_d :: PkgId -> String -> String -> Name
 mkNameG_v  = mkNameG VarName
 mkNameG_tc = mkNameG TcClsName
 mkNameG_d  = mkNameG DataName
@@ -1100,7 +1124,7 @@ tupleTypeName n = mk_tup_name (n-1) TcClsName
 
 mk_tup_name :: Int -> NameSpace -> Name
 mk_tup_name n_commas space
-  = Name occ (NameG space (mkPkgName "ghc-prim") tup_mod)
+  = Name occ (NameG space primPkgId tup_mod)
   where
     occ = mkOccName ('(' : replicate n_commas ',' ++ ")")
     tup_mod = mkModName "GHC.Tuple"
@@ -1121,7 +1145,7 @@ unboxedTupleTypeName n = mk_unboxed_tup_name (n-1) TcClsName
 
 mk_unboxed_tup_name :: Int -> NameSpace -> Name
 mk_unboxed_tup_name n_commas space
-  = Name occ (NameG space (mkPkgName "ghc-prim") tup_mod)
+  = Name occ (NameG space primPkgId tup_mod)
   where
     occ = mkOccName ("(#" ++ replicate n_commas ',' ++ "#)")
     tup_mod = mkModName "GHC.Tuple"
@@ -1214,8 +1238,9 @@ data Info
 
 -- | Obtained from 'reifyModule' in the 'Q' Monad.
 data ModuleInfo =
-  -- | Contains the import list of the module.
-  ModuleInfo [Module]
+  -- | Contains current module and the import list of the module.
+  ModuleInfo { mi_this_mod :: Module
+             , mi_imports  :: [Module] }
   deriving( Show, Eq, Ord, Data, Typeable, Generic )
 
 {- |

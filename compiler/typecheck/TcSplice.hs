@@ -1504,7 +1504,7 @@ reifyPred ty
 ------------------------------
 reifyName :: NamedThing n => n -> TH.Name
 reifyName thing
-  | isExternalName name = mk_varg pkg_str mod_str occ_str
+  | isExternalName name = mk_varg pkg_id mod_str occ_str
   | otherwise           = TH.mkNameU occ_str (getKey (getUnique name))
         -- Many of the things we reify have local bindings, and
         -- NameL's aren't supposed to appear in binding positions, so
@@ -1513,7 +1513,7 @@ reifyName thing
   where
     name    = getName thing
     mod     = ASSERT( isExternalName name ) nameModule name
-    pkg_str = unitIdString (moduleUnitId mod)
+    pkg_id  = TH.mkPkgId (unitIdString (moduleUnitId mod))
     mod_str = moduleNameString (moduleName mod)
     occ_str = occNameString occ
     occ     = nameOccName name
@@ -1542,9 +1542,9 @@ reifyStrict (HsSrcBang _ _         SrcStrict)   = TH.IsStrict
 ------------------------------
 lookupThAnnLookup :: TH.AnnLookup -> TcM CoreAnnTarget
 lookupThAnnLookup (TH.AnnLookupName th_nm) = fmap NamedTarget (lookupThName th_nm)
-lookupThAnnLookup (TH.AnnLookupModule (TH.Module pn mn))
+lookupThAnnLookup (TH.AnnLookupModule (TH.Module pid mn))
   = return $ ModuleTarget $
-    mkModule (stringToUnitId $ TH.pkgString pn) (mkModuleName $ TH.modString mn)
+    mkModule (stringToUnitId $ TH.pkgIdString pid) (mkModuleName $ TH.modString mn)
 
 reifyAnnotations :: Data a => TH.AnnLookup -> TcM [a]
 reifyAnnotations th_name
@@ -1558,29 +1558,35 @@ reifyAnnotations th_name
 
 ------------------------------
 modToTHMod :: Module -> TH.Module
-modToTHMod m = TH.Module (TH.PkgName $ unitIdString  $ moduleUnitId m)
+modToTHMod m = TH.Module (TH.PkgId $ unitIdString  $ moduleUnitId m)
                          (TH.ModName $ moduleNameString $ moduleName m)
 
 reifyModule :: TH.Module -> TcM TH.ModuleInfo
-reifyModule (TH.Module (TH.PkgName pkgString) (TH.ModName mString)) = do
+reifyModule (TH.Module (TH.PkgId pkgString) (TH.ModName mString)) = do
   this_mod <- getModule
   let reifMod = mkModule (stringToUnitId pkgString) (mkModuleName mString)
-  if (reifMod == this_mod) then reifyThisModule else reifyFromIface reifMod
+  imports <- if reifMod == this_mod then reifyImports
+                                    else reifyImportsFromIface reifMod
+  return $ TH.ModuleInfo (thModule this_mod) imports
     where
-      reifyThisModule = do
-        usages <- fmap (map modToTHMod . moduleEnvKeys . imp_mods) getImports
-        return $ TH.ModuleInfo usages
+      reifyImports =
+        fmap (map modToTHMod . moduleEnvKeys . imp_mods) getImports
 
-      reifyFromIface reifMod = do
-        iface <- loadInterfaceForModule (ptext (sLit "reifying module from TH for") <+> ppr reifMod) reifMod
-        let usages = [modToTHMod m | usage <- mi_usages iface,
-                                     Just m <- [usageToModule (moduleUnitId reifMod) usage] ]
-        return $ TH.ModuleInfo usages
+      reifyImportsFromIface reifMod = do
+        iface <- loadInterfaceForModule
+          (ptext (sLit "reifying module from TH for") <+> ppr reifMod) reifMod
+        return [modToTHMod m |
+                  usage <- mi_usages iface,
+                  Just m <- [usageToModule (moduleUnitId reifMod) usage] ]
 
       usageToModule :: UnitId -> Usage -> Maybe Module
       usageToModule _ (UsageFile {}) = Nothing
       usageToModule this_pkg (UsageHomeModule { usg_mod_name = mn }) = Just $ mkModule this_pkg mn
       usageToModule _ (UsagePackageModule { usg_mod = m }) = Just m
+
+      thModule :: Module -> TH.Module
+      thModule m = TH.Module (TH.mkPkgId $ unitIdString $ moduleUnitId m)
+                             (TH.mkModName $ moduleNameString $ moduleName m)
 
 ------------------------------
 mkThAppTs :: TH.Type -> [TH.Type] -> TH.Type
