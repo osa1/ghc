@@ -1544,7 +1544,8 @@ lookupThAnnLookup :: TH.AnnLookup -> TcM CoreAnnTarget
 lookupThAnnLookup (TH.AnnLookupName th_nm) = fmap NamedTarget (lookupThName th_nm)
 lookupThAnnLookup (TH.AnnLookupModule (TH.Module pid mn))
   = return $ ModuleTarget $
-    mkModule (stringToUnitId $ TH.pkgIdString pid) (mkModuleName $ TH.modString mn)
+    mkModule (stringToUnitId $ TH.pkgIdString pid)
+             (mkModuleName $ TH.modString mn)
 
 reifyAnnotations :: Data a => TH.AnnLookup -> TcM [a]
 reifyAnnotations th_name
