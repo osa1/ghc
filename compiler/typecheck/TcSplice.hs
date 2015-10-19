@@ -1504,7 +1504,7 @@ reifyPred ty
 ------------------------------
 reifyName :: NamedThing n => n -> TH.Name
 reifyName thing
-  | isExternalName name = mk_varg pkg_id mod_str occ_str
+  | isExternalName name = mk_varg pkg_key mod_str occ_str
   | otherwise           = TH.mkNameU occ_str (getKey (getUnique name))
         -- Many of the things we reify have local bindings, and
         -- NameL's aren't supposed to appear in binding positions, so
@@ -1513,7 +1513,7 @@ reifyName thing
   where
     name    = getName thing
     mod     = ASSERT( isExternalName name ) nameModule name
-    pkg_id  = unitIdString (moduleUnitId mod)
+    pkg_key = unitIdString (moduleUnitId mod)
     mod_str = moduleNameString (moduleName mod)
     occ_str = occNameString occ
     occ     = nameOccName name
@@ -1542,9 +1542,9 @@ reifyStrict (HsSrcBang _ _         SrcStrict)   = TH.IsStrict
 ------------------------------
 lookupThAnnLookup :: TH.AnnLookup -> TcM CoreAnnTarget
 lookupThAnnLookup (TH.AnnLookupName th_nm) = fmap NamedTarget (lookupThName th_nm)
-lookupThAnnLookup (TH.AnnLookupModule (TH.Module pid mn))
+lookupThAnnLookup (TH.AnnLookupModule (TH.Module pkey mn))
   = return $ ModuleTarget $
-    mkModule (stringToUnitId $ TH.pkgIdString pid)
+    mkModule (stringToUnitId $ TH.pkgKeyString pkey)
              (mkModuleName $ TH.modString mn)
 
 reifyAnnotations :: Data a => TH.AnnLookup -> TcM [a]
@@ -1559,11 +1559,11 @@ reifyAnnotations th_name
 
 ------------------------------
 modToTHMod :: Module -> TH.Module
-modToTHMod m = TH.Module (TH.PkgId $ unitIdString  $ moduleUnitId m)
+modToTHMod m = TH.Module (TH.PkgKey $ unitIdString  $ moduleUnitId m)
                          (TH.ModName $ moduleNameString $ moduleName m)
 
 reifyModule :: TH.Module -> TcM TH.ModuleInfo
-reifyModule (TH.Module (TH.PkgId pkgString) (TH.ModName mString)) = do
+reifyModule (TH.Module (TH.PkgKey pkgString) (TH.ModName mString)) = do
   this_mod <- getModule
   let reifMod = mkModule (stringToUnitId pkgString) (mkModuleName mString)
   imports <- if reifMod == this_mod then reifyImports
@@ -1586,7 +1586,7 @@ reifyModule (TH.Module (TH.PkgId pkgString) (TH.ModName mString)) = do
       usageToModule _ (UsagePackageModule { usg_mod = m }) = Just m
 
       thModule :: Module -> TH.Module
-      thModule m = TH.Module (TH.mkPkgId $ unitIdString $ moduleUnitId m)
+      thModule m = TH.Module (TH.mkPkgKey $ unitIdString $ moduleUnitId m)
                              (TH.mkModName $ moduleNameString $ moduleName m)
 
 ------------------------------

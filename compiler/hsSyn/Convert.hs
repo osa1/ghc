@@ -1283,7 +1283,7 @@ thRdrName loc ctxt_ns th_occ th_name
     occ :: OccName.OccName
     occ = mk_occ ctxt_ns th_occ
 
-thOrigRdrName :: String -> TH.NameSpace -> PkgId -> ModName -> RdrName
+thOrigRdrName :: String -> TH.NameSpace -> PkgKey -> ModName -> RdrName
 thOrigRdrName occ th_ns pkg mod = (mkOrig $! (mkModule (mk_pkg pkg) (mk_mod mod))) $! (mk_occ (mk_ghc_ns th_ns) occ)
 
 thRdrNameGuesses :: TH.Name -> [RdrName]
@@ -1310,8 +1310,8 @@ mk_ghc_ns TH.VarName   = OccName.varName
 mk_mod :: TH.ModName -> ModuleName
 mk_mod mod = mkModuleName (TH.modString mod)
 
-mk_pkg :: TH.PkgId -> UnitId
-mk_pkg pkg = stringToUnitId (TH.pkgIdString pkg)
+mk_pkg :: TH.PkgKey -> UnitId
+mk_pkg pkey = stringToUnitId (TH.pkgKeyString pkey)
 
 mk_uniq :: Int -> Unique
 mk_uniq u = mkUniqueGrimily u
