@@ -487,7 +487,7 @@ mkStgAltType bndr alts = case repType (idType bndr) of
                                         PolyAlt
         Nothing                      -> PolyAlt
     UbxTupleRep rep_tys -> UbxTupAlt (length rep_tys)
-    UbxSumRep rep_tyss -> UbxTupAlt (length rep_tyss)  -- TODO
+    UbxSumRep rep_tyss  -> UbxSumAlt (length rep_tyss)
     -- NB Nullary unboxed tuples have UnaryRep, and generate a PrimAlt
   where
    _is_poly_alt_tycon tc
