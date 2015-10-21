@@ -594,7 +594,7 @@ mkSumTyConOcc n = mkOccName tcName str
   where
     -- No need to cache these, the caching is done in mk_sum
     str = '(' : '#' : bars ++ "#)"
-    bars = concat $ replicate (n-1) "|"
+    bars = replicate (n-1) '|'
 
 -- | OccName for i-th alternative of n-ary unboxed sum data constructor.
 mkSumDataConOcc :: AltIx -> Arity -> OccName
@@ -602,7 +602,7 @@ mkSumDataConOcc alt n = mkOccName dataName str
   where
     -- No need to cache these, the caching is done in mk_sum
     str = '(' : '#' : bars alt ++ "_" ++ bars (n - alt - 1) ++ "#)"
-    bars i = concat $ replicate i "|"
+    bars i = replicate i '|'
 
 -- | Type constructor for n-ary unboxed sum.
 sumTyCon :: Arity -> TyCon
