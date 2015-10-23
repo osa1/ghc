@@ -90,6 +90,16 @@ class (Applicative m, Monad m) => Quasi m where
 
   qPutQ :: Typeable a => a -> m ()
 
+  -- | Search in the database of linked packages for packages with given name
+  -- and version.
+  -- TODO(osa): Can we make version argument optional(Maybe)? What happens if I
+  -- do something like `searchPackageId dflags "foo"`, without any version
+  -- number?
+  qSearchPackage
+    :: String -- ^ package name, e.g. 'foo'
+    -> String -- ^ package version, e.g. '0.1'
+    -> m [Package]
+
 -----------------------------------------------------
 --      The IO instance of Quasi
 --
@@ -123,6 +133,7 @@ instance Quasi IO where
   qAddModFinalizer _  = badIO "addModFinalizer"
   qGetQ               = badIO "getQ"
   qPutQ _             = badIO "putQ"
+  qSearchPackage _ _  = badIO "searchPackage"
 
   qRunIO m = m
 
@@ -432,6 +443,10 @@ getQ = Q qGetQ
 putQ :: Typeable a => a -> Q ()
 putQ x = Q (qPutQ x)
 
+-- | TODO(osa): Docs
+searchPackage :: String -> String -> Q [Package]
+searchPackage pkgName pkgVer = Q (qSearchPackage pkgName pkgVer)
+
 instance Quasi Q where
   qNewName          = newName
   qReport           = report
@@ -450,6 +465,7 @@ instance Quasi Q where
   qAddModFinalizer  = addModFinalizer
   qGetQ             = getQ
   qPutQ             = putQ
+  qSearchPackage    = searchPackage
 
 
 ----------------------------------------------------
@@ -743,14 +759,27 @@ dataToPatQ = dataToQa id litP conP
 --              Names and uniques
 -----------------------------------------------------
 
-newtype ModName = ModName String        -- Module name
+data Package = Package
+ { packageKey               :: PkgKey
+ , packageName              :: String
+ , packageVersion           :: [Int]
+     -- TODO(osa): What is versionTags? do we need it here?
+ , packageExposedModules    :: [String]
+     -- TODO(osa): Maybe we should make this field [Module] instead. Note that
+     -- some modules are just re-exports, in that case we probably shouldn't
+     -- just put packageKey to Module's PkgKey field.
+ }
  deriving (Show,Eq,Ord,Typeable,Data,Generic)
 
-newtype PkgKey = PkgKey String          -- Package key
+-- | 'PkgKey' uniquely identifies a package linked with current package.
+newtype PkgKey = PkgKey String
  deriving (Show,Eq,Ord,Typeable,Data,Generic)
 
 -- | Obtained from 'reifyModule' and 'thisModule'.
-data Module = Module PkgKey ModName -- package qualified module name
+data Module = Module PkgKey ModName
+ deriving (Show,Eq,Ord,Typeable,Data,Generic)
+
+newtype ModName = ModName String
  deriving (Show,Eq,Ord,Typeable,Data,Generic)
 
 newtype OccName = OccName String

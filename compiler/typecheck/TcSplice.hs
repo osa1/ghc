@@ -100,6 +100,10 @@ import DynFlags
 import Panic
 import Lexeme
 
+import GHC.PackageDb ( InstalledPackageInfo (..), exposedName )
+import Packages ( PackageConfig, SourcePackageId (..), packageNameString,
+                  searchPackageId, versionBranch )
+
 import qualified Language.Haskell.TH as TH
 -- THSyntax gives access to internal functions and data types
 import qualified Language.Haskell.TH.Syntax as TH
@@ -850,6 +854,22 @@ instance TH.Quasi (IOEnv (Env TcGblEnv TcLclEnv)) where
   qPutQ x = do
       th_state_var <- fmap tcg_th_state getGblEnv
       updTcRef th_state_var (\m -> Map.insert (typeOf x) (toDyn x) m)
+
+  qSearchPackage pkgName pkgVersion = do
+    dflags <- getDynFlags
+    return $ map mkTHPkg $
+      searchPackageId dflags
+        (SourcePackageId (mkFastString $ pkgName ++ "-" ++ pkgVersion))
+    where
+      mkTHPkg :: PackageConfig -> TH.Package
+      mkTHPkg pkgconf =
+        TH.Package (mkTHPkgKey $ unitId pkgconf)
+                   (packageNameString pkgconf)
+                   (versionBranch $ packageVersion pkgconf)
+                   (map (moduleNameString . exposedName) $ exposedModules pkgconf)
+
+      mkTHPkgKey :: UnitId -> TH.PkgKey
+      mkTHPkgKey = TH.PkgKey . unpackFS . unitIdFS
 
 
 {-
