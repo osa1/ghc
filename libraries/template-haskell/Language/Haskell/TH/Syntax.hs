@@ -59,7 +59,7 @@ class (Applicative m, Monad m) => Quasi m where
                                         -- ...but carry on; use 'fail' to stop
   qRecover :: m a -- ^ the error handler
            -> m a -- ^ action which may fail
-           -> m a               -- ^ Recover from the monadic 'fail'
+           -> m a -- ^ Recover from the monadic 'fail'
 
         -- Inspect the type-checker's environment
   qLookupName :: Bool -> String -> m (Maybe Name)

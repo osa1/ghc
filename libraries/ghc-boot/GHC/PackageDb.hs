@@ -68,11 +68,11 @@ import System.Directory
 --
 data InstalledPackageInfo instpkgid srcpkgid srcpkgname pkgkey modulename
    = InstalledPackageInfo {
-       componentId :: instpkgid,
+       componentId        :: instpkgid,
        sourcePackageId    :: srcpkgid,
        packageName        :: srcpkgname,
        packageVersion     :: Version,
-       unitId         :: pkgkey,
+       unitId             :: pkgkey,
        abiHash            :: String,
        depends            :: [pkgkey],
        importDirs         :: [FilePath],
