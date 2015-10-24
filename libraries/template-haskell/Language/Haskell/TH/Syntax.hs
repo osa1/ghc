@@ -687,15 +687,15 @@ dataToQa mkCon mkLit appCon antiQ t =
                       -- not mkNameG_d (for data constructors).
                       -- See Trac #10796.
                       fun@(x:_)   | startsVarSym x || startsVarId x
-                                  -> mkNameG_v tyconPackage tyconMod fun
-                      con         -> mkNameG_d tyconPackage tyconMod con
+                                  -> mkNameG_v tyconPkg tyconMod fun
+                      con         -> mkNameG_d tyconPkg tyconMod con
                   where
                     tycon :: TyCon
                     tycon = (typeRepTyCon . typeOf) t
 
-                    tyconPackage, tyconMod :: String
-                    tyconPackage = tyConPackage tycon
-                    tyconMod     = tyConModule  tycon
+                    tyconPkg, tyconMod :: String
+                    tyconPkg = tyConPackage tycon
+                    tyconMod = tyConModule  tycon
 
                 conArgs :: [Q q]
                 conArgs = gmapQ (dataToQa mkCon mkLit appCon antiQ) t
