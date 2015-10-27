@@ -471,6 +471,7 @@ instance Quasi Q where
   qGetQ             = getQ
   qPutQ             = putQ
   qSearchPackage    = searchPackage
+  qReifyPackage     = reifyPackage
 
 
 ----------------------------------------------------
