@@ -98,6 +98,8 @@ class (Applicative m, Monad m) => Quasi m where
     -> Maybe String -- ^ optional package version, e.g. '0.1'
     -> m [Package]
 
+  qReifyPackage :: PkgKey -> m (Maybe Package)
+
 -----------------------------------------------------
 --      The IO instance of Quasi
 --
@@ -132,6 +134,7 @@ instance Quasi IO where
   qGetQ               = badIO "getQ"
   qPutQ _             = badIO "putQ"
   qSearchPackage _ _  = badIO "searchPackage"
+  qReifyPackage _     = badIO "reifyPackage"
 
   qRunIO m = m
 
@@ -389,6 +392,10 @@ reifyAnnotations an = Q (qReifyAnnotations an)
 -- value of @thisModule@.
 reifyModule :: Module -> Q ModuleInfo
 reifyModule m = Q (qReifyModule m)
+
+-- TODO: Docs
+reifyPackage :: PkgKey -> Q (Maybe Package)
+reifyPackage k = Q (qReifyPackage k)
 
 -- | Is the list of instances returned by 'reifyInstances' nonempty?
 isInstance :: Name -> [Type] -> Q Bool

@@ -102,8 +102,9 @@ import Lexeme
 
 import GHC.PackageDb ( ExposedModule (..), InstalledPackageInfo (..),
                        OriginalModule (..) )
-import Packages ( PackageConfig, SourcePackageId (..), packageNameString,
-                  searchPackageId, searchPackageIdPrefix, versionBranch )
+import Packages ( PackageConfig, SourcePackageId (..), lookupPackage,
+                  packageNameString, searchPackageId, searchPackageIdPrefix,
+                  versionBranch )
 
 import qualified Language.Haskell.TH as TH
 -- THSyntax gives access to internal functions and data types
@@ -864,25 +865,31 @@ instance TH.Quasi (IOEnv (Env TcGblEnv TcLclEnv)) where
         Just ver ->
           searchPackageId dflags
             (SourcePackageId (mkFastString $ pkgName ++ "-" ++ ver))
-    where
-      mkTHPkg :: PackageConfig -> TH.Package
-      mkTHPkg pkgconf =
-        let origPkgKey = mkTHPkgKey (unitId pkgconf)
-         in TH.Package origPkgKey
-                       (packageNameString pkgconf)
-                       (packageVersion pkgconf)
-                       (map (exposedModuleTHModule origPkgKey) $ exposedModules pkgconf)
 
-      exposedModuleTHModule :: TH.PkgKey -> ExposedModule UnitId ModuleName -> TH.Module
-      exposedModuleTHModule origPkgKey (ExposedModule mname reexport _) =
-        case reexport of
-          Nothing ->
-            TH.Module origPkgKey (TH.ModName $ moduleNameString mname)
-          Just (OriginalModule pkgkey mname') ->
-            TH.Module (mkTHPkgKey pkgkey) (TH.ModName $ moduleNameString mname')
+  qReifyPackage pkgKey = do
+    dflags <- getDynFlags
+    return $ mkTHPkg <$> lookupPackage dflags
+                           (stringToUnitId $ TH.pkgKeyString pkgKey)
 
-      mkTHPkgKey :: UnitId -> TH.PkgKey
-      mkTHPkgKey = TH.PkgKey . unpackFS . unitIdFS
+mkTHPkg :: PackageConfig -> TH.Package
+mkTHPkg pkgconf =
+    TH.Package origPkgKey
+               (packageNameString pkgconf)
+               (packageVersion pkgconf)
+               (map (exposedModuleTHModule origPkgKey) $ exposedModules pkgconf)
+  where
+    origPkgKey = mkTHPkgKey (unitId pkgconf)
+
+    exposedModuleTHModule :: TH.PkgKey -> ExposedModule UnitId ModuleName -> TH.Module
+    exposedModuleTHModule origPkgKey (ExposedModule mname reexport _) =
+      case reexport of
+        Nothing ->
+          TH.Module origPkgKey (TH.ModName $ moduleNameString mname)
+        Just (OriginalModule pkgkey mname') ->
+          TH.Module (mkTHPkgKey pkgkey) (TH.ModName $ moduleNameString mname')
+
+    mkTHPkgKey :: UnitId -> TH.PkgKey
+    mkTHPkgKey = TH.PkgKey . unpackFS . unitIdFS
 
 
 {-
