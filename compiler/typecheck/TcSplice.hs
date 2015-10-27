@@ -880,7 +880,8 @@ mkTHPkg pkgconf =
   where
     origPkgKey = mkTHPkgKey (unitId pkgconf)
 
-    exposedModuleTHModule :: TH.PkgKey -> ExposedModule UnitId ModuleName -> TH.Module
+    exposedModuleTHModule
+      :: TH.PkgKey -> ExposedModule UnitId ModuleName -> TH.Module
     exposedModuleTHModule origPkgKey (ExposedModule mname reexport _) =
       case reexport of
         Nothing ->
