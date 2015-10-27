@@ -37,6 +37,7 @@ import Data.Char        ( isAlpha, isAlphaNum, isUpper )
 import Data.Int
 import Data.Word
 import Data.Ratio
+import Data.Version     ( Version )
 import GHC.Generics     ( Generic )
 import GHC.Lexeme       ( startsVarSym, startsVarId )
 
@@ -759,8 +760,7 @@ dataToPatQ = dataToQa id litP conP
 data Package = Package
  { packageKey               :: PkgKey
  , packageName              :: String
- , packageVersion           :: [Int]
-     -- TODO(osa): What is versionTags? do we need it here?
+ , packageVersion           :: Version
  , packageExposedModules    :: [String]
      -- TODO(osa): Maybe we should make this field [Module] instead. Note that
      -- some modules are just re-exports, in that case we probably shouldn't

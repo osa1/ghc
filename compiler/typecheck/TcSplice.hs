@@ -868,7 +868,7 @@ instance TH.Quasi (IOEnv (Env TcGblEnv TcLclEnv)) where
       mkTHPkg pkgconf =
         TH.Package (mkTHPkgKey $ unitId pkgconf)
                    (packageNameString pkgconf)
-                   (versionBranch $ packageVersion pkgconf)
+                   (packageVersion pkgconf)
                    (map (moduleNameString . exposedName) $ exposedModules pkgconf)
 
       mkTHPkgKey :: UnitId -> TH.PkgKey
