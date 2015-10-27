@@ -92,12 +92,9 @@ class (Applicative m, Monad m) => Quasi m where
 
   -- | Search in the database of linked packages for packages with given name
   -- and version.
-  -- TODO(osa): Can we make version argument optional(Maybe)? What happens if I
-  -- do something like `searchPackageId dflags "foo"`, without any version
-  -- number?
   qSearchPackage
     :: String -- ^ package name, e.g. 'foo'
-    -> String -- ^ package version, e.g. '0.1'
+    -> Maybe String -- ^ optional package version, e.g. '0.1'
     -> m [Package]
 
 -----------------------------------------------------
@@ -444,7 +441,7 @@ putQ :: Typeable a => a -> Q ()
 putQ x = Q (qPutQ x)
 
 -- | TODO(osa): Docs
-searchPackage :: String -> String -> Q [Package]
+searchPackage :: String -> Maybe String -> Q [Package]
 searchPackage pkgName pkgVer = Q (qSearchPackage pkgName pkgVer)
 
 instance Quasi Q where

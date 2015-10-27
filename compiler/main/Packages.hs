@@ -19,6 +19,7 @@ module Packages (
         -- * Querying the package config
         lookupPackage,
         searchPackageId,
+        searchPackageIdPrefix,
         getPackageDetails,
         listVisibleModuleNames,
         lookupModuleInAllPackages,
@@ -281,6 +282,15 @@ lookupPackage' = lookupUFM
 searchPackageId :: DynFlags -> SourcePackageId -> [PackageConfig]
 searchPackageId dflags pid = filter ((pid ==) . sourcePackageId)
                                (listPackageConfigMap dflags)
+
+-- | Search for packages with a given package ID prefix, e.g. "foo" returns
+-- packages with IDs "foo-0.1", "foo-0.2" etc. "base" returns "base".
+--
+-- This is mostly useful for TH.
+searchPackageIdPrefix :: DynFlags -> String -> [PackageConfig]
+searchPackageIdPrefix dflags pfx =
+    filter ((pfx `isPrefixOf`) . sourcePackageIdString)
+           (listPackageConfigMap dflags)
 
 -- | Extends the package configuration map with a list of package configs.
 extendPackageConfigMap

@@ -102,7 +102,7 @@ import Lexeme
 
 import GHC.PackageDb ( InstalledPackageInfo (..), exposedName )
 import Packages ( PackageConfig, SourcePackageId (..), packageNameString,
-                  searchPackageId, versionBranch )
+                  searchPackageId, searchPackageIdPrefix, versionBranch )
 
 import qualified Language.Haskell.TH as TH
 -- THSyntax gives access to internal functions and data types
@@ -858,8 +858,11 @@ instance TH.Quasi (IOEnv (Env TcGblEnv TcLclEnv)) where
   qSearchPackage pkgName pkgVersion = do
     dflags <- getDynFlags
     return $ map mkTHPkg $
-      searchPackageId dflags
-        (SourcePackageId (mkFastString $ pkgName ++ "-" ++ pkgVersion))
+      case pkgVersion of
+        Nothing -> searchPackageIdPrefix dflags pkgName
+        Just ver ->
+          searchPackageId dflags
+            (SourcePackageId (mkFastString $ pkgName ++ "-" ++ ver))
     where
       mkTHPkg :: PackageConfig -> TH.Package
       mkTHPkg pkgconf =
