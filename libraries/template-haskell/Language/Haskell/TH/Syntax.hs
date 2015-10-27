@@ -761,10 +761,7 @@ data Package = Package
  { packageKey               :: PkgKey
  , packageName              :: String
  , packageVersion           :: Version
- , packageExposedModules    :: [String]
-     -- TODO(osa): Maybe we should make this field [Module] instead. Note that
-     -- some modules are just re-exports, in that case we probably shouldn't
-     -- just put packageKey to Module's PkgKey field.
+ , packageExposedModules    :: [Module]
  }
  deriving (Show,Eq,Ord,Typeable,Data,Generic)
 

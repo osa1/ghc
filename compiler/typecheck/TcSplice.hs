@@ -100,7 +100,8 @@ import DynFlags
 import Panic
 import Lexeme
 
-import GHC.PackageDb ( InstalledPackageInfo (..), exposedName )
+import GHC.PackageDb ( ExposedModule (..), InstalledPackageInfo (..),
+                       OriginalModule (..) )
 import Packages ( PackageConfig, SourcePackageId (..), packageNameString,
                   searchPackageId, searchPackageIdPrefix, versionBranch )
 
@@ -866,10 +867,19 @@ instance TH.Quasi (IOEnv (Env TcGblEnv TcLclEnv)) where
     where
       mkTHPkg :: PackageConfig -> TH.Package
       mkTHPkg pkgconf =
-        TH.Package (mkTHPkgKey $ unitId pkgconf)
-                   (packageNameString pkgconf)
-                   (packageVersion pkgconf)
-                   (map (moduleNameString . exposedName) $ exposedModules pkgconf)
+        let origPkgKey = mkTHPkgKey (unitId pkgconf)
+         in TH.Package origPkgKey
+                       (packageNameString pkgconf)
+                       (packageVersion pkgconf)
+                       (map (exposedModuleTHModule origPkgKey) $ exposedModules pkgconf)
+
+      exposedModuleTHModule :: TH.PkgKey -> ExposedModule UnitId ModuleName -> TH.Module
+      exposedModuleTHModule origPkgKey (ExposedModule mname reexport _) =
+        case reexport of
+          Nothing ->
+            TH.Module origPkgKey (TH.ModName $ moduleNameString mname)
+          Just (OriginalModule pkgkey mname') ->
+            TH.Module (mkTHPkgKey pkgkey) (TH.ModName $ moduleNameString mname')
 
       mkTHPkgKey :: UnitId -> TH.PkgKey
       mkTHPkgKey = TH.PkgKey . unpackFS . unitIdFS
