@@ -91,8 +91,6 @@ class (Applicative m, Monad m) => Quasi m where
 
   qPutQ :: Typeable a => a -> m ()
 
-  -- | Search in the database of linked packages for packages with given name
-  -- and version.
   qSearchPackage
     :: String -- ^ package name, e.g. 'foo'
     -> Maybe String -- ^ optional package version, e.g. '0.1'
@@ -393,7 +391,23 @@ reifyAnnotations an = Q (qReifyAnnotations an)
 reifyModule :: Module -> Q ModuleInfo
 reifyModule m = Q (qReifyModule m)
 
--- TODO: Docs
+-- | @reifyPackage pkgKey@ looks up information about package with given package
+-- key in the database of linked packages. Returning @Nothing@ mean package with
+-- given key is not linked against the current package, or package key is
+-- invalid.
+--
+-- Keys for all linked packages can be obtained with getting the current package
+-- with @thisPackage@. The returned @Package@'s @packageDepends@ field will have
+-- all the dependencies. By transitively searching through dependencies ...
+--
+-- TODO(osa): Well, this made @PkgKey@ pretty useless. We can just remove it at
+-- this point, since @thisPackage@ transitively collects all the linked packages
+-- as @Package@s.
+--
+-- TODO(osa): I'm confused. We can revert @packageDepends@ to @[PkgId]@, but
+-- this makes no sense. Why add a level of indirection? Similarly, why do we
+-- have @Module@ and @ModuleInfo@? Why not merge them?
+--
 reifyPackage :: PkgKey -> Q (Maybe Package)
 reifyPackage k = Q (qReifyPackage k)
 
@@ -448,7 +462,8 @@ getQ = Q qGetQ
 putQ :: Typeable a => a -> Q ()
 putQ x = Q (qPutQ x)
 
--- | TODO(osa): Docs
+-- | Search in the database of linked packages for packages with given name and
+-- optional version.
 searchPackage :: String -> Maybe String -> Q [Package]
 searchPackage pkgName pkgVer = Q (qSearchPackage pkgName pkgVer)
 
