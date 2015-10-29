@@ -859,7 +859,7 @@ instance TH.Quasi (IOEnv (Env TcGblEnv TcLclEnv)) where
 
   qSearchPackage pkgName pkgVersion = do
     dflags <- getDynFlags
-    return $ map mkTHPkg $
+    mapM mkTHPkg $
       case pkgVersion of
         Nothing -> searchPackageIdPrefix dflags pkgName
         Just ver ->
@@ -868,16 +868,28 @@ instance TH.Quasi (IOEnv (Env TcGblEnv TcLclEnv)) where
 
   qReifyPackage pkgKey = do
     dflags <- getDynFlags
-    return $ mkTHPkg <$> lookupPackage dflags
-                           (stringToUnitId $ TH.pkgKeyString pkgKey)
+    case lookupPackage dflags (stringToUnitId $ TH.pkgKeyString pkgKey) of
+      Nothing  -> return Nothing
+      Just pkg -> Just <$> mkTHPkg pkg
 
-mkTHPkg :: PackageConfig -> TH.Package
+mkTHPkg :: PackageConfig -> IOEnv (Env TcGblEnv TcLclEnv) TH.Package
 mkTHPkg pkgconf =
     TH.Package origPkgKey
                (packageNameString pkgconf)
                (packageVersion pkgconf)
                (map (exposedModuleTHModule origPkgKey) $ exposedModules pkgconf)
+               <$> mapM reifyDep (depends pkgconf)
   where
+    reifyDep :: UnitId -> IOEnv (Env TcGblEnv TcLclEnv) TH.Package
+    reifyDep uid = do
+      mb_pkg <- TH.qReifyPackage (mkTHPkgKey uid)
+      case mb_pkg of
+        Nothing -> pprPanic "Can't reify a dependency."
+                     ( (text "Current package key:" <+>
+                        text (TH.pkgKeyString origPkgKey)) $+$
+                       (text "Dependency package key:" <+> ppr uid) )
+        Just pkg -> return pkg
+
     origPkgKey = mkTHPkgKey (unitId pkgconf)
 
     exposedModuleTHModule

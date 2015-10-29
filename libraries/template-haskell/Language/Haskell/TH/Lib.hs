@@ -772,9 +772,18 @@ appsE [] = error "appsE []"
 appsE [x] = x
 appsE (x:y:zs) = appsE ( (appE x y) : zs )
 
+-- TODO: Doc
 thisPackageKey :: Q PkgKey
 thisPackageKey =
   fmap (modulePkgKey . mi_this_mod) . qReifyModule =<< thisModule
+
+-- TODO: Doc
+thisPackage :: Q Package
+thisPackage = do
+    mb_pkg <- thisPackageKey >>= reifyPackage
+    case mb_pkg of
+      Nothing  -> fail "Can't reify current package!"
+      Just pkg -> return pkg
 
 -- | Return the Module at the place of splicing.  Can be used as an
 -- input for 'reifyModule'.

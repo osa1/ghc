@@ -770,6 +770,7 @@ data Package = Package
  , packageName              :: String
  , packageVersion           :: Version
  , packageExposedModules    :: [Module]
+ , packageDepends           :: [Package]
  }
  deriving (Show,Eq,Ord,Typeable,Data,Generic)
 
