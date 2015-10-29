@@ -762,7 +762,7 @@ when showing an error message.
 To call runQ in the Tc monad, we need to make TcM an instance of Quasi:
 -}
 
-instance TH.Quasi (IOEnv (Env TcGblEnv TcLclEnv)) where
+instance TH.Quasi TcM where
   qNewName s = do { u <- newUnique
                   ; let i = getKey u
                   ; return (TH.mkNameU s i) }
@@ -846,7 +846,7 @@ instance TH.Quasi (IOEnv (Env TcGblEnv TcLclEnv)) where
       th_modfinalizers_var <- fmap tcg_th_modfinalizers getGblEnv
       updTcRef th_modfinalizers_var (\fins -> fin:fins)
 
-  qGetQ :: forall a. Typeable a => IOEnv (Env TcGblEnv TcLclEnv) (Maybe a)
+  qGetQ :: forall a. Typeable a => TcM (Maybe a)
   qGetQ = do
       th_state_var <- fmap tcg_th_state getGblEnv
       th_state <- readTcRef th_state_var
@@ -872,7 +872,7 @@ instance TH.Quasi (IOEnv (Env TcGblEnv TcLclEnv)) where
       Nothing  -> return Nothing
       Just pkg -> Just <$> mkTHPkg pkg
 
-mkTHPkg :: PackageConfig -> IOEnv (Env TcGblEnv TcLclEnv) TH.Package
+mkTHPkg :: PackageConfig -> TcM TH.Package
 mkTHPkg pkgconf =
     TH.Package origPkgKey
                (packageNameString pkgconf)
@@ -880,7 +880,7 @@ mkTHPkg pkgconf =
                (map (exposedModuleTHModule origPkgKey) $ exposedModules pkgconf)
                <$> mapM reifyDep (depends pkgconf)
   where
-    reifyDep :: UnitId -> IOEnv (Env TcGblEnv TcLclEnv) TH.Package
+    reifyDep :: UnitId -> TcM TH.Package
     reifyDep uid = do
       mb_pkg <- TH.qReifyPackage (mkTHPkgKey uid)
       case mb_pkg of
