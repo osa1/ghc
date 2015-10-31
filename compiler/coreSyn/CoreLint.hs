@@ -239,6 +239,7 @@ coreDumpFlag CoreDoPrintCore          = Nothing
 coreDumpFlag (CoreDoRuleCheck {})     = Nothing
 coreDumpFlag CoreDoNothing            = Nothing
 coreDumpFlag (CoreDoPasses {})        = Nothing
+coreDumpFlag CoreElimUbxSums          = Nothing
 
 {-
 ************************************************************************

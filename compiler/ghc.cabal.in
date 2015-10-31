@@ -501,6 +501,8 @@ Library
 --        CgInfoTbls used in ghci/DebuggerUtils
 --        CgHeapery  mkVirtHeapOffsets used in ghci
 
+        ElimUbxSums
+
     Exposed-Modules:
             AsmCodeGen
             TargetReg

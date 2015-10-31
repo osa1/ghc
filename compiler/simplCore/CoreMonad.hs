@@ -147,6 +147,7 @@ data CoreToDo           -- These are diff core-to-core passes,
 
   | CoreTidy
   | CorePrep
+  | CoreElimUbxSums
 
 instance Outputable CoreToDo where
   ppr (CoreDoSimplify _ _)     = ptext (sLit "Simplifier")
@@ -170,6 +171,7 @@ instance Outputable CoreToDo where
   ppr (CoreDoRuleCheck {})     = ptext (sLit "Rule check")
   ppr CoreDoNothing            = ptext (sLit "CoreDoNothing")
   ppr (CoreDoPasses {})        = ptext (sLit "CoreDoPasses")
+  ppr CoreElimUbxSums          = ptext (sLit "CoreElimUbxSums")
 
 pprPassDetails :: CoreToDo -> SDoc
 pprPassDetails (CoreDoSimplify n md) = vcat [ ptext (sLit "Max iterations =") <+> int n

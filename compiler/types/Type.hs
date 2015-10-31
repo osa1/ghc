@@ -66,7 +66,8 @@ module Type (
         isTyVarTy, isFunTy, isDictTy, isPredTy, isVoidTy,
 
         -- (Lifting and boxity)
-        isUnLiftedType, isUnboxedTupleType, isAlgType, isClosedAlgType,
+        isUnLiftedType, isUnboxedTupleType, isUnboxedSumType,
+        isAlgType, isClosedAlgType,
         isPrimitiveType, isStrictType,
 
         -- * Main data types representing Kinds
@@ -654,11 +655,10 @@ flattenRepType (UbxTupleRep tys) = tys
 flattenRepType (UbxSumRep tys)   = tys
 flattenRepType (UnaryRep ty)     = [ty]
 
--- | Compute the representation type for unboxed sums. We represent
--- sums as a tag followed by a number of pointer and non-pointer
--- fields. The number of such fields is picked such that they can
--- represent any of the alternatives. This means that some of the
--- fields might not always be used.
+-- | Compute the representation type for unboxed sums. We represent sums as a
+-- tag followed by a number of pointer and non-pointer fields. The number of
+-- such fields is picked such that they can represent any of the alternatives.
+-- This means that some of the fields might not always be used.
 flattenSumRepType :: [[UnaryType]] -> [UnaryType]
 flattenSumRepType tyss =
     wordPrimTy : concatMap replicateTypes
@@ -1214,6 +1214,11 @@ isUnboxedTupleType :: Type -> Bool
 isUnboxedTupleType ty = case tyConAppTyCon_maybe ty of
                            Just tc -> isUnboxedTupleTyCon tc
                            _       -> False
+
+isUnboxedSumType :: Type -> Bool
+isUnboxedSumType ty = case tyConAppTyCon_maybe ty of
+                        Just tc -> isUnboxedSumTyCon tc
+                        _       -> False
 
 -- | See "Type#type_classification" for what an algebraic type is.
 -- Should only be applied to /types/, as opposed to e.g. partially

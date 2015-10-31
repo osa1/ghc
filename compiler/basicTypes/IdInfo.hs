@@ -206,7 +206,7 @@ data IdInfo
         strictnessInfo  :: StrictSig,      --  ^ A strictness signature
 
         demandInfo      :: Demand,       -- ^ ID demand information
-        callArityInfo :: !ArityInfo    -- ^ How this is called.
+        callArityInfo   :: !ArityInfo    -- ^ How this is called.
                                          -- n <=> all calls have at least n arguments
     }
 

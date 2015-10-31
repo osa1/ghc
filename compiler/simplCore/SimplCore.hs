@@ -59,6 +59,8 @@ import DynamicLoading   ( loadPlugins )
 import Plugins          ( installCoreToDos )
 #endif
 
+import ElimUbxSums      ( elimUbxSums )
+
 {-
 ************************************************************************
 *                                                                      *
@@ -127,6 +129,7 @@ getCoreToDo dflags
     static_args   = gopt Opt_StaticArgumentTransformation dflags
     rules_on      = gopt Opt_EnableRewriteRules           dflags
     eta_expand_on = gopt Opt_DoLambdaEtaExpansion         dflags
+    elim_ubx_sums = xopt Opt_UnboxedSums                  dflags
 
     maybe_rule_check phase = runMaybe rule_check (CoreDoRuleCheck phase)
 
@@ -196,6 +199,8 @@ getCoreToDo dflags
 
     core_todo =
      if opt_level == 0 then
+       (if elim_ubx_sums then [CoreElimUbxSums] else [])
+       ++
        [ vectorisation
        , CoreDoSimplify max_iter
              (base_mode { sm_phase = Phase 0
@@ -397,6 +402,9 @@ doCorePass (CoreDoPasses passes)        = runCorePasses passes
 #ifdef GHCI
 doCorePass (CoreDoPluginPass _ pass) = {-# SCC "Plugin" #-} pass
 #endif
+
+doCorePass CoreElimUbxSums           = {-# SCC "CoreElimUbxSums" #-}
+                                       elimUbxSums
 
 doCorePass pass = pprPanic "doCorePass" (ppr pass)
 

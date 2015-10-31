@@ -62,9 +62,10 @@ ubxTupleId0 :: Id
 ubxTupleId0 = dataConWorkId (tupleDataCon Unboxed 0)
 
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
-unarise us binds = pprTrace "unarise" (ppr binds) $
+unarise us binds = -- pprTrace "unarise" (ppr binds) $
                    let res = zipWith (\us -> unariseBinding us init_env) (listSplitUniqSupply us) binds
-                   in pprTrace "post-unarise:" (ppr res) res
+                   -- in pprTrace "post-unarise:" (ppr res) res
+                   in res
   where -- See Note [Nullary unboxed tuple] in Type.hs
         init_env = unitVarEnv ubxTupleId0 [realWorldPrimId]
 
