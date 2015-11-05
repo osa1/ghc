@@ -718,8 +718,13 @@ repType ty
          else UbxTupleRep (concatMap (flattenRepType . go rec_nts) tys)
 
       | isUnboxedSumTyCon tc
-      = pprPanic ("repType: Found an unboxed sum. " ++
-                  "This should be eliminated before STG phase.") (ppr ty)
+      -- = pprPanic ("repType: Found an unboxed sum. " ++
+      --             "This should be eliminated before STG phase.") (ppr ty)
+      = -- TODO(osa): We should translate types in elimUbxSums instead.
+        -- I wasted quite a lot of time with this but couldn't figure out
+        -- where's this type coming from. Should probably investigate this
+        -- further.
+        UbxTupleRep [intPrimTy, anyTypeOfKind liftedTypeKind]
 
     go _ ty = UnaryRep ty
 
