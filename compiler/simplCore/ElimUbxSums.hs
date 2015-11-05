@@ -3,14 +3,12 @@
 module ElimUbxSums ( elimUbxSums ) where
 
 import BasicTypes
-import BasicTypes
 import Coercion
 import CoreLint (lintPassResult)
 import CoreMonad
 import CoreSyn
 import CoreUtils
 import DataCon
-import DsUtils (mkErrorAppDs)
 import FastString (mkFastString)
 import HscTypes
 import Id
@@ -20,15 +18,12 @@ import MkCore
 import MkId
 import Outputable
 import PprCore (pprCoreBindings)
-import TyCon
 import Type
 import TypeRep
 import TysPrim
 import TysWiredIn
 import UniqSupply
 import Var
-
-import Control.Monad (when)
 
 elimUbxSums :: ModGuts -> CoreM ModGuts
 elimUbxSums guts@ModGuts{ mg_binds = binds } = do
@@ -56,7 +51,7 @@ elimUbxSumsExpr e@App{}
   | Var x     <- f
   , Just dcon <- isDataConId_maybe x
   , isUnboxedSumCon dcon
-  , ty        <- exprType f
+  -- , ty        <- exprType f
   -- , pprTrace "found a unboxed sum application"
   --     (text "we still need to figure out which alternative of which sum type"
   --       $+$ ppr ty
@@ -70,7 +65,7 @@ elimUbxSumsExpr e@App{}
                      Type intPrimTy, Type liftedAny,
                      -- tuple term arguments
                     Lit (mkMachInt dflags (fromIntegral (dataConTag dcon))),
-                    mkApps (Var unsafeCoerceId) [ Type (exprType arg), Type liftedAny, arg ] ]
+                    mkUnsafeCoerce (exprType arg) liftedAny arg ]
       _ ->
         pprPanic "unboxed sum: only one field is supported for now" (ppr e)
   where
@@ -129,11 +124,13 @@ elimUbxSumsExpr e@(Case scrt x ty alts)
       dflags <- getDynFlags
       let tagLit = mkMachInt dflags (fromIntegral (dataConTag con))
       rhs' <- elimUbxSumsExpr rhs
-      let bindBndr = Let (NonRec bndr $
-            mkApps (Var unsafeCoerceId) [ Type liftedAny, Type (idType bndr), Var fieldBinder ])
+      let bindBndr = Let (NonRec bndr (mkUnsafeCoerce liftedAny (idType bndr) (Var fieldBinder)))
       let alt      = (LitAlt tagLit, [], bindBndr rhs')
       alts <- mkUbxTupleAlts' rest fieldBinder
       return (alt : alts)
+
+    mkUbxTupleAlts' ((altCon, _, _) : _) _ =
+      pprPanic "mkUbxTupleAlts': Invalid alt con:" (ppr altCon)
 
     mkUbxTupleAlts' [] _ = return []
 
@@ -190,3 +187,6 @@ newUnusedId ty = do
 
 liftedAny :: Type
 liftedAny = anyTypeOfKind liftedTypeKind
+
+mkUnsafeCoerce :: Type -> Type -> CoreExpr -> CoreExpr
+mkUnsafeCoerce from to arg = mkApps (Var unsafeCoerceId) [ Type from, Type to, arg ]
