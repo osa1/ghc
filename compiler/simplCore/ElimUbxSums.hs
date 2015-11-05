@@ -67,10 +67,10 @@ elimUbxSumsExpr e@App{}
         dflags <- getDynFlags
         return $ mkConApp (tupleDataCon Unboxed 2)
                    [ -- tuple type arguments
-                     Type intPrimTy, Type intTy,
+                     Type intPrimTy, Type liftedAny,
                      -- tuple term arguments
                     Lit (mkMachInt dflags (fromIntegral (dataConTag dcon))),
-                    mkApps (Var unsafeCoerceId) [ Type (exprType arg), Type intTy, arg ] ]
+                    mkApps (Var unsafeCoerceId) [ Type (exprType arg), Type liftedAny, arg ] ]
       _ ->
         pprPanic "unboxed sum: only one field is supported for now" (ppr e)
   where
@@ -91,10 +91,9 @@ elimUbxSumsExpr e@(Case scrt x ty alts)
   | isUnboxedSumType (exprType scrt)
   -- , pprTrace "Found case expression" (ppr scrt $+$ ppr (expandTypeSynonyms (exprType scrt))
   --                                              $+$ ppr ty)
-  = do -- let sumTyTupleTy = toTupleTy (exprType scrt)
-       tagCaseBndr <- newUnusedId intPrimTy
+  = do tagCaseBndr <- newUnusedId intPrimTy
        tagBinder   <- newLocalId "tag" intPrimTy
-       fieldBinder <- newLocalId "field" intTy -- anyTy FIXME: using intTy until understanding Any
+       fieldBinder <- newLocalId "field" liftedAny
        -- currently we're assuming one field only
 
        -- Inner pattern matching, matches the tag
@@ -131,7 +130,7 @@ elimUbxSumsExpr e@(Case scrt x ty alts)
       let tagLit = mkMachInt dflags (fromIntegral (dataConTag con))
       rhs' <- elimUbxSumsExpr rhs
       let bindBndr = Let (NonRec bndr $
-            mkApps (Var unsafeCoerceId) [ Type intTy, Type (idType bndr), Var fieldBinder ])
+            mkApps (Var unsafeCoerceId) [ Type liftedAny, Type (idType bndr), Var fieldBinder ])
       let alt      = (LitAlt tagLit, [], bindBndr rhs')
       alts <- mkUbxTupleAlts' rest fieldBinder
       return (alt : alts)
@@ -168,8 +167,7 @@ elimUbxSumTy v = setVarType v (elimUbxSumTy' (varType v))
 elimUbxSumTy' :: Type -> Type
 elimUbxSumTy' ty
   | isUnboxedSumType ty
-  = mkTupleTy Unboxed [intPrimTy, intTy]
-                  {- anyTy FIXME: see other comment about anyTy -}
+  = mkTupleTy Unboxed [intPrimTy, liftedAny]
 
 elimUbxSumTy' ty@TyVarTy{} = ty
 elimUbxSumTy' (AppTy ty1 ty2) = AppTy (elimUbxSumTy' ty1) (elimUbxSumTy' ty2)
@@ -177,16 +175,6 @@ elimUbxSumTy' (TyConApp con args) = TyConApp con $ map elimUbxSumTy' args
 elimUbxSumTy' (FunTy ty1 ty2) = FunTy (elimUbxSumTy' ty1) (elimUbxSumTy' ty2)
 elimUbxSumTy' (ForAllTy v ty) = ForAllTy v $ elimUbxSumTy' ty
 elimUbxSumTy' ty@LitTy{} = ty
-
--- elimUbxSumTy v
---   | isUnboxedSumType (varType v)
---   = -- we just generate a fixed type for now, we only support one type of
---     -- unboxed sum for now
---     setVarType v (mkTupleTy Unboxed [intPrimTy, intTy
---                  {- anyTy FIXME: see other comment about anyTy -}])
---
---   | otherwise
---   = v
 
 --------------------------------------------------------------------------------
 
@@ -199,3 +187,6 @@ newUnusedId :: Type -> CoreM Id
 newUnusedId ty = do
     id <- newLocalId "unused" ty
     return $ Var.lazySetIdInfo id ((idInfo id){ occInfo = IAmDead })
+
+liftedAny :: Type
+liftedAny = anyTypeOfKind liftedTypeKind
