@@ -647,12 +647,10 @@ thunk and a function takes a nullary unboxed tuple as an argument!
 type UnaryType = Type
 
 data RepType = UbxTupleRep [UnaryType] -- INVARIANT: never an empty list (see Note [Nullary unboxed tuple])
-             | UbxSumRep [UnaryType]
              | UnaryRep UnaryType
 
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (UbxTupleRep tys) = tys
-flattenRepType (UbxSumRep tys)   = tys
 flattenRepType (UnaryRep ty)     = [ty]
 
 -- | Compute the representation type for unboxed sums. We represent sums as a
@@ -708,7 +706,7 @@ repType ty
     go rec_nts (ForAllTy _ ty)          -- Drop foralls
         = go rec_nts ty
 
-    go rec_nts (TyConApp tc tys)        -- Expand newtypes
+    go rec_nts ty@(TyConApp tc tys)     -- Expand newtypes
       | isNewTyCon tc
       , tys `lengthAtLeast` tyConArity tc
       , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
@@ -720,7 +718,8 @@ repType ty
          else UbxTupleRep (concatMap (flattenRepType . go rec_nts) tys)
 
       | isUnboxedSumTyCon tc
-      = UbxSumRep (flattenSumRepType (map (flattenRepType . go rec_nts) tys))
+      = pprPanic ("repType: Found an unboxed sum. " ++
+                  "This should be eliminated before STG phase.") (ppr ty)
 
     go _ ty = UnaryRep ty
 
@@ -752,7 +751,6 @@ typePrimRep :: UnaryType -> PrimRep
 typePrimRep ty
   = case repType ty of
       UbxTupleRep _ -> pprPanic "typePrimRep: UbxTupleRep" (ppr ty)
-      UbxSumRep _   -> pprPanic "typePrimRep: UbxSumRep" (ppr ty)
       UnaryRep rep -> case rep of
         TyConApp tc _ -> tyConPrimRep tc
         FunTy _ _     -> PtrRep
