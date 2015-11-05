@@ -84,8 +84,6 @@ elimUbxSumsExpr (Let b body) = Let <$> elimUbxSumsBind b <*> elimUbxSumsExpr bod
 
 elimUbxSumsExpr e@(Case scrt x ty alts)
   | isUnboxedSumType (exprType scrt)
-  -- , pprTrace "Found case expression" (ppr scrt $+$ ppr (expandTypeSynonyms (exprType scrt))
-  --                                              $+$ ppr ty)
   = do tagCaseBndr <- newUnusedId intPrimTy
        tagBinder   <- newLocalId "tag" intPrimTy
        fieldBinder <- newLocalId "field" liftedAny
@@ -100,14 +98,9 @@ elimUbxSumsExpr e@(Case scrt x ty alts)
        scrt' <- elimUbxSumsExpr scrt
 
        -- Outer case expression that matches the tuple
-       let after = Case scrt' (elimUbxSumTy x) ty [tupleAlt]
-
-       pprTrace "Transforming case expression"
-         (ppr e $+$ text "after:" $+$ ppr after) (return after)
+       return $ Case scrt' (elimUbxSumTy x) (elimUbxSumTy' ty) [tupleAlt]
   where
     mkUbxTupleAlts :: [CoreAlt] -> Id -> CoreM [CoreAlt]
-    -- mkUbxTupleAlts alts _
-    --   | pprTrace "mkUbxTupleAlts alts" (ppr alts) False = undefined
 
     mkUbxTupleAlts ((DEFAULT, bndrs, rhs) : rest) fieldBinder = do
       rhs' <- elimUbxSumsExpr rhs
@@ -156,8 +149,6 @@ elimUbxSumsAlt (con, xs, rhs) = (con, xs,) <$> elimUbxSumsExpr rhs
 --------------------------------------------------------------------------------
 -- | Translate type of identifier
 elimUbxSumTy :: Var -> Var
-elimUbxSumTy v
-  | pprTrace "----- fixing var type" (ppr v) False = undefined
 
 elimUbxSumTy v = setVarType v (elimUbxSumTy' (varType v))
 
