@@ -130,7 +130,7 @@ elimUbxSumsExpr e@(Case scrt x ty alts)
 elimUbxSumsExpr (Case scrt x ty alts) = do
     scrt' <- elimUbxSumsExpr scrt
     alts' <- elimUbxSumsAlts alts
-    return $ Case scrt' x ty alts'
+    return $ Case scrt' (elimUbxSumTy x) (elimUbxSumTy' ty) alts'
 
 elimUbxSumsExpr (Cast e c) = Cast <$> elimUbxSumsExpr e <*> pure c
 
@@ -144,7 +144,8 @@ elimUbxSumsAlts :: [CoreAlt] -> CoreM [CoreAlt]
 elimUbxSumsAlts = mapM elimUbxSumsAlt
 
 elimUbxSumsAlt :: CoreAlt -> CoreM CoreAlt
-elimUbxSumsAlt (con, xs, rhs) = (con, xs,) <$> elimUbxSumsExpr rhs
+elimUbxSumsAlt (con, xs, rhs) =
+  (con, map elimUbxSumTy xs,) <$> elimUbxSumsExpr rhs
 
 --------------------------------------------------------------------------------
 -- | Translate type of identifier
