@@ -62,10 +62,7 @@ ubxTupleId0 :: Id
 ubxTupleId0 = dataConWorkId (tupleDataCon Unboxed 0)
 
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
-unarise us binds = -- pprTrace "unarise" (ppr binds) $
-                   let res = zipWith (\us -> unariseBinding us init_env) (listSplitUniqSupply us) binds
-                   -- in pprTrace "post-unarise:" (ppr res) res
-                   in res
+unarise us binds = zipWith (\us -> unariseBinding us init_env) (listSplitUniqSupply us) binds
   where -- See Note [Nullary unboxed tuple] in Type.hs
         init_env = unitVarEnv ubxTupleId0 [realWorldPrimId]
 
@@ -94,14 +91,6 @@ unariseExpr _ rho (StgApp f args)
     StgConApp (tupleDataCon Unboxed (length tys))
               (map StgVarArg (unariseId rho f))
 
-  | null args
-  , UbxSumRep tys <- repType (idType f)
-  =  -- Particularly important where (##) is concerned
-     -- See Note [Nullary unboxed tuple]
-    --pprTrace "unariseExpr: StgApp" (ppr rho $$ ppr f $$ ppr args)
-    StgConApp (sumDataCon 0 (length tys))  -- TODO
-              (map StgVarArg (unariseId rho f))
-
   | otherwise
   = StgApp f (unariseArgs rho args)
 
@@ -110,7 +99,6 @@ unariseExpr _ _ (StgLit l)
 
 unariseExpr _ rho (StgConApp dc args)
   | isUnboxedTupleCon dc = StgConApp (tupleDataCon Unboxed (length args')) args'
-  | isUnboxedSumCon dc   = StgConApp (sumDataCon (dataConTag dc - 1) (length args')) args'
   | otherwise            = StgConApp dc args'
   where
     args' = unariseArgs rho args
@@ -147,9 +135,6 @@ unariseExpr us rho (StgTick tick e)
 
 ------------------------
 unariseAlts :: UniqSupply -> UnariseEnv -> AltType -> Id -> RepType -> [StgAlt] -> (AltType, [StgAlt])
--- unariseAlts us rho alt_ty bndr rep_ty alts
---     | pprTrace "unariseAlts" (ppr rho $$ ppr alt_ty $$ ppr bndr $$ ppr alts) False = undefined
-
 unariseAlts us rho alt_ty _ (UnaryRep _) alts
   = (alt_ty, zipWith (\us alt -> unariseAlt us rho alt) (listSplitUniqSupply us) alts)
 
@@ -167,9 +152,6 @@ unariseAlts us rho _ bndr (UbxTupleRep _) [(DataAlt _, ys, uses, e)]
     rho'' = extendVarEnv rho' bndr ys'
     n = length ys'
 
-unariseAlts us rho alt_ty bndr (UbxSumRep _) alts
-  = (alt_ty, zipWith (\us alt -> unariseSumAlt us rho bndr alt) (listSplitUniqSupply us) alts)
-
 unariseAlts _ _ _ _ (UbxTupleRep _) alts
   = pprPanic "unariseExpr: strange unboxed tuple alts" (ppr alts)
 
@@ -179,13 +161,6 @@ unariseAlt us rho (con, xs, uses, e)
   = (con, xs', uses', unariseExpr us' rho' e)
   where
     (us', rho', xs', uses') = unariseUsedIdBinders us rho xs uses
-
-unariseSumAlt :: UniqSupply -> UnariseEnv -> Id -> StgAlt -> StgAlt
-unariseSumAlt us rho bndr (con, xs, uses, e)
-  = (con, xs', uses', unariseExpr us' rho'' e)
-  where
-    (us', rho', xs', uses') = unariseUsedIdBinders us rho xs uses
-    rho'' = extendVarEnv rho' bndr xs'  -- TODO: Extend with something else?
 
 ------------------------
 unariseSRT :: UnariseEnv -> SRT -> SRT
@@ -209,13 +184,13 @@ unariseIds rho = concatMap (unariseId rho)
 unariseId :: UnariseEnv -> Id -> [Id]
 unariseId rho x
   | Just ys <- lookupVarEnv rho x
-  = ASSERT2( case repType (idType x) of UbxTupleRep _ -> True; UbxSumRep _ -> True; _ -> x == ubxTupleId0
-           , text "unariseId: not unboxed tuple or sum" <+> ppr x )
+  = ASSERT2( case repType (idType x) of UbxTupleRep _ -> True; _ -> x == ubxTupleId0
+           , text "unariseId: not unboxed tuple" <+> ppr x )
     ys
 
   | otherwise
-  = ASSERT2( case repType (idType x) of UbxTupleRep _ -> False; UbxSumRep _ -> False; _ -> True
-           , text "unariseId: was unboxed tuple or sum" <+> ppr x )
+  = ASSERT2( case repType (idType x) of UbxTupleRep _ -> False; _ -> True
+           , text "unariseId: was unboxed tuple" <+> ppr x )
     [x]
 
 unariseUsedIdBinders :: UniqSupply -> UnariseEnv -> [Id] -> [Bool]
@@ -236,17 +211,9 @@ unariseIdBinder us rho x = case repType (idType x) of
                            ys   = unboxedTupleBindersFrom us0 x tys
                            rho' = extendVarEnv rho x ys
                        in (us1, rho', ys)
-    UbxSumRep tys -> let (us0, us1) = splitUniqSupply us
-                         ys   = unboxedSumBindersFrom us0 x tys
-                         rho' = extendVarEnv rho x ys
-                     in (us1, rho', ys)
 
 unboxedTupleBindersFrom :: UniqSupply -> Id -> [UnaryType] -> [Id]
 unboxedTupleBindersFrom us x tys = zipWith (mkSysLocal fs) (uniqsFromSupply us) tys
-  where fs = occNameFS (getOccName x)
-
-unboxedSumBindersFrom :: UniqSupply -> Id -> [UnaryType] -> [Id]
-unboxedSumBindersFrom us x tys = zipWith (mkSysLocal fs) (uniqsFromSupply us) tys
   where fs = occNameFS (getOccName x)
 
 concatMapVarSet :: (Var -> [Var]) -> VarSet -> VarSet
