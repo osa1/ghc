@@ -859,7 +859,7 @@ instance TH.Quasi TcM where
 
   qSearchPackage pkgName pkgVersion = do
     dflags <- getDynFlags
-    mapM mkTHPkg $
+    return $ map mkTHPkg $
       case pkgVersion of
         Nothing -> searchPackageIdPrefix dflags pkgName
         Just ver ->
@@ -870,31 +870,20 @@ instance TH.Quasi TcM where
     dflags <- getDynFlags
     case lookupPackage dflags (stringToUnitId $ TH.pkgKeyString pkgKey) of
       Nothing  -> return Nothing
-      Just pkg -> Just <$> mkTHPkg pkg
+      Just pkg -> return (Just (mkTHPkg pkg))
 
-mkTHPkg :: PackageConfig -> TcM TH.Package
+mkTHPkg :: PackageConfig -> TH.Package
 mkTHPkg pkgconf =
     TH.Package origPkgKey
                (packageNameString pkgconf)
                (packageVersion pkgconf)
-               (map (exposedModuleTHModule origPkgKey) $ exposedModules pkgconf)
-               <$> mapM reifyDep (depends pkgconf)
+               (map exposedModuleTHModule (exposedModules pkgconf))
+               (map mkTHPkgKey (depends pkgconf))
   where
-    reifyDep :: UnitId -> TcM TH.Package
-    reifyDep uid = do
-      mb_pkg <- TH.qReifyPackage (mkTHPkgKey uid)
-      case mb_pkg of
-        Nothing -> pprPanic "Can't reify a dependency."
-                     ( (text "Current package key:" <+>
-                        text (TH.pkgKeyString origPkgKey)) $+$
-                       (text "Dependency package key:" <+> ppr uid) )
-        Just pkg -> return pkg
-
     origPkgKey = mkTHPkgKey (unitId pkgconf)
 
-    exposedModuleTHModule
-      :: TH.PkgKey -> ExposedModule UnitId ModuleName -> TH.Module
-    exposedModuleTHModule origPkgKey (ExposedModule mname reexport _) =
+    exposedModuleTHModule :: ExposedModule UnitId ModuleName -> TH.Module
+    exposedModuleTHModule (ExposedModule mname reexport _) =
       case reexport of
         Nothing ->
           TH.Module origPkgKey (TH.ModName $ moduleNameString mname)

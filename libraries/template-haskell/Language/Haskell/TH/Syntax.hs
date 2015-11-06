@@ -398,16 +398,7 @@ reifyModule m = Q (qReifyModule m)
 --
 -- Keys for all linked packages can be obtained with getting the current package
 -- with @thisPackage@. The returned @Package@'s @packageDepends@ field will have
--- all the dependencies. By transitively searching through dependencies ...
---
--- TODO(osa): Well, this made @PkgKey@ pretty useless. We can just remove it at
--- this point, since @thisPackage@ transitively collects all the linked packages
--- as @Package@s.
---
--- TODO(osa): I'm confused. We can revert @packageDepends@ to @[PkgId]@, but
--- this makes no sense. Why add a level of indirection? Similarly, why do we
--- have @Module@ and @ModuleInfo@? Why not merge them?
---
+-- all the dependencies.
 reifyPackage :: PkgKey -> Q (Maybe Package)
 reifyPackage k = Q (qReifyPackage k)
 
@@ -785,7 +776,11 @@ data Package = Package
  , packageName              :: String
  , packageVersion           :: Version
  , packageExposedModules    :: [Module]
- , packageDepends           :: [Package]
+ , packageDepends           :: [PkgKey]
+     -- Here we use 'PkgKey' instead of 'Package' to avoid cycles. As of GHC 8
+     -- we don't have recursive packages, but we may have it in the future.
+     -- If/when that happens, we don't want to have a recursive data here,
+     -- because that would make Show, Eq instances etc. loop.
  }
  deriving (Show,Eq,Ord,Typeable,Data,Generic)
 
