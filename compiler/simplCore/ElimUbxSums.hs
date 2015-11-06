@@ -144,7 +144,20 @@ elimUbxSumsAlts = mapM elimUbxSumsAlt
 
 elimUbxSumsAlt :: CoreAlt -> CoreM CoreAlt
 elimUbxSumsAlt (con, xs, rhs) =
-  -- TODO: Bug is here, we need to update the DataCon(con)
+  -- TODO: Lint/type error is here, we need to update the DataCon(con).
+  --
+  -- I don't know how to solve this. I think the problem is that DataCons have
+  -- bunch of types for their types etc. and we need to somehow update them.
+  -- But:
+  --
+  -- 1. DataCons are not held in a shared symbol table etc. so we need to update
+  --    them as we encounter during the pass.
+  --
+  -- 2. The interface gives us no way to update DataCons. (see DataCon.hs)
+  --    As far as I can see, once they're built there's no way to update. We can
+  --    try to read all the information and create a new DataCon. Not sure if
+  --    this is possible. (some information might not be even read-only)
+  --
   (con, map elimUbxSumTy xs,) <$> elimUbxSumsExpr rhs
 
 --------------------------------------------------------------------------------
