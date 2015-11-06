@@ -818,10 +818,17 @@ pkgKeyString (PkgKey m) = m
 --              PkgKeys for wired-in packages
 -----------------------------------------------------
 
+-- These package keys are taken from Module.wiredInUnitIds. They're exceptional
+-- in that (1) they're hard-coded in the compiler(see Module.wiredInUnitIds) (2)
+-- they don't follow unit id syntax(they're not hash) (3) they're widely used by
+-- the TH users, for generating names without using splices(using 'NameG').
+
 primPkgKey, basePkgKey, rtsPkgKey, thPkgKey, dphSeqPkgKey,
   dphParPkgKey, ghcPkgKey, interactivePkgKey :: PkgKey
 
--- TODO(osa): Can't add this, because can't import Config(in ghc package)
+-- Can't add this, because can't import Config(in ghc package, auto-generated
+-- when building GHC). But it's OK, because users can always use 'thisPackage'
+-- to reify dependencies.
 -- integerPkgKey        = mkPkgKey "integer-gmp"
 primPkgKey           = mkPkgKey "ghc-prim"
 basePkgKey           = mkPkgKey "base"
