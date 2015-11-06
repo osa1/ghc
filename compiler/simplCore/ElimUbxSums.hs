@@ -64,8 +64,8 @@ elimUbxSumsExpr e@App{}
                    [ -- tuple type arguments
                      Type intPrimTy, Type liftedAny,
                      -- tuple term arguments
-                    Lit (mkMachInt dflags (fromIntegral (dataConTag dcon))),
-                    mkUnsafeCoerce (exprType arg) liftedAny arg ]
+                     Lit (mkMachInt dflags (fromIntegral (dataConTag dcon))),
+                     mkUnsafeCoerce (exprType arg) liftedAny arg ]
       _ ->
         pprPanic "unboxed sum: only one field is supported for now" (ppr e)
   where
