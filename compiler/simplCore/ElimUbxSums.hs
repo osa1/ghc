@@ -57,7 +57,7 @@ elimUbxSumsExpr e@App{}
   --       $+$ ppr ty
   --       $+$ (text "DataCon tag:" <+> ppr (dataConTag dcon))
   --       $+$ ppr e) False
-  = case dropTyArgs args of
+  = case dropWhile isTypeArg args of
       [arg] -> do
         dflags <- getDynFlags
         return $ mkConApp (tupleDataCon Unboxed 2)
@@ -69,11 +69,6 @@ elimUbxSumsExpr e@App{}
       _ ->
         pprPanic "unboxed sum: only one field is supported for now" (ppr e)
   where
-    dropTyArgs :: [CoreArg] -> [CoreArg]
-    dropTyArgs [] = []
-    dropTyArgs (Type _ : rest) = dropTyArgs rest
-    dropTyArgs l = l
-
     (f, args) = collectArgs e
 
 elimUbxSumsExpr (App e1 e2) = App <$> elimUbxSumsExpr e1 <*> elimUbxSumsExpr e2
