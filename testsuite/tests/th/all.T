@@ -368,3 +368,7 @@ test('T10810', normal, compile, ['-v0'])
 test('T10891', normal, compile, ['-v0'])
 test('T10945', normal, compile_fail, ['-v0'])
 test('T10946', expect_broken(10946), compile, ['-v0'])
+test('T10279_1',
+     extra_clean(['T10279_Instances.hi', 'T10279_Instances.o']),
+     multimod_compile_and_run,
+     ['T10279_1', '-v0'])
