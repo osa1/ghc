@@ -48,7 +48,8 @@ elimUbxSumsExpr (Var v) = return $ Var $ elimUbxSumTy v
 elimUbxSumsExpr e@Lit{} = return e
 
 elimUbxSumsExpr e@App{}
-  | Var x     <- f
+  | let (f, args) = collectArgs e
+  , Var x     <- f
   , Just dcon <- isDataConId_maybe x
   , isUnboxedSumCon dcon
   -- , ty        <- exprType f
@@ -60,16 +61,15 @@ elimUbxSumsExpr e@App{}
   = case dropWhile isTypeArg args of
       [arg] -> do
         dflags <- getDynFlags
+        arg'   <- elimUbxSumsExpr arg
         return $ mkConApp (tupleDataCon Unboxed 2)
                    [ -- tuple type arguments
                      Type intPrimTy, Type liftedAny,
                      -- tuple term arguments
                      Lit (mkMachInt dflags (fromIntegral (dataConTag dcon))),
-                     mkUnsafeCoerce (exprType arg) liftedAny arg ]
+                     mkUnsafeCoerce (exprType arg) liftedAny arg' ]
       _ ->
         pprPanic "unboxed sum: only one field is supported for now" (ppr e)
-  where
-    (f, args) = collectArgs e
 
 elimUbxSumsExpr (App e1 e2) = App <$> elimUbxSumsExpr e1 <*> elimUbxSumsExpr e2
 
@@ -77,43 +77,47 @@ elimUbxSumsExpr (Lam x body) = Lam (elimUbxSumTy x) <$> elimUbxSumsExpr body
 
 elimUbxSumsExpr (Let b body) = Let <$> elimUbxSumsBind b <*> elimUbxSumsExpr body
 
-elimUbxSumsExpr e@(Case scrt x ty alts)
-  | isUnboxedSumType (exprType scrt)
+elimUbxSumsExpr (Case scrt0 x0 ty0 alts0)
+  | isUnboxedSumType (exprType scrt0)
   = do tagCaseBndr <- newUnusedId intPrimTy
        tagBinder   <- newLocalId "tag" intPrimTy
        fieldBinder <- newLocalId "field" liftedAny
        -- currently we're assuming one field only
 
        -- Inner pattern matching, matches the tag
-       tagCase     <- Case (Var tagBinder) tagCaseBndr ty <$> mkUbxTupleAlts alts fieldBinder
+       tagCase     <- Case (Var tagBinder) tagCaseBndr ty <$> mkUbxTupleAlts alts0 fieldBinder
 
        -- Only alt of outer case expression that matches the tuple
        let tupleAlt = (DataAlt (tupleDataCon Unboxed 2), [tagBinder, fieldBinder], tagCase)
 
-       scrt' <- elimUbxSumsExpr scrt
+       scrt <- elimUbxSumsExpr scrt0
 
        -- Outer case expression that matches the tuple
-       return $ Case scrt' (elimUbxSumTy x) (elimUbxSumTy' ty) [tupleAlt]
+       return $ Case scrt x ty [tupleAlt]
   where
+    x  = elimUbxSumTy  x0
+    ty = elimUbxSumTy' ty0
+
     mkUbxTupleAlts :: [CoreAlt] -> Id -> CoreM [CoreAlt]
 
     mkUbxTupleAlts ((DEFAULT, bndrs, rhs) : rest) fieldBinder = do
       rhs' <- elimUbxSumsExpr rhs
-      ((DEFAULT, bndrs, rhs') :) <$> mkUbxTupleAlts' rest fieldBinder
+      ((DEFAULT, map elimUbxSumTy bndrs, rhs') :) <$> mkUbxTupleAlts' rest fieldBinder
 
     mkUbxTupleAlts rest fieldBinder = do
       rest' <- mkUbxTupleAlts' rest fieldBinder
-      let core_msg = Lit (mkMachString "")
+      let core_msg = Lit (mkMachString "") -- TODO: Runtime error message
       let def = (DEFAULT, [], mkApps (Var nON_EXHAUSTIVE_GUARDS_ERROR_ID) [Type ty, core_msg])
       return (def : rest')
 
-    mkUbxTupleAlts' ((DataAlt con, [bndr], rhs) : rest) fieldBinder = do
+    mkUbxTupleAlts' ((DataAlt con, [bndr0], rhs0) : rest) fieldBinder = do
       -- TODO: we should probably update bndr type
       dflags <- getDynFlags
       let tagLit = mkMachInt dflags (fromIntegral (dataConTag con))
-      rhs' <- elimUbxSumsExpr rhs
-      let bindBndr = Let (NonRec bndr (mkUnsafeCoerce liftedAny (idType bndr) (Var fieldBinder)))
-      let alt      = (LitAlt tagLit, [], bindBndr rhs')
+      rhs <- elimUbxSumsExpr rhs0
+      let bindBndr = Let (NonRec bndr0 -- TODO: Do we need to change type of this binder?
+                           (mkUnsafeCoerce liftedAny (idType bndr0) (Var fieldBinder)))
+      let alt      = (LitAlt tagLit, [], bindBndr rhs)
       alts <- mkUbxTupleAlts' rest fieldBinder
       return (alt : alts)
 
@@ -131,7 +135,7 @@ elimUbxSumsExpr (Cast e c) = Cast <$> elimUbxSumsExpr e <*> pure c
 
 elimUbxSumsExpr (Tick t e) = Tick t <$> elimUbxSumsExpr e
 
-elimUbxSumsExpr t@Type{} = return t
+elimUbxSumsExpr (Type ty) = return (Type $ elimUbxSumTy' ty)
 
 elimUbxSumsExpr c@Coercion{} = return c
 
@@ -140,6 +144,7 @@ elimUbxSumsAlts = mapM elimUbxSumsAlt
 
 elimUbxSumsAlt :: CoreAlt -> CoreM CoreAlt
 elimUbxSumsAlt (con, xs, rhs) =
+  -- TODO: Bug is here, we need to update the DataCon(con)
   (con, map elimUbxSumTy xs,) <$> elimUbxSumsExpr rhs
 
 --------------------------------------------------------------------------------
