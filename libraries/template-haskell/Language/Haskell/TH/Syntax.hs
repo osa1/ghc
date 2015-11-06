@@ -392,11 +392,11 @@ reifyModule :: Module -> Q ModuleInfo
 reifyModule m = Q (qReifyModule m)
 
 -- | @reifyPackage pkgKey@ looks up information about package with given package
--- key in the database of linked packages. Returning @Nothing@ mean package with
--- given key is not linked against the current package, or package key is
--- invalid.
+-- key in the database of linked packages. Returning @Nothing@ mean the package
+-- with given key is not linked against the current package, or the package key
+-- is invalid.
 --
--- Keys for all linked packages can be obtained with getting the current package
+-- Keys for all linked packages can be obtained by getting the current package
 -- with @thisPackage@. The returned @Package@'s @packageDepends@ field will have
 -- all the dependencies.
 reifyPackage :: PkgKey -> Q (Maybe Package)
@@ -806,7 +806,6 @@ mkModName s = ModName s
 
 modString :: ModName -> String
 modString (ModName m) = m
-
 
 mkPkgKey :: String -> PkgKey
 mkPkgKey s = PkgKey s
