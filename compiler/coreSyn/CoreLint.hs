@@ -753,7 +753,7 @@ lintCoreArg fun_ty arg
   = do { arg_ty <- lintCoreExpr arg
        ; checkL (not (isUnLiftedType arg_ty) || exprOkForSpeculation arg)
                 (mkLetAppMsg arg)
-       ; lintValApp arg fun_ty arg_ty }
+       ; lintValApp arg fun_ty arg_ty FunApp }
 
 -----------------
 lintAltBinders :: OutType     -- Scrutinee type
@@ -769,7 +769,7 @@ lintAltBinders scrut_ty con_ty (bndr:bndrs)
   = do { con_ty' <- lintTyApp con_ty (mkTyVarTy bndr)
        ; lintAltBinders scrut_ty con_ty' bndrs }
   | otherwise
-  = do { con_ty' <- lintValApp (Var bndr) con_ty (idType bndr)
+  = do { con_ty' <- lintValApp (Var bndr) con_ty (idType bndr) DataConApp
        ; lintAltBinders scrut_ty con_ty' bndrs }
 
 -----------------
@@ -784,15 +784,17 @@ lintTyApp fun_ty arg_ty
   = failWithL (mkTyAppMsg fun_ty arg_ty)
 
 -----------------
-lintValApp :: CoreExpr -> OutType -> OutType -> LintM OutType
-lintValApp arg fun_ty arg_ty
+data AppType = DataConApp | FunApp
+
+lintValApp :: CoreExpr -> OutType -> OutType -> AppType -> LintM OutType
+lintValApp arg fun_ty arg_ty app_ty
   | Just (arg,res) <- splitFunTy_maybe fun_ty
   = do { checkTys arg arg_ty err1
        ; return res }
   | otherwise
   = failWithL err2
   where
-    err1 = mkAppMsg       fun_ty arg_ty arg
+    err1 = mkAppMsg       fun_ty arg_ty arg app_ty
     err2 = mkNonFunAppMsg fun_ty arg_ty arg
 
 checkTyKind :: OutTyVar -> OutType -> LintM ()
@@ -1751,12 +1753,17 @@ mkNewTyDataConAltMsg scrut_ty alt
 ------------------------------------------------------
 --      Other error messages
 
-mkAppMsg :: Type -> Type -> CoreExpr -> MsgDoc
-mkAppMsg fun_ty arg_ty arg
+mkAppMsg :: Type -> Type -> CoreExpr -> AppType -> MsgDoc
+mkAppMsg fun_ty arg_ty arg app_ty
   = vcat [ptext (sLit "Argument value doesn't match argument type:"),
-              hang (ptext (sLit "Fun type:")) 4 (ppr fun_ty),
+              hang (ptext (sLit appTyStr)) 4 (ppr fun_ty),
               hang (ptext (sLit "Arg type:")) 4 (ppr arg_ty),
               hang (ptext (sLit "Arg:")) 4 (ppr arg)]
+  where
+    appTyStr =
+      case app_ty of
+        DataConApp -> "DataCon type:"
+        FunApp     -> "Fun type:"
 
 mkNonFunAppMsg :: Type -> Type -> CoreExpr -> MsgDoc
 mkNonFunAppMsg fun_ty arg_ty arg
