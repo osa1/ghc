@@ -18,6 +18,7 @@ import MkCore
 import MkId
 import Outputable
 import PprCore (pprCoreBindings)
+import TyCon
 import Type
 import TypeRep
 import TysPrim
@@ -143,22 +144,11 @@ elimUbxSumsAlts :: [CoreAlt] -> CoreM [CoreAlt]
 elimUbxSumsAlts = mapM elimUbxSumsAlt
 
 elimUbxSumsAlt :: CoreAlt -> CoreM CoreAlt
-elimUbxSumsAlt (con, xs, rhs) =
-  -- TODO: Lint/type error is here, we need to update the DataCon(con).
-  --
-  -- I don't know how to solve this. I think the problem is that DataCons have
-  -- bunch of types for their types etc. and we need to somehow update them.
-  -- But:
-  --
-  -- 1. DataCons are not held in a shared symbol table etc. so we need to update
-  --    them as we encounter during the pass.
-  --
-  -- 2. The interface gives us no way to update DataCons. (see DataCon.hs)
-  --    As far as I can see, once they're built there's no way to update. We can
-  --    try to read all the information and create a new DataCon. Not sure if
-  --    this is possible. (some information might not be even read-only)
-  --
-  (con, map elimUbxSumTy xs,) <$> elimUbxSumsExpr rhs
+elimUbxSumsAlt (DataAlt dcon, xs, rhs) =
+  (DataAlt (elimUbxSumDataCon dcon), map elimUbxSumTy xs,) <$> elimUbxSumsExpr rhs
+
+elimUbxSumsAlt (altcon, xs, rhs) =
+  (altcon, map elimUbxSumTy xs,) <$> elimUbxSumsExpr rhs
 
 --------------------------------------------------------------------------------
 -- | Translate type of identifier
@@ -173,10 +163,29 @@ elimUbxSumTy' ty
 
 elimUbxSumTy' ty@TyVarTy{} = ty
 elimUbxSumTy' (AppTy ty1 ty2) = AppTy (elimUbxSumTy' ty1) (elimUbxSumTy' ty2)
-elimUbxSumTy' (TyConApp con args) = TyConApp con $ map elimUbxSumTy' args
+elimUbxSumTy' (TyConApp con args) = TyConApp (elimUbxSumTyCon con) (map elimUbxSumTy' args)
 elimUbxSumTy' (FunTy ty1 ty2) = FunTy (elimUbxSumTy' ty1) (elimUbxSumTy' ty2)
-elimUbxSumTy' (ForAllTy v ty) = ForAllTy v $ elimUbxSumTy' ty
+elimUbxSumTy' (ForAllTy v ty) = ForAllTy v (elimUbxSumTy' ty)
 elimUbxSumTy' ty@LitTy{} = ty
+
+--------------------------------------------------------------------------------
+
+elimUbxSumTyCon :: TyCon -> TyCon
+elimUbxSumTyCon tycon
+  | isUnboxedSumTyCon tycon =
+    -- TODO: This may be unreachable, because we check for unboxed sum types in
+    -- elimUbxSumTy'.
+    undefined
+    -- trace "eliminating unboxed sum TyCon" $
+    -- tupleTyCon Unboxed 2
+  | otherwise = tycon
+
+--------------------------------------------------------------------------------
+
+-- TODO: I'm not sure if this is really safe. There must be a reason why
+-- DataCons were not updateable.
+elimUbxSumDataCon :: DataCon -> DataCon
+elimUbxSumDataCon dcon = dcon{ dcRepType = elimUbxSumTy' (dcRepType dcon) }
 
 --------------------------------------------------------------------------------
 

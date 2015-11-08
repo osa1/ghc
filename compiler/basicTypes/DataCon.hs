@@ -9,7 +9,7 @@
 
 module DataCon (
         -- * Main data types
-        DataCon, DataConRep(..),
+        DataCon(..), DataConRep(..),
         SrcStrictness(..), SrcUnpackedness(..),
         HsSrcBang(..), HsImplBang(..),
         StrictnessMark(..),
