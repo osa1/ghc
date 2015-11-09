@@ -35,7 +35,8 @@ import VarSet
 import VarEnv
 import NameSet
 import Bag
-import ErrUtils         ( ErrMsg, pprLocErrMsg )
+import ErrUtils         ( ErrMsg, errMsgSeverity, makeIntoWarning, pprLocErrMsg,
+                          Severity (SevWarning) )
 import BasicTypes
 import Util
 import FastString
@@ -479,9 +480,11 @@ maybeReportHoleError ctxt ct err
        HoleDefer -> return ()
 
 maybeReportError :: ReportErrCtxt -> ErrMsg -> TcM ()
--- Report the error and/or make a deferred binding for it
+-- Report the error or warning and/or make a deferred binding for it
 maybeReportError ctxt err
   | cec_errors_as_warns ctxt
+  = reportWarning err
+  | SevWarning <- errMsgSeverity err
   = reportWarning err
   | otherwise
   = case cec_defer_type_errors ctxt of
@@ -814,9 +817,12 @@ mkEqErr1 ctxt ct
   = do { (ctxt, binds_msg, ct) <- relevantBindings True ctxt ct
        ; let (given_loc, given_msg) = mk_given (ctLoc ct) (cec_encl ctxt)
        ; dflags <- getDynFlags
-       ; mkEqErr_help dflags ctxt (given_msg $$ binds_msg)
+       ; err <- mkEqErr_help dflags ctxt (given_msg $$ binds_msg)
                       (setCtLoc ct given_loc) -- Note [Inaccessible code]
-                      Nothing ty1 ty2 }
+                      Nothing ty1 ty2
+       ; -- We should generate a warning, not an error. See #11066.
+         return (makeIntoWarning err)
+       }
 
   | otherwise   -- Wanted or derived
   = do { (ctxt, binds_msg, ct) <- relevantBindings True ctxt ct

@@ -1,0 +1,9 @@
+
+T11066.hs:25:16: warning:
+    Couldn't match type ‘Char’ with ‘Int’
+    Inaccessible code in
+      a pattern with constructor: Refl :: forall a. TyEquality a a,
+      in a case alternative
+    In the pattern: Refl
+    In the pattern: Just Refl
+    In a case alternative: Just Refl -> True

@@ -13,6 +13,7 @@ module ErrUtils (
         ErrMsg, WarnMsg, Severity(..),
         Messages, ErrorMessages, WarningMessages,
         errMsgSpan, errMsgContext, errMsgShortDoc, errMsgExtraInfo,
+        errMsgSeverity,
         mkLocMessage, pprMessageBag, pprErrMsgBagWithLoc,
         pprLocErrMsg, makeIntoWarning,
 
