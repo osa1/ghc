@@ -90,7 +90,7 @@ Note [Wired-in Ids]
 There are several reasons why an Id might appear in the wiredInIds:
 
 (1) The ghcPrimIds are wired in because they can't be defined in
-    Haskell at all, although the can be defined in Core.  They have
+    Haskell at all, although they can be defined in Core.  They have
     compulsory unfoldings, so they are always inlined and they  have
     no definition site.  Their home module is GHC.Prim, so they
     also have a description in primops.txt.pp, where they are called
@@ -655,7 +655,7 @@ dataConSrcToImplBang dflags fam_envs arg_ty
   = HsStrict
 
 
--- | Wrappers/Workser and representation following Unpack/Strictness
+-- | Wrappers/Workers and representation following Unpack/Strictness
 -- decisions
 dataConArgRep
   :: Type
