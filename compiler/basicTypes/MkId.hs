@@ -748,6 +748,20 @@ isUnpackableType dflags fam_envs ty
   , Just con <- tyConSingleAlgDataCon_maybe tc
   , isVanillaDataCon con
   = ok_con_args (unitNameSet (getName tc)) con
+
+  -- With -XUnboxedSums we can unpack types with multiple constructors
+  | Just (tc, _) <- splitTyConApp_maybe ty
+  , let cons = tyConDataCons tc
+  , -- FIXME(osa): I don't understand why we need this,
+    -- just imitating previous case
+    all isVanillaDataCon cons
+  , -- FIXME(osa): Currently we only unpack sum types with one field in each
+    -- alternative
+    let allOne = all ((==) 1 . dataConRepArity) cons
+     in pprTrace "isUnpackableType allOne:" (ppr allOne) allOne
+  = let ret = all (ok_con_args (unitNameSet (getName tc))) cons
+     in pprTrace "isUnpackableType ret:" (ppr ret) ret
+
   | otherwise
   = False
   where
