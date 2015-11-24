@@ -164,7 +164,9 @@ ppr_expr add_par expr@(App {})
                              tc        = dataConTyCon dc
                              saturated = val_args `lengthIs` idArity f
 
-                   _ -> add_par (hang (ppr f) 2 pp_args)
+                   _ -> add_par (hang
+                                  (parens (hang (pprIdBndr f) 2 (dcolon <+> pprType (idType f))))
+                                  2 pp_args)
 
         _ -> add_par (hang (pprParendExpr fun) 2 pp_args)
     }
