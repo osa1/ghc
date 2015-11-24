@@ -670,8 +670,7 @@ dataConArgRep arg_ty HsStrict
   = ([(arg_ty, MarkedStrict)], (seqUnboxer, unitBoxer))
 
 dataConArgRep arg_ty (HsUnpack Nothing)
-  | (rep_tys, wrappers) <- dataConArgUnpack arg_ty
-  = (rep_tys, wrappers)
+  = dataConArgUnpack arg_ty
 
 dataConArgRep _ (HsUnpack (Just co))
   | let co_rep_ty = pSnd (coercionKind co)
