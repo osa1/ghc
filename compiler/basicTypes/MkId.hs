@@ -777,10 +777,6 @@ dataConArgUnpack arg_ty
         let fieldVars :: [Var]
             fieldVars = map (setIdType conFieldVar_init) con_rep_tys'
 
-            -- TODO: This is copied from ElimUbxSums
-            mkUnsafeCoerce :: Type -> Type -> CoreExpr -> CoreExpr
-            mkUnsafeCoerce from to arg = mkApps (Var unsafeCoerceId) [ Type from, Type to, arg ]
-
             liftedAny :: Type
             liftedAny = anyTypeOfKind liftedTypeKind
 
@@ -807,14 +803,36 @@ dataConArgUnpack arg_ty
         return ([tagVar, fieldVar], unbox_fn)
 
       boxer :: TvSubst -> UniqSM ([Var], CoreExpr)
-      boxer subst =
-        pprPanic "boxer for sum types not implemented yet. subst:" (ppr subst)
+      boxer subst = do
+        -- TODO: What is subst??
+        tagVar   <- newLocal intPrimTy
+        fieldVar <- newLocal (anyTypeOfKind liftedTypeKind)
+
+        let mkConAlt :: DataCon -> CoreAlt
+            mkConAlt con =
+              let conArgTy =
+                    -- FIXME: Here's yet another code that assumes one field.
+                    head (dataConRepArgTys con)
+               in (LitAlt (MachInt (fromIntegral (dataConTag con))), [],
+                    mkConApp con [mkUnsafeCoerce (anyTypeOfKind liftedTypeKind)
+                                                 conArgTy (Var fieldVar)])
+
+            defaultAlt :: CoreAlt
+            defaultAlt = (DEFAULT, [], mkApps (Var rUNTIME_ERROR_ID) [Type arg_ty, mkStringLit "what"])
+
+        return ([tagVar, fieldVar],
+                Case (Var tagVar) tagVar arg_ty $
+                  defaultAlt : map mkConAlt cons)
 
     in ( rep_tys, (unboxer, Boxer boxer) )
 
   | otherwise
   = pprPanic "dataConArgUnpack" (ppr arg_ty)
     -- An interface file specified Unpacked, but we couldn't unpack it
+
+-- TODO: This is copied from ElimUbxSums
+mkUnsafeCoerce :: Type -> Type -> CoreExpr -> CoreExpr
+mkUnsafeCoerce from to arg = mkApps (Var unsafeCoerceId) [ Type from, Type to, arg ]
 
 isUnpackableType :: DynFlags -> FamInstEnvs -> Type -> Bool
 -- True if we can unpack the UNPACK the argument type
