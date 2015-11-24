@@ -713,6 +713,7 @@ dataConArgUnpack
        , (Unboxer, Boxer) )
 
 dataConArgUnpack arg_ty
+  -- Case 1: UNPACKing a type with single data constructor
   | Just (tc, tc_args) <- splitTyConApp_maybe arg_ty
   , Just con <- tyConSingleAlgDataCon_maybe tc
       -- NB: check for an *algebraic* data type
@@ -731,7 +732,86 @@ dataConArgUnpack arg_ty
        do { rep_ids <- mapM (newLocal . TcType.substTy subst) rep_tys
           ; return (rep_ids, Var (dataConWorkId con)
                              `mkTyApps` (substTys subst tc_args)
-                             `mkVarApps` rep_ids ) } ) )
+                             `mkVarApps` rep_ids) } ) )
+
+  -- Case 2: UNPACKing a sum type.
+  -- TODO(osa): We should really have a one case here, single constructor should
+  -- just be a special case.
+  | Just (tc, tc_args) <- splitTyConApp_maybe arg_ty
+  , let cons = tyConDataCons tc
+  , all ((==) 1 . dataConRepArity) cons -- only work for sums with one arguments
+                                        -- in all alternatives
+  , let con_rep_tys :: [[Type]]
+        con_rep_tys = map (\con -> dataConInstArgTys con tc_args) cons
+  , -- actually, this check is better than the previous check. We can only
+    -- afford one _rep_ type for now, not one argument.
+    all ((==) 1 . length) con_rep_tys
+  , let con_rep_tys' = concat con_rep_tys
+  = ASSERT ( all isVanillaDataCon cons )
+      -- I'm not sure if this assert is needed. Why do they need to be vanilla
+      -- data con? What is a vanilla data con?
+    let
+      rep_tys :: [(Type, StrictnessMark)]
+      rep_tys =
+        -- This is definitely wrong. These will specify type of the data
+        -- con rep. We should return someting like [Int#, Any] here.
+        --   concat con_rep_tys `zip` concatMap dataConRepStrictness cons
+        [(intPrimTy, NotMarkedStrict), (anyTypeOfKind liftedTypeKind, NotMarkedStrict)]
+
+      unboxer :: -- Unboxer
+                 Var -> UniqSM ([Var], CoreExpr -- body that uses unpacked arguments
+                                         -> CoreExpr
+                                         )
+      unboxer arg_id = do
+        -- Currently we only support one field. With the tag word, we'll need
+        -- two variables.
+        -- TODO: What happens if we just generate one variable here for an
+        -- (# Int#, Field #) ?
+        tagVar   <- newLocal intPrimTy
+        fieldVar <- newLocal (anyTypeOfKind liftedTypeKind)
+
+        -- We'll need same variable name, but with different types. This is for
+        -- first and only fields of the sum type alternatives.
+        conFieldVar_init <- newLocal undefined -- so lazy, such bottom, wow
+
+        let fieldVars :: [Var]
+            fieldVars = map (setIdType conFieldVar_init) con_rep_tys'
+
+            -- TODO: This is copied from ElimUbxSums
+            mkUnsafeCoerce :: Type -> Type -> CoreExpr -> CoreExpr
+            mkUnsafeCoerce from to arg = mkApps (Var unsafeCoerceId) [ Type from, Type to, arg ]
+
+            liftedAny :: Type
+            liftedAny = anyTypeOfKind liftedTypeKind
+
+        let mkAlt :: CoreExpr -> DataCon -> Var -> CoreAlt
+            mkAlt body con rep_id =
+              (DataAlt con, [rep_id],
+                mkLets [ (NonRec tagVar
+                             -- No DynFlags at hand, manually creating the
+                             -- literal instead of using 'mkIntLit'. It's OK,
+                             -- because DynFlags is needed for range checking,
+                             -- in this case we just need something with range
+                             -- [1.. max fields in a data con].
+                             (Lit (MachInt (fromIntegral (dataConTag con)))))
+                       , (NonRec fieldVar (mkUnsafeCoerce (idType rep_id) liftedAny (Var rep_id)))
+                       ] body)
+
+            unbox_fn body =
+              -- pprTrace "unbox_fn body:" (ppr body) $
+              -- pprTrace "tagVar:" (ppr tagVar) $
+              -- pprTrace "fieldVar:" (ppr fieldVar) $
+              Case (Var arg_id) arg_id (exprType body) $
+                zipWith (mkAlt body) cons fieldVars
+
+        return ([tagVar, fieldVar], unbox_fn)
+
+      boxer :: TvSubst -> UniqSM ([Var], CoreExpr)
+      boxer subst =
+        pprPanic "boxer for sum types not implemented yet. subst:" (ppr subst)
+
+    in ( rep_tys, (unboxer, Boxer boxer) )
+
   | otherwise
   = pprPanic "dataConArgUnpack" (ppr arg_ty)
     -- An interface file specified Unpacked, but we couldn't unpack it
