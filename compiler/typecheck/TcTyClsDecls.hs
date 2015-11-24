@@ -1648,6 +1648,8 @@ checkValidDataCon dflags existential_ok tc con
               orig_res_ty = dataConOrigResTy con
         ; traceTc "checkValidDataCon" (vcat
               [ ppr con, ppr tc, ppr tc_tvs
+              , text "con user type:" <+> ppr (dataConUserType con)
+              , text "con rep type:" <+> ppr (dataConRepType con)
               , ppr res_ty_tmpl <+> dcolon <+> ppr (typeKind res_ty_tmpl)
               , ppr orig_res_ty <+> dcolon <+> ppr (typeKind orig_res_ty)])
 
