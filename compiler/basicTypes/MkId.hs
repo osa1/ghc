@@ -802,8 +802,7 @@ dataConArgUnpack arg_ty
                   (map Var usedPrimFieldVars ++ repeat (Lit (MachInt 0)))
 
               unusedField =
-                mkCoreApps (Var rUNTIME_ERROR_ID)
-                  [Type liftedAny, mkStringLit "Field should be unused"]
+                mkRuntimeErrorApp rUNTIME_ERROR_ID liftedAny "Field should be unreachable"
 
               nonPrimFieldAsgns =
                 zipWith NonRec
