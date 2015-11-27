@@ -798,7 +798,9 @@ dataConArgUnpack arg_ty
               primFieldAsgns =
                 zipWith NonRec
                   primVars
-                  (map Var usedPrimFieldVars ++ repeat (Lit (MachInt 0)))
+                  (map (\primVar -> mkUnsafeCoerce (idType primVar) intPrimTy (Var primVar))
+                       usedPrimFieldVars ++
+                     repeat (Lit (MachInt 0)))
 
               unusedField =
                 -- mkRuntimeErrorApp rUNTIME_ERROR_ID liftedAny "Field should be unreachable"
