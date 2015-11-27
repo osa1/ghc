@@ -782,7 +782,7 @@ dataConArgUnpack arg_ty
 
         -- For fields we use pre-defined names, but we update the types every
         -- time we use them
-        fieldVars   <- replicateM max_fields (newLocal undefined)
+        fieldVars   <- replicateM max_fields (newLocal intTy) -- a dummy type
 
         let
           mkAlt :: CoreExpr -> DataCon -> [Type] -> CoreAlt
@@ -860,10 +860,12 @@ dataConArgUnpack arg_ty
             pickConVars (argTy : argTys) primVars boxedVars
               | isPrimitiveType argTy
               , (primVar : primVars') <- primVars
-              = mkUnsafeCoerce intPrimTy argTy (Var primVar) : pickConVars argTys primVars' boxedVars
+              = mkUnsafeCoerce intPrimTy argTy (Var primVar)
+                  : pickConVars argTys primVars' boxedVars
 
               | (boxedVar : boxedVars') <- boxedVars
-              = mkUnsafeCoerce liftedAny argTy (Var boxedVar) : pickConVars argTys primVars boxedVars'
+              = mkUnsafeCoerce liftedAny argTy (Var boxedVar)
+                  : pickConVars argTys primVars boxedVars'
 
               | otherwise
               = panic "pickConVars"
@@ -871,7 +873,12 @@ dataConArgUnpack arg_ty
             mkAlt :: DataCon -> CoreAlt
             mkAlt con =
               (LitAlt (MachInt (fromIntegral (dataConTag con))), [],
-                mkCoreConApps con (pickConVars (dataConRepArgTys con) primVars nonPrimVars))
+                let ty_args :: [CoreExpr]
+                    ty_args =
+                      map Type (substTys subst tc_args)
+                    term_args =
+                      pickConVars (substTys subst (dataConInstArgTys con tc_args)) primVars nonPrimVars
+                 in mkApps (Var (dataConWorkId con)) $ ty_args ++ term_args)
 
             defaultAlt =
               (DEFAULT, [],
