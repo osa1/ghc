@@ -771,8 +771,7 @@ dataConArgUnpack arg_ty
 
       unboxer :: -- Unboxer
                  Var -> UniqSM ([Var], CoreExpr -- body that uses unpacked arguments
-                                         -> CoreExpr
-                                         )
+                                         -> CoreExpr)
       unboxer arg_id = do
         -- Variable to bind the tag
         tagVar      <- newLocal intPrimTy
@@ -853,7 +852,47 @@ dataConArgUnpack arg_ty
           return (allVars, unbox_fn)
 
       boxer :: TvSubst -> UniqSM ([Var], CoreExpr)
-      boxer subst = fail "WIP"
+      boxer subst = do
+        -- Same variables used in unboxer. We need to duplicate variable
+        -- generation here because type of 'dataConArgUnpack' doesn't let us
+        -- generate variables.
+        -- Variable to bind the tag
+        tagVar      <- newLocal intPrimTy
+        -- Variables to bind primitive fields
+        primVars    <- replicateM max_prim_tys (newLocal intPrimTy)
+        -- Variables to bind boxed fields
+        nonPrimVars <- replicateM max_non_prim_tys (newLocal liftedAny)
+
+        let fieldVars = tagVar : primVars ++ nonPrimVars
+
+            pickConVars :: [Type] -> [Var] -> [Var] -> [CoreExpr]
+            pickConVars [] _ _ = []
+            pickConVars (argTy : argTys) primVars boxedVars
+              | isPrimitiveType argTy
+              , (primVar : primVars') <- primVars
+              = mkUnsafeCoerce intPrimTy argTy (Var primVar) : pickConVars argTys primVars' boxedVars
+
+              | (boxedVar : boxedVars') <- boxedVars
+              = mkUnsafeCoerce liftedAny argTy (Var boxedVar) : pickConVars argTys primVars boxedVars'
+
+              | otherwise
+              = panic "pickConVars"
+
+            mkAlt :: DataCon -> CoreAlt
+            mkAlt con =
+              (LitAlt (MachInt (fromIntegral (dataConTag con))), [],
+                mkCoreConApps con (pickConVars (dataConRepArgTys con) primVars nonPrimVars))
+
+            defaultAlt =
+              (DEFAULT, [],
+                -- For some reason it's OK to use 'error' here. No problems with
+                -- SRT.
+                mkRuntimeErrorApp rUNTIME_ERROR_ID arg_ty "Field should be unreachable")
+
+            boxerExpr = Case (Var tagVar) tagVar arg_ty (defaultAlt : map mkAlt cons)
+
+        pprTrace "fieldVars" (ppr fieldVars) $
+          return (fieldVars, boxerExpr)
 
      in
       pprTrace "rep_tys" (ppr rep_tys) ( rep_tys, (unboxer, Boxer boxer) )
