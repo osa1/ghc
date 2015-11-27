@@ -819,17 +819,6 @@ dataConArgUnpack arg_ty
               (DataAlt con, conFieldVars,
                 mkLets (tagAsgn : primFieldAsgns ++ nonPrimFieldAsgns) body)
 
-            -- (DataAlt con, [rep_id],
-            --   mkLets [ (NonRec tagVar
-            --                -- No DynFlags at hand, manually creating the
-            --                -- literal instead of using 'mkIntLit'. It's OK,
-            --                -- because DynFlags is needed for range checking,
-            --                -- in this case we just need something with range
-            --                -- [1.. max fields in a data con].
-            --                (Lit (MachInt (fromIntegral (dataConTag con)))))
-            --          , (NonRec fieldVar (mkUnsafeCoerce (idType rep_id) liftedAny (Var rep_id)))
-            --          ] body)
-
           unbox_fn body =
             -- pprTrace "unbox_fn body:" (ppr body) $
             -- pprTrace "tagVar:" (ppr tagVar) $
