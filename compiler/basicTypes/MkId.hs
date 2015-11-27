@@ -754,9 +754,9 @@ dataConArgUnpack arg_ty
       con_rep_tys_parts = map (partition isPrimitiveType) con_rep_tys
 
       max_fields, max_prim_tys, max_non_prim_tys :: Int
-      max_fields       = maximum $ map length con_rep_tys
-      max_prim_tys     = maximum $ map (length . fst) con_rep_tys_parts
-      max_non_prim_tys = maximum $ map (length . snd) con_rep_tys_parts
+      max_fields       = maximum $ 0 : map length con_rep_tys
+      max_prim_tys     = maximum $ 0 : map (length . fst) con_rep_tys_parts
+      max_non_prim_tys = maximum $ 0 : map (length . snd) con_rep_tys_parts
 
       rep_tys :: [(Type, StrictnessMark)]
       rep_tys =
