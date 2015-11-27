@@ -878,7 +878,7 @@ dataConArgUnpack arg_ty
                       map Type (substTys subst tc_args)
                     term_args =
                       pickConVars (substTys subst (dataConInstArgTys con tc_args)) primVars nonPrimVars
-                 in mkApps (Var (dataConWorkId con)) $ ty_args ++ term_args)
+                 in mkCoreApps (Var (dataConWorkId con)) $ ty_args ++ term_args)
 
             defaultAlt =
               (DEFAULT, [],
