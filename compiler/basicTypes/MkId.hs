@@ -802,7 +802,14 @@ dataConArgUnpack arg_ty
                   (map Var usedPrimFieldVars ++ repeat (Lit (MachInt 0)))
 
               unusedField =
-                mkRuntimeErrorApp rUNTIME_ERROR_ID liftedAny "Field should be unreachable"
+                -- mkRuntimeErrorApp rUNTIME_ERROR_ID liftedAny "Field should be unreachable"
+                  -- FIXME(osa): This is causing some problems. It seems like we
+                  -- need to update some SRT tables of constructor(unboxer)
+                  -- functions, but I couldn't find where those are created.
+                  --
+                  -- So instead I'm using this awful hack instead: I'm creating
+                  -- a dummy Int expression and casting it to Any.
+                mkUnsafeCoerce intTy liftedAny (mkConApp intDataCon [Lit (MachInt 0)])
 
               nonPrimFieldAsgns =
                 zipWith NonRec
