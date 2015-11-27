@@ -76,7 +76,9 @@ import Outputable
 import FastString
 import ListSetOps
 
+import Data.List        ( partition )
 import Data.Maybe       ( maybeToList )
+import Control.Monad    ( replicateM )
 
 {-
 ************************************************************************
@@ -739,92 +741,116 @@ dataConArgUnpack arg_ty
   -- just be a special case.
   | Just (tc, tc_args) <- splitTyConApp_maybe arg_ty
   , let cons = tyConDataCons tc
-  , all ((==) 1 . dataConRepArity) cons -- only work for sums with one arguments
-                                        -- in all alternatives
-  , let con_rep_tys :: [[Type]]
-        con_rep_tys = map (\con -> dataConInstArgTys con tc_args) cons
-  , -- actually, this check is better than the previous check. We can only
-    -- afford one _rep_ type for now, not one argument.
-    all ((==) 1 . length) con_rep_tys
-  , let con_rep_tys' = concat con_rep_tys
   = ASSERT ( all isVanillaDataCon cons )
       -- I'm not sure if this assert is needed. Why do they need to be vanilla
-      -- data con? What is a vanilla data con?
+      -- data con?
     let
+      con_rep_tys :: [[Type]]
+      con_rep_tys = map (\con -> dataConInstArgTys con tc_args) cons
+
+      -- fst: prim types
+      -- snd: non-prim types
+      con_rep_tys_parts :: [([Type], [Type])]
+      con_rep_tys_parts = map (partition isPrimitiveType) con_rep_tys
+
+      max_fields, max_prim_tys, max_non_prim_tys :: Int
+      max_fields       = maximum $ map length con_rep_tys
+      max_prim_tys     = maximum $ map (length . fst) con_rep_tys_parts
+      max_non_prim_tys = maximum $ map (length . snd) con_rep_tys_parts
+
       rep_tys :: [(Type, StrictnessMark)]
       rep_tys =
-        -- This is definitely wrong. These will specify type of the data
-        -- con rep. We should return someting like [Int#, Any] here.
-        --   concat con_rep_tys `zip` concatMap dataConRepStrictness cons
-        [(intPrimTy, NotMarkedStrict), (anyTypeOfKind liftedTypeKind, NotMarkedStrict)]
+        -- FIXME(osa): For now we assume Int64 is biggest primitive type and we
+        -- cast every prim type to Int64.
+        -- FIXME(osa): I'm not sure about strictness here
+        (intPrimTy, NotMarkedStrict) : -- tag variable
+          replicate max_prim_tys (intPrimTy, NotMarkedStrict) ++
+          replicate max_non_prim_tys (liftedAny, NotMarkedStrict)
+
+      liftedAny = anyTypeOfKind liftedTypeKind
 
       unboxer :: -- Unboxer
                  Var -> UniqSM ([Var], CoreExpr -- body that uses unpacked arguments
                                          -> CoreExpr
                                          )
       unboxer arg_id = do
-        -- Currently we only support one field. With the tag word, we'll need
-        -- two variables.
-        -- TODO: What happens if we just generate one variable here for an
-        -- (# Int#, Field #) ?
-        tagVar   <- newLocal intPrimTy
-        fieldVar <- newLocal (anyTypeOfKind liftedTypeKind)
+        -- Variable to bind the tag
+        tagVar      <- newLocal intPrimTy
+        -- Variables to bind primitive fields
+        primVars    <- replicateM max_prim_tys (newLocal intPrimTy)
+        -- Variables to bind boxed fields
+        nonPrimVars <- replicateM max_non_prim_tys (newLocal liftedAny)
 
-        -- We'll need same variable name, but with different types. This is for
-        -- first and only fields of the sum type alternatives.
-        conFieldVar_init <- newLocal undefined -- so lazy, such bottom, wow
+        -- For fields we use pre-defined names, but we update the types every
+        -- time we use them
+        fieldVars   <- replicateM max_fields (newLocal undefined)
 
-        let fieldVars :: [Var]
-            fieldVars = map (setIdType conFieldVar_init) con_rep_tys'
+        let
+          mkAlt :: CoreExpr -> DataCon -> [Type] -> CoreAlt
+          mkAlt body con repTys =
+            let
+              tagAsgn = NonRec tagVar (Lit (MachInt (fromIntegral (dataConTag con))))
 
-            liftedAny :: Type
-            liftedAny = anyTypeOfKind liftedTypeKind
+              conFieldVars = zipWith setIdType fieldVars repTys
 
-        let mkAlt :: CoreExpr -> DataCon -> Var -> CoreAlt
-            mkAlt body con rep_id =
-              (DataAlt con, [rep_id],
-                mkLets [ (NonRec tagVar
-                             -- No DynFlags at hand, manually creating the
-                             -- literal instead of using 'mkIntLit'. It's OK,
-                             -- because DynFlags is needed for range checking,
-                             -- in this case we just need something with range
-                             -- [1.. max fields in a data con].
-                             (Lit (MachInt (fromIntegral (dataConTag con)))))
-                       , (NonRec fieldVar (mkUnsafeCoerce (idType rep_id) liftedAny (Var rep_id)))
-                       ] body)
+              (usedPrimFieldVars, usedNonPrimFieldVars) =
+                partition (isPrimitiveType . idType) conFieldVars
 
-            unbox_fn body =
-              -- pprTrace "unbox_fn body:" (ppr body) $
-              -- pprTrace "tagVar:" (ppr tagVar) $
-              -- pprTrace "fieldVar:" (ppr fieldVar) $
-              Case (Var arg_id) arg_id (exprType body) $
-                zipWith (mkAlt body) cons fieldVars
+              primFieldAsgns =
+                zipWith NonRec
+                  primVars
+                  (map Var usedPrimFieldVars ++ repeat (Lit (MachInt 0)))
 
-        return ([tagVar, fieldVar], unbox_fn)
+              unusedField =
+                mkCoreApps (Var rUNTIME_ERROR_ID)
+                  [Type liftedAny, mkStringLit "Field should be unused"]
+
+              nonPrimFieldAsgns =
+                zipWith NonRec
+                  nonPrimVars
+                  (map (\i -> mkUnsafeCoerce (idType i) liftedAny (Var i)) usedNonPrimFieldVars
+                    ++ repeat unusedField)
+              alt = (DataAlt con, conFieldVars,
+                      mkLets (tagAsgn : primFieldAsgns ++ nonPrimFieldAsgns) body)
+            in
+              pprTrace "mkAlt"
+                (-- text "tagAsgn:" <+> ppr tagAsgn $$
+                 -- text "conFieldVars:" <+> ppr conFieldVars $$
+                 -- text "usedConPrimFieldVars:" <+> ppr usedPrimFieldVars $$
+                 -- text "usedNonPrimFieldVars:" <+> ppr usedNonPrimFieldVars $$
+                 -- text "primFieldAsgns:" <+> ppr primFieldAsgns $$
+                 -- text "unusedField:" <+> ppr unusedField $$
+                 -- text "nonPrimFieldAsgns:" <+> ppr nonPrimFieldAsgns $$
+                 text "alt:" <+> ppr alt) alt
+
+            -- (DataAlt con, [rep_id],
+            --   mkLets [ (NonRec tagVar
+            --                -- No DynFlags at hand, manually creating the
+            --                -- literal instead of using 'mkIntLit'. It's OK,
+            --                -- because DynFlags is needed for range checking,
+            --                -- in this case we just need something with range
+            --                -- [1.. max fields in a data con].
+            --                (Lit (MachInt (fromIntegral (dataConTag con)))))
+            --          , (NonRec fieldVar (mkUnsafeCoerce (idType rep_id) liftedAny (Var rep_id)))
+            --          ] body)
+
+          unbox_fn body =
+            -- pprTrace "unbox_fn body:" (ppr body) $
+            -- pprTrace "tagVar:" (ppr tagVar) $
+            -- pprTrace "fieldVar:" (ppr fieldVar) $
+            Case (Var arg_id) arg_id (exprType body) $
+              zipWith (mkAlt body) cons con_rep_tys
+
+          allVars = tagVar : primVars ++ nonPrimVars
+
+        pprTrace "allVars" (ppr allVars) $
+          return (allVars, unbox_fn)
 
       boxer :: TvSubst -> UniqSM ([Var], CoreExpr)
-      boxer subst = do
-        -- TODO: What is subst??
-        tagVar   <- newLocal intPrimTy
-        fieldVar <- newLocal (anyTypeOfKind liftedTypeKind)
+      boxer subst = fail "WIP"
 
-        let mkConAlt :: DataCon -> CoreAlt
-            mkConAlt con =
-              let conArgTy =
-                    -- FIXME: Here's yet another code that assumes one field.
-                    head (dataConRepArgTys con)
-               in (LitAlt (MachInt (fromIntegral (dataConTag con))), [],
-                    mkConApp con [mkUnsafeCoerce (anyTypeOfKind liftedTypeKind)
-                                                 conArgTy (Var fieldVar)])
-
-            defaultAlt :: CoreAlt
-            defaultAlt = (DEFAULT, [], mkApps (Var rUNTIME_ERROR_ID) [Type arg_ty, mkStringLit "what"])
-
-        return ([tagVar, fieldVar],
-                Case (Var tagVar) tagVar arg_ty $
-                  defaultAlt : map mkConAlt cons)
-
-    in ( rep_tys, (unboxer, Boxer boxer) )
+     in
+      pprTrace "rep_tys" (ppr rep_tys) ( rep_tys, (unboxer, Boxer boxer) )
 
   | otherwise
   = pprPanic "dataConArgUnpack" (ppr arg_ty)
@@ -832,7 +858,9 @@ dataConArgUnpack arg_ty
 
 -- TODO: This is copied from ElimUbxSums
 mkUnsafeCoerce :: Type -> Type -> CoreExpr -> CoreExpr
-mkUnsafeCoerce from to arg = mkApps (Var unsafeCoerceId) [ Type from, Type to, arg ]
+mkUnsafeCoerce from to arg =
+    -- mkApps (Var unsafeCoerceId) [ Type from, Type to, arg ]
+    mkCoreApps (Var unsafeCoerceId) [ Type from, Type to, arg ]
 
 isUnpackableType :: DynFlags -> FamInstEnvs -> Type -> Bool
 -- True if we can unpack the UNPACK the argument type
@@ -847,15 +875,12 @@ isUnpackableType dflags fam_envs ty
   = ok_con_args (unitNameSet (getName tc)) con
 
   -- With -XUnboxedSums we can unpack types with multiple constructors
+  -- TODO: Check -XUnboxedSums?
   | Just (tc, _) <- splitTyConApp_maybe ty
   , let cons = tyConDataCons tc
   , -- FIXME(osa): I don't understand why we need this,
     -- just imitating previous case
     all isVanillaDataCon cons
-  , -- FIXME(osa): Currently we only unpack sum types with one field in each
-    -- alternative
-    let allOne = all ((==) 1 . dataConRepArity) cons
-     in pprTrace "isUnpackableType allOne:" (ppr allOne) allOne
   = let ret = all (ok_con_args (unitNameSet (getName tc))) cons
      in pprTrace "isUnpackableType ret:" (ppr ret) ret
 
