@@ -815,18 +815,9 @@ dataConArgUnpack arg_ty
                   nonPrimVars
                   (map (\i -> mkUnsafeCoerce (idType i) liftedAny (Var i)) usedNonPrimFieldVars
                     ++ repeat unusedField)
-              alt = (DataAlt con, conFieldVars,
-                      mkLets (tagAsgn : primFieldAsgns ++ nonPrimFieldAsgns) body)
             in
-              pprTrace "mkAlt"
-                (-- text "tagAsgn:" <+> ppr tagAsgn $$
-                 -- text "conFieldVars:" <+> ppr conFieldVars $$
-                 -- text "usedConPrimFieldVars:" <+> ppr usedPrimFieldVars $$
-                 -- text "usedNonPrimFieldVars:" <+> ppr usedNonPrimFieldVars $$
-                 -- text "primFieldAsgns:" <+> ppr primFieldAsgns $$
-                 -- text "unusedField:" <+> ppr unusedField $$
-                 -- text "nonPrimFieldAsgns:" <+> ppr nonPrimFieldAsgns $$
-                 text "alt:" <+> ppr alt) alt
+              (DataAlt con, conFieldVars,
+                mkLets (tagAsgn : primFieldAsgns ++ nonPrimFieldAsgns) body)
 
             -- (DataAlt con, [rep_id],
             --   mkLets [ (NonRec tagVar
@@ -848,8 +839,7 @@ dataConArgUnpack arg_ty
 
           allVars = tagVar : primVars ++ nonPrimVars
 
-        pprTrace "allVars" (ppr allVars) $
-          return (allVars, unbox_fn)
+        return (allVars, unbox_fn)
 
       boxer :: TvSubst -> UniqSM ([Var], CoreExpr)
       boxer subst = do
@@ -891,11 +881,10 @@ dataConArgUnpack arg_ty
 
             boxerExpr = Case (Var tagVar) tagVar arg_ty (defaultAlt : map mkAlt cons)
 
-        pprTrace "fieldVars" (ppr fieldVars) $
-          return (fieldVars, boxerExpr)
+        return (fieldVars, boxerExpr)
 
      in
-      pprTrace "rep_tys" (ppr rep_tys) ( rep_tys, (unboxer, Boxer boxer) )
+      ( rep_tys, (unboxer, Boxer boxer) )
 
   | otherwise
   = pprPanic "dataConArgUnpack" (ppr arg_ty)
@@ -926,8 +915,7 @@ isUnpackableType dflags fam_envs ty
   , -- FIXME(osa): I don't understand why we need this,
     -- just imitating previous case
     all isVanillaDataCon cons
-  = let ret = all (ok_con_args (unitNameSet (getName tc))) cons
-     in pprTrace "isUnpackableType ret:" (ppr ret) ret
+  = all (ok_con_args (unitNameSet (getName tc))) cons
 
   | otherwise
   = False
