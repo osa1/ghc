@@ -736,14 +736,10 @@ dataConArgUnpack arg_ty
                              `mkTyApps` (substTys subst tc_args)
                              `mkVarApps` rep_ids) } ) )
 
-  -- Case 2: UNPACKing a sum type.
-  -- TODO(osa): We should really have a one case here, single constructor should
-  -- just be a special case.
+  -- Case 2: UNPACKing a sum type
   | Just (tc, tc_args) <- splitTyConApp_maybe arg_ty
   , let cons = tyConDataCons tc
   = ASSERT ( all isVanillaDataCon cons )
-      -- I'm not sure if this assert is needed. Why do they need to be vanilla
-      -- data con?
     let
       con_rep_tys :: [[Type]]
       con_rep_tys = map (\con -> dataConInstArgTys con tc_args) cons
@@ -758,20 +754,39 @@ dataConArgUnpack arg_ty
       max_prim_tys     = maximum $ 0 : map (length . fst) con_rep_tys_parts
       max_non_prim_tys = maximum $ 0 : map (length . snd) con_rep_tys_parts
 
+      mkUnsafeCoerce :: Type -> Type -> CoreExpr -> CoreExpr
+      mkUnsafeCoerce from to arg =
+        mkCoreApps (Var unsafeCoerceId) [ Type from, Type to, arg ]
+
       rep_tys :: [(Type, StrictnessMark)]
       rep_tys =
-        -- FIXME(osa): For now we assume Int64 is biggest primitive type and we
-        -- cast every prim type to Int64.
-        -- FIXME(osa): I'm not sure about strictness here
-        (intPrimTy, NotMarkedStrict) : -- tag variable
-          replicate max_prim_tys (intPrimTy, NotMarkedStrict) ++
-          replicate max_non_prim_tys (liftedAny, NotMarkedStrict)
+        -- FIXME(osa): For now we assume Int# is biggest primitive type and we
+        -- cast every prim type to Int#.
+        --
+        -- FIXME(osa): I'm not sure what to use for StrictnessMark here. The
+        -- problem is a strict and non-strict fields of two different DataCons
+        -- may be put in same field here.
+        --
+        -- Easy but probably incorrect solution: If two strictness marks are
+        -- different than we set it MarkedStrict.
+        --
+        -- Correct but probably inefficient solution: Separate boxed type fields
+        -- into two groups, for strict and non-strict ones.
+        --
+        -- I'm temporarily marking every field as strict.
+        (intPrimTy, MarkedStrict) : -- tag variable
+          replicate max_prim_tys (intPrimTy, MarkedStrict) ++
+          replicate max_non_prim_tys (liftedAny, MarkedStrict)
 
       liftedAny = anyTypeOfKind liftedTypeKind
 
-      unboxer :: -- Unboxer
-                 Var -> UniqSM ([Var], CoreExpr -- body that uses unpacked arguments
-                                         -> CoreExpr)
+      -- | Unboxer unboxes the field(first argument) and returns number of
+      -- fields(first element of the tuple) for unboxed representation.
+      --
+      -- Argument of the function(second element of the tuple) is an expression
+      -- that uses variables we bind(fields, first element of the tuple).
+      --
+      unboxer :: Var -> UniqSM ([Var], CoreExpr -> CoreExpr)
       unboxer arg_id = do
         -- Variable to bind the tag
         tagVar      <- newLocal intPrimTy
@@ -781,8 +796,12 @@ dataConArgUnpack arg_ty
         nonPrimVars <- replicateM max_non_prim_tys (newLocal liftedAny)
 
         -- For fields we use pre-defined names, but we update the types every
-        -- time we use them
-        fieldVars   <- replicateM max_fields (newLocal intTy) -- a dummy type
+        -- time we use these variables
+        fieldVars   <- replicateM max_fields (newLocal intTy)
+                        -- We use a dummy type here, it'll never be used because
+                        -- we set the type in each DataCon alternative. (still
+                        -- can't use 'undefined' here, it seems like at one
+                        -- point types are forced)
 
         let
           mkAlt :: CoreExpr -> DataCon -> [Type] -> CoreAlt
@@ -822,9 +841,6 @@ dataConArgUnpack arg_ty
                 mkLets (tagAsgn : primFieldAsgns ++ nonPrimFieldAsgns) body)
 
           unbox_fn body =
-            -- pprTrace "unbox_fn body:" (ppr body) $
-            -- pprTrace "tagVar:" (ppr tagVar) $
-            -- pprTrace "fieldVar:" (ppr fieldVar) $
             Case (Var arg_id) arg_id (exprType body) $
               zipWith (mkAlt body) cons con_rep_tys
 
@@ -832,11 +848,20 @@ dataConArgUnpack arg_ty
 
         return (allVars, unbox_fn)
 
+      -- | A boxer specifies how to construct a boxed type from the fields of
+      -- it's unboxed version. Length of variables should be the same with
+      -- length of variables returned by the unboxer, because we're boxing the
+      -- same field.
+      --
+      -- First argument is type substitutions to apply to the type arguments of
+      -- boxed DataCon of the field.
+      --
       boxer :: TvSubst -> UniqSM ([Var], CoreExpr)
       boxer subst = do
-        -- Same variables used in unboxer. We need to duplicate variable
+        -- Same variables are used in unboxer. We need to duplicate variable
         -- generation here because type of 'dataConArgUnpack' doesn't let us
-        -- generate variables.
+        -- generate variables, so we have to generate these here again.
+
         -- Variable to bind the tag
         tagVar      <- newLocal intPrimTy
         -- Variables to bind primitive fields
@@ -882,17 +907,13 @@ dataConArgUnpack arg_ty
         return (fieldVars, boxerExpr)
 
      in
+        -- Length of rep_tys should be same as length of variables returned by
+        -- the unboxer.
       ( rep_tys, (unboxer, Boxer boxer) )
 
   | otherwise
   = pprPanic "dataConArgUnpack" (ppr arg_ty)
     -- An interface file specified Unpacked, but we couldn't unpack it
-
--- TODO: This is copied from ElimUbxSums
-mkUnsafeCoerce :: Type -> Type -> CoreExpr -> CoreExpr
-mkUnsafeCoerce from to arg =
-    -- mkApps (Var unsafeCoerceId) [ Type from, Type to, arg ]
-    mkCoreApps (Var unsafeCoerceId) [ Type from, Type to, arg ]
 
 isUnpackableType :: DynFlags -> FamInstEnvs -> Type -> Bool
 -- True if we can unpack the UNPACK the argument type
