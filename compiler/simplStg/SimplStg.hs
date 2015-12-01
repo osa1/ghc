@@ -13,6 +13,7 @@ module SimplStg ( stg2stg ) where
 import StgSyn
 
 import CostCentre       ( CollectedCCs )
+import ElimUbxSums      ( elimUbxSums )
 import SCCfinal         ( stgMassageForProfiling )
 import StgLint          ( lintStgBindings )
 import StgStats         ( showStgStats )
@@ -22,7 +23,7 @@ import DynFlags
 import Module           ( Module )
 import ErrUtils
 import SrcLoc
-import UniqSupply       ( mkSplitUniqSupply, splitUniqSupply )
+import UniqSupply       ( initUs_, mkSplitUniqSupply, splitUniqSupply )
 import Outputable
 import Control.Monad
 
@@ -46,7 +47,11 @@ stg2stg dflags module_name binds
         ; (processed_binds, _, cost_centres)
                 <- foldM do_stg_pass (binds', us0, ccs) (getStgToDo dflags)
 
-        ; let un_binds = unarise us1 processed_binds
+        ; let (us2, us3) = splitUniqSupply us1
+
+        ; let post_elim_ubx_sums = initUs_ us2 (elimUbxSums processed_binds)
+
+        ; let un_binds = unarise us3 post_elim_ubx_sums
 
         ; dumpIfSet_dyn dflags Opt_D_dump_stg "STG syntax:"
                         (pprStgBindings un_binds)
