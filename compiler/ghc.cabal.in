@@ -159,6 +159,7 @@ Library
         PatSyn
         Demand
         Debug
+        ElimUbxSums
         Exception
         FieldLabel
         GhcMonad
