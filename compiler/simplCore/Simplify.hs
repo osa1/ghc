@@ -2104,8 +2104,7 @@ simplAlt env scrut' _ case_bndr' cont' (LitAlt lit, bndrs, rhs)
         ; return (LitAlt lit, [], rhs') }
 
 simplAlt env scrut' _ case_bndr' cont' (DataAlt con, vs, rhs)
-  = pprTrace "simplAlt: dataConRepArgTys: " (ppr $ dataConRepArgTys con) $
-    do  {       -- Deal with the pattern-bound variables
+  = do  {       -- Deal with the pattern-bound variables
                 -- Mark the ones that are in ! positions in the
                 -- data constructor as certainly-evaluated.
                 -- NB: simplLamBinders preserves this eval info
