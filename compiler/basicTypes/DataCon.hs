@@ -1156,6 +1156,7 @@ computeTyConPromotability rec_tycons tc
   && case algTyConRhs tc of
        DataTyCon { data_cons = cs } -> all ok_con cs
        TupleTyCon { data_con = c }  -> ok_con c
+       SumTyCon { data_cons = cs }  -> all ok_con cs
        NewTyCon { data_con = c }    -> ok_con c
        AbstractTyCon {}             -> False
   where
