@@ -6,6 +6,7 @@ module ElimUbxSums ( elimUbxSums ) where
 
 import BasicTypes (Boxity (..))
 import CoreSyn (AltCon (..))
+import CostCentre (noCCS)
 import DataCon
 import FastString (mkFastString)
 import Id (idType, mkSysLocalM)
@@ -14,7 +15,7 @@ import Outputable
 import StgSyn
 import TyCon
 import Type
-import TysPrim (anyTypeOfKind, intPrimTy)
+import TysPrim (anyTypeOfKind, intPrimTy, intPrimTyCon)
 import TysWiredIn (tupleDataCon)
 import UniqSupply
 
@@ -79,9 +80,32 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
 
        let args = tag_binder : ubx_field_binders ++ boxed_field_binders
 
+       let mkLets :: [Var] -> [Var] -> [Var] -> [StgBinding]
+           mkLets _ _ [] = []
+           mkLets ubx bx (v : vs)
+             | isPrimitiveType (idType v)
+             , (ubx_v : ubx_vs) <- ubx
+             = StgNonRec v (StgRhsClosure
+                             noCCS
+                             -- TODO: I have no idea about the UpdateFlag here
+                             -- TODO: Using same SRT with the case expression.
+                             noBinderInfo [ubx_v] Updatable srt [] (StgApp ubx_v []))
+                 : mkLets ubx_vs bx vs
+
+             | (bx_v : bx_vs) <- bx
+             = StgNonRec v (StgRhsClosure noCCS
+                            noBinderInfo [bx_v] Updatable srt [] (StgApp bx_v []))
+                 : mkLets ubx bx_vs vs
+
+             | otherwise
+             = pprPanic "elimUbxSumExpr.mkLets" (ppr case_)
+                 -- TODO: Make sure printing the whole expression is OK here.
+                 -- (I think the data is cyclic, we don't want GHC to loop in
+                 -- case of a panic)
+
        let mkConAlt (DataAlt con, bndrs, useds, rhs) =
              (LitAlt (MachInt (fromIntegral (dataConTag con))), [], [],
-              undefined)
+              foldr StgLet rhs (mkLets ubx_field_binders boxed_field_binders bndrs))
 
            mkConAlt alt@(LitAlt{}, _, _, _) =
              pprPanic "elimUbxSumExpr.mkConAlt" (ppr alt)
@@ -95,7 +119,7 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
                   inner_case) ]
 
            inner_case =
-             StgCase (StgApp tag_binder []) case_lives alts_lives tag_binder srt alt_ty
+             StgCase (StgApp tag_binder []) case_lives alts_lives tag_binder srt (PrimAlt intPrimTyCon)
                (map mkConAlt alts) -- TODO: we should make sure there's a DEFAULT alt here
 
        return outer_case
