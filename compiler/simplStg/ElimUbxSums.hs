@@ -19,6 +19,8 @@ import TysPrim (anyTypeOfKind, intPrimTy, intPrimTyCon)
 import TysWiredIn (tupleDataCon)
 import UniqSupply
 
+import MkCore (uNDEFINED_ID)
+
 import Control.Monad (replicateM)
 import Data.List (partition)
 
@@ -110,6 +112,20 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
            mkConAlt alt@(LitAlt{}, _, _, _) =
              pprPanic "elimUbxSumExpr.mkConAlt" (ppr alt)
 
+           mkConAlt alt@(DEFAULT, _, _, _) = alt
+
+           -- We always need a DEFAULT case, because we transform AlgAlts to
+           -- PrimAlt here. Which means our pattern matching is never
+           -- exhaustive, unless we had a DEFAULT case before this
+           -- transformation. In that case we just use existing DEFAULT case.
+           -- Otherwise we create a dummy DEFAULT case.
+           mkDefaultAlt :: [StgAlt] -> [StgAlt]
+           mkDefaultAlt [] = pprPanic "elimUbxSumExpr.mkDefaultAlt" (text "Empty alts")
+           mkDefaultAlt alts@((DEFAULT, _, _, _) : _) = alts
+           mkDefaultAlt alts = dummyDefaultAlt : alts
+
+           dummyDefaultAlt = (DEFAULT, [], [], StgApp uNDEFINED_ID [])
+
        let outer_case =
              -- TODO: not sure about lives parts
              StgCase e case_lives alts_lives bndr srt alt_ty
@@ -120,7 +136,7 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
 
            inner_case =
              StgCase (StgApp tag_binder []) case_lives alts_lives tag_binder srt (PrimAlt intPrimTyCon)
-               (map mkConAlt alts) -- TODO: we should make sure there's a DEFAULT alt here
+               (mkDefaultAlt (map mkConAlt alts))
 
        return outer_case
 
