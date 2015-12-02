@@ -21,6 +21,10 @@ import UniqSupply
 
 import MkCore (uNDEFINED_ID)
 
+#if __GLASGOW_HASKELL__ < 709
+import Control.Applicative
+#endif
+
 import Control.Monad (replicateM)
 import Data.List (partition)
 
