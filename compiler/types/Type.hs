@@ -1126,7 +1126,7 @@ repType ty
       , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
       = go rec_nts' (newTyConInstRhs tc tys)
 
-      | isUnboxedTupleTyCon tc
+      | (isUnboxedTupleTyCon tc || isUnboxedSumTyCon tc)
       = if null tys
          then UnaryRep voidPrimTy -- See Note [Nullary unboxed tuple]
          else UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_levity_tys)
