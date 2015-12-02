@@ -109,7 +109,8 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
                  -- (I think the data is cyclic, we don't want GHC to loop in
                  -- case of a panic)
 
-       let mkConAlt (DataAlt con, bndrs, useds, rhs) =
+       let mkConAlt (DataAlt con, bndrs, _useds, rhs) =
+                     -- TODO: we should probably make use of `_used`
              (LitAlt (MachInt (fromIntegral (dataConTag con))), [], [],
               foldr StgLet rhs (mkLets ubx_field_binders boxed_field_binders bndrs))
 
