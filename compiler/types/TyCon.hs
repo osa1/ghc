@@ -1197,15 +1197,17 @@ mkSumTyCon :: Name
              -> TyCon
 mkSumTyCon name kind arity tyvars cons parent
   = AlgTyCon {
-        tyConName        = name,
         tyConUnique      = nameUnique name,
+        tyConName        = name,
         tyConKind        = kind,
         tyConArity       = arity,
         tyConTyVars      = tyvars,
         tcRoles          = replicate arity Representational,
         tyConCType       = Nothing,
+        algTcGadtSyntax  = False,
         algTcStupidTheta = [],
         algTcRhs         = SumTyCon { data_cons = cons },
+        algTcFields      = emptyFsEnv,
         algTcParent      = parent,
         algTcRec         = NonRecursive,
         algTcGadtSyntax  = False
