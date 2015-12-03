@@ -74,7 +74,7 @@ elimUbxSumExpr (StgLam args e)
 elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
   | isUnboxedSumType (idType bndr)
   , (tycon, _) <- splitTyConApp (idType bndr)
-  = do let (ubx_fields, bx_fields) = tyConFields tycon
+  = do let (ubx_fields, bx_fields) = unboxedSumTyConFields tycon
 
        tag_binder <- mkSysLocalM (mkFastString "tag") intPrimTy
 
@@ -166,28 +166,6 @@ elimUbxSumAlt (con, xs, uses, e) = (con, xs, uses,) <$> elimUbxSumExpr e
 
 --------------------------------------------------------------------------------
 
--- elimUbxSumCon :: DataCon -> DataCon
--- elimUbxSumCon = id
-
--- | Returns (# unboxed fields, # boxed fields) for a UnboxedSum TyCon.
-tyConFields :: TyCon -> (Int, Int)
-tyConFields tycon
-  = let
-      all_cons         = tyConDataCons tycon
-      cons_rep_arg_tys = map dataConRepArgTys all_cons
-
-      -- fst: prim types
-      -- snd: non-prim types
-      con_rep_tys_parts :: [([Type], [Type])]
-      con_rep_tys_parts = map (partition isPrimitiveType) cons_rep_arg_tys
-
-      fields_unboxed = maximum (0 : map (length . fst) con_rep_tys_parts)
-      fields_boxed   = maximum (0 : map (length . snd) con_rep_tys_parts)
-    in
-      (fields_unboxed, fields_boxed)
-
---------------------------------------------------------------------------------
-
 -- TODO: We should memoize this somehow, no need to generate same information
 -- for every DataCon of a TyCon.
 --
@@ -195,7 +173,7 @@ tyConFields tycon
 elimUbxConApp :: DataCon -> [StgArg] -> UniqSM (DataCon, [StgArg])
 elimUbxConApp con args
   = let
-      (fields_unboxed, fields_boxed) = tyConFields (dataConTyCon con)
+      (fields_unboxed, fields_boxed) = unboxedSumTyConFields (dataConTyCon con)
 
       con_unboxed_args, con_boxed_args :: [StgArg]
       (con_unboxed_args, con_boxed_args) = partition (isPrimitiveType . stgArgType) args

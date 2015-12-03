@@ -731,10 +731,16 @@ repType ty
       , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
       = go rec_nts' (newTyConInstRhs tc tys)
 
-      | (isUnboxedTupleTyCon tc || isUnboxedSumTyCon tc)
+      | isUnboxedTupleTyCon tc
       = if null tys
          then UnaryRep voidPrimTy -- See Note [Nullary unboxed tuple]
          else UbxTupleRep (concatMap (flattenRepType . go rec_nts) tys)
+
+      | isUnboxedSumTyCon tc
+      , let (ubx_fields, bx_fields) = unboxedSumTyConFields tc
+      = UbxTupleRep (intPrimTy
+                       : replicate ubx_fields intPrimTy
+                      ++ replicate bx_fields (anyTypeOfKind liftedTypeKind))
 
     go _ ty = UnaryRep ty
 
