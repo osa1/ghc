@@ -153,6 +153,12 @@ vectAlgTyConRhs tc (TupleTyCon { data_con = con })
     -- but it's the behaviour we had before I refactored the
     -- representation of AlgTyConRhs to add tuples
 
+vectAlgTyConRhs tc (SumTyCon {})
+  = do dflags <- getDynFlags
+       cantVectorise dflags noSumTypeErr (ppr tc)
+  where
+    noSumTypeErr = "Vectorisation of sum types not supported yet; please use a 'data' declaration"
+
 vectAlgTyConRhs tc (NewTyCon {})
   = do dflags <- getDynFlags
        cantVectorise dflags noNewtypeErr (ppr tc)
