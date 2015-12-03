@@ -23,7 +23,6 @@ module BinIface (
 import TcRnMonad
 import TyCon
 import ConLike
-import DataCon    ( dataConName, dataConWorkId, dataConTyCon )
 import PrelInfo   ( knownKeyNames )
 import Id         ( idName, isDataConWorkId_maybe )
 import TysWiredIn
