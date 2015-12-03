@@ -84,6 +84,7 @@ module TyCon(
         newTyConRhs, newTyConEtadArity, newTyConEtadRhs,
         unwrapNewTyCon_maybe, unwrapNewTyConEtad_maybe,
         algTcFields,
+        unboxedSumTyConFields,
 
         -- ** Manipulating TyCons
         expandSynTyCon_maybe,
@@ -108,7 +109,9 @@ module TyCon(
 #include "HsVersions.h"
 
 import {-# SOURCE #-} TyCoRep ( Kind, Type, PredType )
-import {-# SOURCE #-} DataCon ( DataCon, dataConExTyVars, dataConFieldLabels )
+import {-# SOURCE #-} DataCon ( DataCon, dataConExTyVars, dataConFieldLabels,
+                                dataConRepArgTys )
+import {-# SOURCE #-} Type    ( isPrimitiveType )
 
 import Binary
 import Var
@@ -128,6 +131,7 @@ import Constants
 import Util
 
 import qualified Data.Data as Data
+import Data.List (partition)
 import Data.Typeable (Typeable)
 
 {-
@@ -1631,6 +1635,23 @@ isUnboxedSumTyCon (AlgTyCon { algTcRhs = rhs })
   | SumTyCon {} <- rhs
   = True
 isUnboxedSumTyCon _ = False
+
+-- | Returns (# unboxed fields, # boxed fields) for a UnboxedSum TyCon.
+unboxedSumTyConFields :: TyCon -> (Int, Int)
+unboxedSumTyConFields tycon
+  = let
+      all_cons         = tyConDataCons tycon
+      cons_rep_arg_tys = map dataConRepArgTys all_cons
+
+      -- fst: prim types
+      -- snd: non-prim types
+      con_rep_tys_parts :: [([Type], [Type])]
+      con_rep_tys_parts = map (partition isPrimitiveType) cons_rep_arg_tys
+
+      fields_unboxed = maximum (0 : map (length . fst) con_rep_tys_parts)
+      fields_boxed   = maximum (0 : map (length . snd) con_rep_tys_parts)
+    in
+      (fields_unboxed, fields_boxed)
 
 -- | Is this a recursive 'TyCon'?
 isRecursiveTyCon :: TyCon -> Bool
