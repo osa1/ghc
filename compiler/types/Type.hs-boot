@@ -8,6 +8,8 @@ isCoercionTy :: Type -> Bool
 mkAppTy :: Type -> Type -> Type
 piResultTy :: Type -> Type -> Type
 
+isPrimitiveType :: Type -> Bool
+
 typeKind :: Type -> Kind
 eqType :: Type -> Type -> Bool
 
