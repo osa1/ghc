@@ -6,7 +6,6 @@ module ElimUbxSums ( elimUbxSums ) where
 
 import BasicTypes (Boxity (..))
 import CoreSyn (AltCon (..))
-import CostCentre (noCCS)
 import DataCon
 import FastString (mkFastString)
 import Id (idType, mkSysLocalM)
@@ -17,7 +16,9 @@ import TyCon
 import Type
 import TysPrim (anyTypeOfKind, intPrimTy, intPrimTyCon)
 import TysWiredIn (tupleDataCon)
+import UniqSet (mapUniqSet)
 import UniqSupply
+import VarSet (mapVarSet)
 
 import MkCore (uNDEFINED_ID)
 
@@ -86,25 +87,18 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
 
        let args = tag_binder : ubx_field_binders ++ boxed_field_binders
 
-       let mkLets :: [Var] -> [Var] -> [Var] -> [StgBinding]
-           mkLets _ _ [] = []
-           mkLets ubx bx (v : vs)
+       let genRns :: [Var] -> [Var] -> [Var] -> [(Var, Var)]
+           genRns _ _ [] = []
+           genRns ubx bx (v : vs)
              | isPrimitiveType (idType v)
              , (ubx_v : ubx_vs) <- ubx
-             = StgNonRec v (StgRhsClosure
-                             noCCS
-                             -- TODO: I have no idea about the UpdateFlag here
-                             -- TODO: Using same SRT with the case expression.
-                             noBinderInfo [ubx_v] Updatable srt [] (StgApp ubx_v []))
-                 : mkLets ubx_vs bx vs
+             = (v, ubx_v) : genRns ubx_vs bx vs
 
              | (bx_v : bx_vs) <- bx
-             = StgNonRec v (StgRhsClosure noCCS
-                            noBinderInfo [bx_v] Updatable srt [] (StgApp bx_v []))
-                 : mkLets ubx bx_vs vs
+             = (v, bx_v) : genRns ubx bx_vs vs
 
              | otherwise
-             = pprPanic "elimUbxSumExpr.mkLets" (ppr case_)
+             = pprPanic "elimUbxSumExpr.genRns" (ppr case_)
                  -- TODO: Make sure printing the whole expression is OK here.
                  -- (I think the data is cyclic, we don't want GHC to loop in
                  -- case of a panic)
@@ -112,7 +106,7 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
        let mkConAlt (DataAlt con, bndrs, _useds, rhs) =
                      -- TODO: we should probably make use of `_used`
              (LitAlt (MachInt (fromIntegral (dataConTag con))), [], [],
-              foldr StgLet rhs (mkLets ubx_field_binders boxed_field_binders bndrs))
+              foldr rnStgExpr rhs (genRns ubx_field_binders boxed_field_binders bndrs))
 
            mkConAlt alt@(LitAlt{}, _, _, _) =
              pprPanic "elimUbxSumExpr.mkConAlt" (ppr alt)
@@ -192,3 +186,82 @@ elimUbxConApp con args
       new_args = tag_arg : unboxed_args ++ boxed_args
     in
       pprTrace "elimUbxConApp" (ppr (tuple_con, new_args)) $ return (tuple_con, new_args)
+
+--------------------------------------------------------------------------------
+
+type Rn = (Var, Var)
+
+-- Do I need to worry about capturing and shadowing here? I think every binder
+-- in the program has a unique 'Unique'.
+
+rnStgExpr :: Rn -> StgExpr -> StgExpr
+rnStgExpr r (StgApp f as)
+  = StgApp (rnStgVar r f) (rnStgArgs r as)
+
+rnStgExpr _ e@StgLit{}
+  = e
+
+rnStgExpr rn (StgConApp con as)
+  = StgConApp con (rnStgArgs rn as)
+
+rnStgExpr rn (StgOpApp op args ty)
+  = StgOpApp op (rnStgArgs rn args) ty
+
+rnStgExpr rn (StgLam args body)
+  = StgLam args (rnStgExpr rn body)
+
+rnStgExpr rn (StgCase scrt case_lives alts_lives bndr srt altty alts)
+  = StgCase (rnStgExpr rn scrt) (rnLives rn case_lives) (rnLives rn alts_lives)
+            bndr (rnSRT rn srt) altty (rnStgAlts rn alts)
+
+rnStgExpr rn (StgLet bind body)
+  = StgLet (rnStgBinding rn bind) (rnStgExpr rn body)
+
+rnStgExpr rn (StgLetNoEscape live_in_let live_in_bind bind e)
+  = StgLetNoEscape (rnLives rn live_in_let) (rnLives rn live_in_bind) bind
+                   (rnStgExpr rn e)
+
+rnStgExpr rn (StgTick t e)
+  = StgTick t (rnStgExpr rn e)
+
+rnStgBinding :: Rn -> StgBinding -> StgBinding
+rnStgBinding rn (StgNonRec bndr rhs)
+  = StgNonRec bndr (rnStgRhs rn rhs)
+
+rnStgBinding rn (StgRec bs)
+  = StgRec (map (\(bndr, rhs) -> (bndr, rnStgRhs rn rhs)) bs)
+
+rnStgRhs :: Rn -> StgRhs -> StgRhs
+rnStgRhs rn (StgRhsClosure ccs b_info fvs update_flag srt args expr)
+  = StgRhsClosure ccs b_info (map (rnStgVar rn) fvs) update_flag
+                  (rnSRT rn srt) args (rnStgExpr rn expr)
+
+rnStgRhs rn (StgRhsCon ccs con args)
+  = StgRhsCon ccs con (rnStgArgs rn args)
+
+rnStgArgs :: Rn -> [StgArg] -> [StgArg]
+rnStgArgs = map . rnStgArg
+
+rnStgArg :: Rn -> StgArg -> StgArg
+rnStgArg rn (StgVarArg v)
+  = StgVarArg (rnStgVar rn v)
+rnStgArg _ a@StgLitArg{} = a
+
+rnStgAlts :: Rn -> [StgAlt] -> [StgAlt]
+rnStgAlts = map . rnStgAlt
+
+rnStgAlt :: Rn -> StgAlt -> StgAlt
+rnStgAlt rn (pat, bndrs, uses, rhs)
+  = (pat, bndrs, uses, rnStgExpr rn rhs)
+
+rnLives :: Rn -> StgLiveVars -> StgLiveVars
+rnLives rn = mapUniqSet (rnStgVar rn)
+
+rnSRT :: Rn -> SRT -> SRT
+rnSRT _ NoSRT = NoSRT
+rnSRT rn (SRTEntries s) = SRTEntries (mapVarSet (rnStgVar rn) s)
+
+rnStgVar :: Rn -> Var -> Var
+rnStgVar (v1, v2) v3
+  | v1 == v3  = v2
+  | otherwise = v3
