@@ -34,7 +34,6 @@ import FastString
 import UniqSupply
 import SrcLoc
 import Util
-import PrelNames (gHC_PRIM)
 
 import Outputable
 
