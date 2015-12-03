@@ -408,8 +408,10 @@ getSymtabName _ncu _dict symtab bh = do
                 1 -> dataConName $ sumDataCon alt arity
                   where arity = fromIntegral (i .&. 0x0FFFFFFF `shiftR` 14)
                         alt = fromIntegral (i .&. 0x00003FFF)
+                _ -> pprPanic "getSymtabName:unknown sum sort" (ppr i)
               where
                 thing = (i .&. 0x10000000) `shiftR` 28
+            _ -> pprPanic "getSyntabName:unknown `tuple or sum` tag" (ppr i)
         _          -> pprPanic "getSymtabName:unknown name tag" (ppr i)
 
 data BinSymbolTable = BinSymbolTable {
