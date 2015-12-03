@@ -36,7 +36,6 @@ import IfaceType
 import UniqSupply
 import SrcLoc
 import Util
-import PrelNames (gHC_PRIM)
 
 import Outputable
 import Data.List     ( partition )
