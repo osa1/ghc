@@ -22,6 +22,7 @@ dataConInstOrigArgTys  :: DataCon -> [Type] -> [Type]
 dataConStupidTheta :: DataCon -> ThetaType
 dataConFullSig :: DataCon
                -> ([TyVar], [TyVar], [EqSpec], ThetaType, [Type], Type)
+dataConRepArgTys :: DataCon -> [Type]
 
 instance Eq DataCon
 instance Ord DataCon
