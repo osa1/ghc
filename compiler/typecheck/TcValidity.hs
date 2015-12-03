@@ -494,8 +494,10 @@ check_type env ctxt rank (AppTy ty1 ty2)
 check_type env ctxt rank ty@(TyConApp tc tys)
   | isTypeSynonymTyCon tc || isTypeFamilyTyCon tc
   = check_syn_tc_app env ctxt rank ty tc tys
-  | isUnboxedTupleTyCon tc = check_ubx_tuple  env ctxt      ty    tys
-  | otherwise              = mapM_ (check_arg_type env ctxt rank) tys
+  | isUnboxedTupleTyCon tc || isUnboxedSumTyCon tc
+  = check_ubx_tuple env ctxt ty tys
+  | otherwise
+  = mapM_ (check_arg_type env ctxt rank) tys
 
 check_type _ _ _ (LitTy {}) = return ()
 
