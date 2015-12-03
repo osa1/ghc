@@ -453,8 +453,10 @@ check_type ctxt rank (AppTy ty1 ty2)
 check_type ctxt rank ty@(TyConApp tc tys)
   | isTypeSynonymTyCon tc || isTypeFamilyTyCon tc
   = check_syn_tc_app ctxt rank ty tc tys
-  | isUnboxedTupleTyCon tc = check_ubx_tuple  ctxt      ty    tys
-  | otherwise              = mapM_ (check_arg_type ctxt rank) tys
+  | isUnboxedTupleTyCon tc || isUnboxedSumTyCon tc
+  = check_ubx_tuple ctxt ty tys
+  | otherwise
+  = mapM_ (check_arg_type ctxt rank) tys
 
 check_type _ _ (LitTy {}) = return ()
 
