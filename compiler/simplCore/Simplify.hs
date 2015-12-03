@@ -48,7 +48,6 @@ import FastString
 import Pair
 import Util
 import ErrUtils
-import DataCon (dataConRepArgTys)
 
 {-
 The guts of the simplifier is in this module, but the driver loop for
