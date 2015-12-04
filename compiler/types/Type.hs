@@ -738,7 +738,9 @@ repType ty
 
       | isUnboxedSumTyCon tc
       , let (ubx_fields, bx_fields) = unboxedSumTyConFields tc
-      = UbxTupleRep (intPrimTy
+      = -- TODO: Should we create a new RepType for UnboxedSums? Not strictly
+        -- necessary but it may help debugging probably.
+        UbxTupleRep (intPrimTy
                        : replicate ubx_fields intPrimTy
                       ++ replicate bx_fields (anyTypeOfKind liftedTypeKind))
 
