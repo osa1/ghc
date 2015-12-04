@@ -30,6 +30,38 @@ import Control.Monad (replicateM)
 import Data.List (partition)
 
 --------------------------------------------------------------------------------
+-- PROBLEM: When generating code for unboxed sum DataCon applications and
+-- unboxed sum pattern matching, we don't know how the DataCon rep types are
+-- instantiated. Suppose we have
+--
+--     let a = (# | | 10 | #) in ...
+--
+-- or
+--
+--     case x of
+--       (# a | | #) -> ...
+--       (# | b | #) -> ...
+--       (# | | c #) -> ...
+--
+-- In the first case, what should be the corresponding unboxed tuple constructor?
+-- We don't know, without the type information!
+--
+-- In the second case, similarly we don't know how many boxed and unboxed
+-- arguments the unboxed tuple version of this sum will take.
+--
+-- NOTE: Knowing the total number doesn't help. Becuase we have two different
+-- overlapping fields for unboxed and boxed arguments.
+--
+-- SOLUTION: I think we have enough type information at this point to recover
+-- what we need. For the first case, we have the id type(e.g. type of 'a'). In
+-- the second case, `StgCase`s scrutinee binder should have the type of x. We
+-- just propagate these types and when we need to translate a unboxed sum
+-- DataCon we refer to this information to figure out which unboxed sum
+-- constructor to use.
+--
+-- NOTE: 'dataConRepArgTys' is never what we need! We should be using
+-- 'dataConInstArgTys' with the type arguments.
+--
 
 elimUbxSums :: [StgBinding] -> UniqSM [StgBinding]
 elimUbxSums = mapM elimUbxSum
