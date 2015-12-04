@@ -49,7 +49,7 @@ import Data.List (partition)
 -- In the second case, similarly we don't know how many boxed and unboxed
 -- arguments the unboxed tuple version of this sum will take.
 --
--- NOTE: Knowing the total number doesn't help. Becuase we have two different
+-- NOTE: Knowing the total number doesn't help. Because we have two different
 -- overlapping fields for unboxed and boxed arguments.
 --
 -- SOLUTION: I think we have enough type information at this point to recover
@@ -61,6 +61,20 @@ import Data.List (partition)
 --
 -- NOTE: 'dataConRepArgTys' is never what we need! We should be using
 -- 'dataConInstArgTys' with the type arguments.
+--
+-- NOTE: One thing that could help us recover the information we need is to add
+-- a 'RepType' and 'AltType' for unboxed sums(we may have to do this anyway, to
+-- make bytecode interpreter working -- not 100% sure about this currently).
+--
+-- This AltType would look like: UbxSumAlt Int Int
+--
+-- Then here we could just look at the AltType in StgCase and that would solve
+-- the problem shown in second case above.
+--
+-- For the first case, I think we still need to generate some type information
+-- on the way to be able to choose right unboxed tuple constructors. But do we
+-- have any guarantees that we'll have the type information necessary for this?
+-- I'm not sure.
 --
 
 elimUbxSums :: [StgBinding] -> UniqSM [StgBinding]
