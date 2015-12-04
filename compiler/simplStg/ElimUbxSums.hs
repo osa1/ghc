@@ -46,7 +46,7 @@ elimUbxSumRhs (StgRhsClosure ccs b_info fvs update_flag srt args expr)
 
 elimUbxSumRhs (StgRhsCon ccs con args)
   | isUnboxedTupleCon con
-  = uncurry (StgRhsCon ccs) <$> elimUbxConApp con args
+  = return (uncurry (StgRhsCon ccs) (elimUbxConApp con args))
 
   | otherwise
   = return (StgRhsCon ccs con args)
@@ -60,7 +60,7 @@ elimUbxSumExpr e@StgLit{}
 
 elimUbxSumExpr e@(StgConApp con args)
   | isUnboxedSumCon con
-  = uncurry StgConApp <$> elimUbxConApp con args
+  = return (uncurry StgConApp (elimUbxConApp con args))
 
   | otherwise
   = return e
@@ -76,6 +76,8 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
   | isUnboxedSumType (idType bndr)
   , (tycon, _) <- splitTyConApp (idType bndr)
   = do let (ubx_fields, bx_fields) = unboxedSumTyConFields tycon
+
+       e' <- elimUbxSumExpr e
 
        tag_binder <- mkSysLocalM (mkFastString "tag") intPrimTy
 
@@ -127,7 +129,7 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
 
        let outer_case =
              -- TODO: not sure about lives parts
-             StgCase e case_lives alts_lives bndr srt alt_ty
+             StgCase e' case_lives alts_lives bndr srt alt_ty
                [ (DataAlt (tupleDataCon Unboxed (length args)),
                   args,
                   replicate (length args) True, -- TODO: fix this
@@ -164,7 +166,7 @@ elimUbxSumAlt (con, xs, uses, e) = (con, xs, uses,) <$> elimUbxSumExpr e
 -- for every DataCon of a TyCon.
 --
 -- !!! I think we should memoize this in TycCon (maybe in AlgTyConRhs.SumTyCon) !!!
-elimUbxConApp :: DataCon -> [StgArg] -> UniqSM (DataCon, [StgArg])
+elimUbxConApp :: DataCon -> [StgArg] -> (DataCon, [StgArg])
 elimUbxConApp con args
   = let
       (fields_unboxed, fields_boxed) = unboxedSumTyConFields (dataConTyCon con)
@@ -185,7 +187,7 @@ elimUbxConApp con args
 
       new_args = tag_arg : unboxed_args ++ boxed_args
     in
-      pprTrace "elimUbxConApp" (ppr (tuple_con, new_args)) $ return (tuple_con, new_args)
+      (tuple_con, new_args)
 
 --------------------------------------------------------------------------------
 
