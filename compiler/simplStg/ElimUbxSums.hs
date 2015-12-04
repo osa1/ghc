@@ -105,15 +105,19 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
                  -- (I think the data is cyclic, we don't want GHC to loop in
                  -- case of a panic)
 
-       let mkConAlt (DataAlt con, bndrs, _useds, rhs) =
+           mkConAlt (DataAlt con, bndrs, _useds, rhs) = do
                      -- TODO: we should probably make use of `_used`
-             (LitAlt (MachInt (fromIntegral (dataConTag con))), [], [],
-              foldr rnStgExpr rhs (genRns ubx_field_binders boxed_field_binders bndrs))
+             let rhs_renamed =
+                   foldr rnStgExpr rhs
+                         (genRns ubx_field_binders boxed_field_binders bndrs)
+
+             (LitAlt (MachInt (fromIntegral (dataConTag con))), [], [],)
+               <$> elimUbxSumExpr rhs_renamed
 
            mkConAlt alt@(LitAlt{}, _, _, _) =
              pprPanic "elimUbxSumExpr.mkConAlt" (ppr alt)
 
-           mkConAlt alt@(DEFAULT, _, _, _) = alt
+           mkConAlt alt@(DEFAULT, _, _, _) = return alt
 
            -- We always need a DEFAULT case, because we transform AlgAlts to
            -- PrimAlt here. Which means our pattern matching is never
@@ -127,6 +131,10 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
 
            dummyDefaultAlt = (DEFAULT, [], [], StgApp uNDEFINED_ID [])
 
+       inner_case <-
+         StgCase (StgApp tag_binder []) case_lives alts_lives tag_binder srt (PrimAlt intPrimTyCon)
+           . mkDefaultAlt <$> mapM mkConAlt alts
+
        let outer_case =
              -- TODO: not sure about lives parts
              StgCase e' case_lives alts_lives bndr srt alt_ty
@@ -134,10 +142,6 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
                   args,
                   replicate (length args) True, -- TODO: fix this
                   inner_case) ]
-
-           inner_case =
-             StgCase (StgApp tag_binder []) case_lives alts_lives tag_binder srt (PrimAlt intPrimTyCon)
-               (mkDefaultAlt (map mkConAlt alts))
 
        return outer_case
 
