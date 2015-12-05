@@ -138,7 +138,7 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
        let genRns :: [Var] -> [Var] -> [Var] -> [(Var, Var)]
            genRns _ _ [] = []
            genRns ubx bx (v : vs)
-             | isPrimitiveType (idType v)
+             | isUnLiftedType (idType v)
              , (ubx_v : ubx_vs) <- ubx
              = (v, ubx_v) : genRns ubx_vs bx vs
 
@@ -222,7 +222,7 @@ elimUbxConApp con args
       (fields_unboxed, fields_boxed) = unboxedSumTyConFields (dataConTyCon con)
 
       con_unboxed_args, con_boxed_args :: [StgArg]
-      (con_unboxed_args, con_boxed_args) = partition (isPrimitiveType . stgArgType) args
+      (con_unboxed_args, con_boxed_args) = partition (isUnLiftedType . stgArgType) args
 
       tuple_con = tupleDataCon Unboxed (length new_args)
       tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag tuple_con)))
