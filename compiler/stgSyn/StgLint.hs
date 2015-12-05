@@ -192,6 +192,7 @@ lintStgExpr (StgCase scrut bndr alts_type alts) = runMaybeT $ do
         AlgAlt tc    -> check_bndr tc >> return True
         PrimAlt tc   -> check_bndr tc >> return True
         UbxTupAlt _  -> return False -- Binder is always dead in this case
+        UbxSumAlt _ _ -> return False -- Same as UbxTupAlt
         PolyAlt      -> return True
 
     MaybeT $ addInScopeVars [bndr | in_scope] $
