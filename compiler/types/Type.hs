@@ -1071,7 +1071,14 @@ thunk and a function takes a nullary unboxed tuple as an argument!
 
 type UnaryType = Type
 
-data RepType = UbxTupleRep [UnaryType] -- INVARIANT: never an empty list (see Note [Nullary unboxed tuple])
+data RepType = UbxTupleRep [UnaryType]
+                 -- ^ INVARIANT: never an empty list
+                 -- (see Note [Nullary unboxed tuple])
+             | UbxSumRep [UnaryType] [UnaryType]
+                 -- ^ Unlifted fields, lifted fields
+                 -- INVARIANT: Unlifted fields list only contains an 'Int#' for
+                 -- the tag, and an unlifted type that is as big as all other
+                 -- unlifted types. Lifted fields list only contains 'Any'.
              | UnaryRep UnaryType
 
 instance Outputable RepType where
@@ -1080,6 +1087,7 @@ instance Outputable RepType where
 
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (UbxTupleRep tys) = tys
+flattenRepType (UbxSumRep ubx_tys bx_tys) = ubx_tys ++ bx_tys
 flattenRepType (UnaryRep ty)     = [ty]
 
 -- | Looks through:
@@ -1110,26 +1118,17 @@ repType ty
       = go rec_nts' (newTyConInstRhs tc tys)
 
       | isUnboxedTupleTyCon tc
+      , let non_levity_tys = drop (length tys `div` 2) tys
+          -- See Note [Unboxed tuple levity vars] in TyCon
       = if null tys
          then UnaryRep voidPrimTy -- See Note [Nullary unboxed tuple]
-<<<<<<< HEAD
          else UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_levity_tys)
-      where
-          -- See Note [Unboxed tuple levity vars] in TyCon
-        non_levity_tys = drop (length tys `div` 2) tys
-=======
-         else UbxTupleRep (concatMap (flattenRepType . go rec_nts) tys)
 
       | isUnboxedSumTyCon tc
-      , let (ubx_fields, bx_fields) = unboxedSumTyConFields tc
-      = -- TODO: Should we create a new RepType for UnboxedSums? Not strictly
-        -- necessary but it may help debugging probably.
-        UbxTupleRep (intPrimTy
-                       : replicate ubx_fields intPrimTy
-                      ++ replicate bx_fields (anyTypeOfKind liftedTypeKind))
-
-    go _ ty = UnaryRep ty
->>>>>>> fix RepType of UnboxedSum types
+      , let (ubx_fields, bx_fields) = unboxedSumTyConFields tc tys
+      = -- TODO: Currently all unlifted types are held as 'Int#'.
+        UbxSumRep (intPrimTy : replicate ubx_fields intPrimTy)
+                  (replicate bx_fields (anyTypeOfKind liftedTypeKind))
 
     go rec_nts (CastTy ty _)
       = go rec_nts ty
@@ -1147,6 +1146,7 @@ typePrimRep :: UnaryType -> PrimRep
 typePrimRep ty
   = case repType ty of
       UbxTupleRep _ -> pprPanic "typePrimRep: UbxTupleRep" (ppr ty)
+      UbxSumRep _ _ -> pprPanic "typePrimRep: UbxSumRep" (ppr ty)
       UnaryRep rep -> go rep
     where go (TyConApp tc _)   = tyConPrimRep tc
           go (ForAllTy _ _)    = PtrRep
