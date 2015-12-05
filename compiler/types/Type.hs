@@ -253,7 +253,7 @@ import Control.Arrow    ( first, second )
 --
 -- Some primitive types are unboxed, such as @Int#@, whereas some are boxed
 -- but unlifted (such as @ByteArray#@).  The only primitive types that we
--- classify as algebraic are the unboxed tuples.
+-- classify as algebraic are the unboxed tuples and unboxed sums.
 --
 -- Some examples of type classifications that may make this a bit clearer are:
 --
@@ -262,7 +262,8 @@ import Control.Arrow    ( first, second )
 -- -----------------------------------------------------------------------------
 -- Int#         Yes             No              No              No
 -- ByteArray#   Yes             Yes             No              No
--- (\# a, b \#)   Yes             No              No              Yes
+-- (\# a, b \#) Yes             No              No              Yes
+-- (# a | b #)  Yes             No              No              Yes
 -- (  a, b  )   No              Yes             Yes             Yes
 -- [a]          No              Yes             Yes             Yes
 -- @
