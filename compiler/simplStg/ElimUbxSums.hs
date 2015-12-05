@@ -163,7 +163,8 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
            mkConAlt alt@(LitAlt{}, _, _, _) =
              pprPanic "elimUbxSumExpr.mkConAlt" (ppr alt)
 
-           mkConAlt alt@(DEFAULT, _, _, _) = return alt
+           mkConAlt alt@(DEFAULT, bndrs, useds, rhs) =
+             (DEFAULT, bndrs, useds,) <$> elimUbxSumExpr rhs
 
            -- We always need a DEFAULT case, because we transform AlgAlts to
            -- PrimAlt here. Which means our pattern matching is never
