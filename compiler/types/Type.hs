@@ -699,11 +699,19 @@ thunk and a function takes a nullary unboxed tuple as an argument!
 
 type UnaryType = Type
 
-data RepType = UbxTupleRep [UnaryType] -- INVARIANT: never an empty list (see Note [Nullary unboxed tuple])
+data RepType = UbxTupleRep [UnaryType]
+                 -- ^ INVARIANT: never an empty list
+                 -- (see Note [Nullary unboxed tuple])
+             | UbxSumRep [UnaryType] [UnaryType]
+                 -- ^ Unlifted fields, lifted fields
+                 -- INVARIANT: Unlifted fields list only contains an 'Int#' for
+                 -- the tag, and an unlifted type that is as big as all other
+                 -- unlifted types. Lifted fields list only contains 'Any'.
              | UnaryRep UnaryType
 
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (UbxTupleRep tys) = tys
+flattenRepType (UbxSumRep ubx_tys bx_tys) = ubx_tys ++ bx_tys
 flattenRepType (UnaryRep ty)     = [ty]
 
 -- | Looks through:
@@ -738,12 +746,10 @@ repType ty
          else UbxTupleRep (concatMap (flattenRepType . go rec_nts) tys)
 
       | isUnboxedSumTyCon tc
-      , let (ubx_fields, bx_fields) = unboxedSumTyConFields tc
-      = -- TODO: Should we create a new RepType for UnboxedSums? Not strictly
-        -- necessary but it may help debugging probably.
-        UbxTupleRep (intPrimTy
-                       : replicate ubx_fields intPrimTy
-                      ++ replicate bx_fields (anyTypeOfKind liftedTypeKind))
+      , let (ubx_fields, bx_fields) = unboxedSumTyConFields tc tys
+      = -- TODO: Currently all unlifted types are held as 'Int#'.
+        UbxSumRep (intPrimTy : replicate ubx_fields intPrimTy)
+                  (replicate bx_fields (anyTypeOfKind liftedTypeKind))
 
     go _ ty = UnaryRep ty
 
@@ -775,6 +781,7 @@ typePrimRep :: UnaryType -> PrimRep
 typePrimRep ty
   = case repType ty of
       UbxTupleRep _ -> pprPanic "typePrimRep: UbxTupleRep" (ppr ty)
+      UbxSumRep _ _ -> pprPanic "typePrimRep: UbxSumRep" (ppr ty)
       UnaryRep rep -> case rep of
         TyConApp tc _ -> tyConPrimRep tc
         FunTy _ _     -> PtrRep

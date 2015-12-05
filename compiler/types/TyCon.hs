@@ -110,7 +110,7 @@ module TyCon(
 
 import {-# SOURCE #-} TypeRep ( Kind, Type, PredType )
 import {-# SOURCE #-} DataCon ( DataCon, dataConExTyVars, dataConFieldLabels,
-                                dataConRepArgTys )
+                                dataConInstArgTys )
 import {-# SOURCE #-} Type    ( isPrimitiveType )
 
 import Binary
@@ -1649,11 +1649,11 @@ isUnboxedSumTyCon (AlgTyCon { algTcRhs = rhs })
 isUnboxedSumTyCon _ = False
 
 -- | Returns (# unboxed fields, # boxed fields) for a UnboxedSum TyCon.
-unboxedSumTyConFields :: TyCon -> (Int, Int)
-unboxedSumTyConFields tycon
+unboxedSumTyConFields :: TyCon -> [Type] -> (Int, Int)
+unboxedSumTyConFields tycon ty_args
   = let
       all_cons         = tyConDataCons tycon
-      cons_rep_arg_tys = map dataConRepArgTys all_cons
+      cons_rep_arg_tys = map (flip dataConInstArgTys ty_args) all_cons
 
       -- fst: prim types
       -- snd: non-prim types

@@ -208,6 +208,8 @@ unariseIdBinder us rho x = case repType (idType x) of
                            ys   = unboxedTupleBindersFrom us0 x tys
                            rho' = extendVarEnv rho x ys
                        in (us1, rho', ys)
+    UbxSumRep _ _   -> pprPanic "unariseIdBinder: Found unboxed sum type"
+                                (ppr x)
 
 unboxedTupleBindersFrom :: UniqSupply -> Id -> [UnaryType] -> [Id]
 unboxedTupleBindersFrom us x tys = zipWith (mkSysLocal fs) (uniqsFromSupply us) tys
