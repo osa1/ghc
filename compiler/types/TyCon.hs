@@ -1649,6 +1649,7 @@ isUnboxedSumTyCon (AlgTyCon { algTcRhs = rhs })
 isUnboxedSumTyCon _ = False
 
 -- | Returns (# unboxed fields, # boxed fields) for a UnboxedSum TyCon.
+-- NOTE: Tag field is not included.
 unboxedSumTyConFields :: TyCon -> [Type] -> (Int, Int)
 unboxedSumTyConFields tycon ty_args
   = let
