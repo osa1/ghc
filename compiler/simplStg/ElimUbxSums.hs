@@ -291,7 +291,7 @@ elimUbxConApp con stg_args ty_args
       (con_unboxed_args, con_boxed_args) = partition (isUnLiftedType . stgArgType) stg_args
 
       tuple_con = tupleDataCon Unboxed (length new_args)
-      tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag tuple_con)))
+      tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag con)))
 
       ubx_dummy_arg = StgLitArg (MachWord 0)
       bx_dummy_arg = StgVarArg uNDEFINED_ID
