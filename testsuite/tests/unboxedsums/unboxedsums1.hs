@@ -22,22 +22,16 @@ showEither3 :: Show a => (# a | Int# #) -> String
 showEither3 (# a | #) = "Left " ++ show a
 showEither3 (# | i #) = "Right " ++ show (I# i)
 
--- FIXME: This is causing a panic:
---
--- ghc-stage1: panic! (the 'impossible' happened)
---   (GHC version 7.11.20151203 for x86_64-unknown-linux):
---         ASSERT failed! file compiler/codeGen/StgCmmUtils.hs, line 398
---
--- showEither4
---   :: (# Int | Bool | String | Char | Either Int Bool | Int# | Float# #)
---   -> String
--- showEither4 (# i | | | | | | #) = "Alt0: " ++ show i
--- showEither4 (# | b | | | | | #) = "Alt1: " ++ show b
--- showEither4 (# | | s | | | | #) = "Alt2: " ++ show s
--- showEither4 (# | | | c | | | #) = "Alt3: " ++ show c
--- showEither4 (# | | | | e | | #) = "Alt4: " ++ show e
--- showEither4 (# | | | | | i | #) = "Alt5: " ++ show (I# i)
--- showEither4 (# | | | | | | f #) = "Alt6: " ++ show (F# f)
+type T = (# Int | Bool | String | Char | Either Int Bool | Int# | Float# #)
+
+showEither4 :: T -> String
+showEither4 (# i | | | | | | #) = "Alt0: " ++ show i
+showEither4 (# | b | | | | | #) = "Alt1: " ++ show b
+showEither4 (# | | s | | | | #) = "Alt2: " ++ show s
+showEither4 (# | | | c | | | #) = "Alt3: " ++ show c
+showEither4 (# | | | | e | | #) = "Alt4: " ++ show e
+showEither4 (# | | | | | i | #) = "Alt5: " ++ show (I# i)
+showEither4 (# | | | | | | f #) = "Alt5: " ++ show (F# f)
 
 main :: IO ()
 main = do
@@ -47,9 +41,14 @@ main = do
     putStrLn (showEither2 e2_2)
     putStrLn (showEither3 e3_1)
     putStrLn (showEither3 e3_2)
-    -- putStrLn (showEither4 e4_1)
-    -- putStrLn (showEither4 e4_2)
-    -- putStrLn (showEither4 e4_3)
+
+    putStrLn (showEither4 e4_1)
+    putStrLn (showEither4 e4_2)
+    putStrLn (showEither4 e4_3)
+    putStrLn (showEither4 e4_4)
+    putStrLn (showEither4 e4_5)
+    putStrLn (showEither4 e4_6)
+    putStrLn (showEither4 e4_7)
   where
     -- boxed types only
     e1_1, e1_2 :: Either1 String Int
@@ -67,9 +66,11 @@ main = do
     e3_2 = (# | 123# #)
 
     -- big arity
-    -- e4_1, e4_2, e4_3
-    --   :: (# Int | Bool | String |
-    --         Char | Either Int Bool | Int# | Float# #)
-    -- e4_1 = (# 10 | | | | | | #)
-    -- e4_2 = (# | | | | | 123# | #)
-    -- e4_3 = (# | | | | Right True | | #)
+    e4_1, e4_2, e4_3, e4_4, e4_5, e4_6, e4_7 :: T
+    e4_1 = (# 10 | | | | | | #)
+    e4_2 = (# | False | | | | | #)
+    e4_3 = (# | | "ok" | | | | #)
+    e4_4 = (# | | | 'a' | | | #)
+    e4_5 = (# | | | | Right True | | #)
+    e4_6 = (# | | | | | 123# | #)
+    e4_7 = (# | | | | | | 54.3# #)
