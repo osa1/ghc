@@ -293,13 +293,13 @@ elimUbxConApp con stg_args ty_args
       tuple_con = tupleDataCon Unboxed (length new_args)
       tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag tuple_con)))
 
-      -- FIXME: Is it safe to use this for lifted arguments too?
-      dummy_arg = StgLitArg (MachWord 0)
+      ubx_dummy_arg = StgLitArg (MachWord 0)
+      bx_dummy_arg = StgVarArg uNDEFINED_ID
 
       unboxed_args =
-        con_unboxed_args ++ replicate (fields_unboxed - length con_unboxed_args) dummy_arg
+        con_unboxed_args ++ replicate (fields_unboxed - length con_unboxed_args) ubx_dummy_arg
       boxed_args   =
-        con_boxed_args ++ replicate (fields_boxed - length con_boxed_args) dummy_arg
+        con_boxed_args ++ replicate (fields_boxed - length con_boxed_args) bx_dummy_arg
 
       new_args = tag_arg : unboxed_args ++ boxed_args
     in
