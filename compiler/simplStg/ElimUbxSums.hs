@@ -90,7 +90,8 @@ elimUbxSum (StgRec bndrs)
 
 elimUbxSumRhs :: StgRhs -> Type -> UniqSM StgRhs
 elimUbxSumRhs (StgRhsClosure ccs b_info fvs update_flag srt args expr) ty
-  = StgRhsClosure ccs b_info fvs update_flag srt (map elimUbxSumTy args)
+  = StgRhsClosure ccs b_info (map elimUbxSumTy fvs)
+                  update_flag (elimUbxSumSRT srt) (map elimUbxSumTy args)
       <$> elimUbxSumExpr expr (Just ty)
 
 elimUbxSumRhs (StgRhsCon ccs con args) ty
@@ -142,6 +143,7 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
   = do e' <- elimUbxSumExpr e (Just (idType bndr))
 
        let bndr' = elimUbxSumTy bndr
+           srt'  = elimUbxSumSRT srt
 
        tag_binder <- mkSysLocalM (mkFastString "tag") intPrimTy
 
@@ -199,12 +201,12 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
            dummyDefaultAlt = (DEFAULT, [], [], StgApp uNDEFINED_ID [])
 
        inner_case <-
-         StgCase (StgApp tag_binder []) case_lives alts_lives tag_binder srt (PrimAlt intPrimTyCon)
+         StgCase (StgApp tag_binder []) case_lives alts_lives tag_binder srt' (PrimAlt intPrimTyCon)
            . mkDefaultAlt <$> mapM mkConAlt alts
 
        let outer_case =
              -- TODO: not sure about lives parts
-             StgCase e' case_lives alts_lives bndr' srt (UbxTupAlt (length args))
+             StgCase e' case_lives alts_lives bndr' srt' (UbxTupAlt (length args))
                [ (DataAlt (tupleDataCon Unboxed (length args)),
                   args,
                   replicate (length args) True, -- TODO: fix this
@@ -215,7 +217,7 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
   | otherwise
   = do e' <- elimUbxSumExpr e (Just (idType bndr))
        alts' <- mapM elimUbxSumAlt alts
-       return (StgCase e' case_lives alts_lives (elimUbxSumTy bndr) srt alt_ty alts')
+       return (StgCase e' case_lives alts_lives (elimUbxSumTy bndr) (elimUbxSumSRT srt) alt_ty alts')
 
 elimUbxSumExpr (StgLet bind e) ty
   = StgLet <$> elimUbxSum bind <*> elimUbxSumExpr e ty
@@ -231,6 +233,12 @@ elimUbxSumExpr (StgTick tick e) ty
 elimUbxSumAlt :: StgAlt -> UniqSM StgAlt
 elimUbxSumAlt (con, bndrs, uses, e)
   = (con, map elimUbxSumTy bndrs, uses,) <$> elimUbxSumExpr e Nothing
+
+--------------------------------------------------------------------------------
+
+elimUbxSumSRT :: SRT -> SRT
+elimUbxSumSRT NoSRT = NoSRT
+elimUbxSumSRT (SRTEntries ids) = SRTEntries (mapVarSet elimUbxSumTy ids)
 
 --------------------------------------------------------------------------------
 
