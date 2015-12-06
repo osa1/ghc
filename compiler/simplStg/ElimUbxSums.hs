@@ -119,7 +119,7 @@ elimUbxSumExpr (StgApp v args) _
 elimUbxSumExpr e@StgLit{} _
   = return e
 
-elimUbxSumExpr e@(StgConApp con args) ty
+elimUbxSumExpr (StgConApp con args) ty
   | isUnboxedSumCon con
   , Just (_, ty_args) <- fmap splitTyConApp ty
   = -- This can only happen in scrutinee position of case expressions.
@@ -128,7 +128,7 @@ elimUbxSumExpr e@(StgConApp con args) ty
     return (uncurry StgConApp (elimUbxConApp con args ty_args))
 
   | otherwise
-  = return e
+  = return (StgConApp con (map elimUbxSumArg args))
 
 elimUbxSumExpr (StgOpApp op args ty) _
   = return (StgOpApp op (map elimUbxSumArg args) (elimUbxSumTy' ty))
@@ -229,7 +229,8 @@ elimUbxSumExpr (StgTick tick e) ty
 --------------------------------------------------------------------------------
 
 elimUbxSumAlt :: StgAlt -> UniqSM StgAlt
-elimUbxSumAlt (con, xs, uses, e) = (con, xs, uses,) <$> elimUbxSumExpr e Nothing
+elimUbxSumAlt (con, bndrs, uses, e)
+  = (con, map elimUbxSumTy bndrs, uses,) <$> elimUbxSumExpr e Nothing
 
 --------------------------------------------------------------------------------
 
