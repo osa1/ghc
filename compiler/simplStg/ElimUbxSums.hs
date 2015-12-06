@@ -83,10 +83,10 @@ elimUbxSums = mapM elimUbxSum
 
 elimUbxSum :: StgBinding -> UniqSM StgBinding
 elimUbxSum (StgNonRec bndr rhs)
-  = StgNonRec (elimUbxSumTy bndr) <$> elimUbxSumRhs rhs (idType bndr)
+  = StgNonRec (elimUbxSumTy bndr) <$> elimUbxSumRhs rhs (bndrType bndr)
 
 elimUbxSum (StgRec bndrs)
-  = StgRec <$> mapM (\(bndr, rhs) -> (elimUbxSumTy bndr,) <$> elimUbxSumRhs rhs (idType bndr)) bndrs
+  = StgRec <$> mapM (\(bndr, rhs) -> (elimUbxSumTy bndr,) <$> elimUbxSumRhs rhs (bndrType bndr)) bndrs
 
 elimUbxSumRhs :: StgRhs -> Type -> UniqSM StgRhs
 elimUbxSumRhs (StgRhsClosure ccs b_info fvs update_flag srt args expr) ty
@@ -140,7 +140,7 @@ elimUbxSumExpr (StgLam args e) _
 
 elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
   | UbxSumAlt ubx_fields bx_fields <- alt_ty
-  = do e' <- elimUbxSumExpr e (Just (idType bndr))
+  = do e' <- elimUbxSumExpr e (Just (bndrType bndr))
 
        let bndr' = elimUbxSumTy bndr
            srt'  = elimUbxSumSRT srt
@@ -158,7 +158,7 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
        let genRns :: [Var] -> [Var] -> [Var] -> [(Var, Var)]
            genRns _ _ [] = []
            genRns ubx bx (v : vs)
-             | isUnLiftedType (idType v)
+             | isUnLiftedType (bndrType v)
              , (ubx_v : ubx_vs) <- ubx
              = (v, ubx_v) : genRns ubx_vs bx vs
 
@@ -215,7 +215,7 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
        return outer_case
 
   | otherwise
-  = do e' <- elimUbxSumExpr e (Just (idType bndr))
+  = do e' <- elimUbxSumExpr e (Just (bndrType bndr))
        alts' <- mapM elimUbxSumAlt alts
        return (StgCase e' case_lives alts_lives (elimUbxSumTy bndr) (elimUbxSumSRT srt) alt_ty alts')
 
@@ -250,7 +250,7 @@ elimUbxSumArg arg@StgLitArg{}
   = arg
 
 elimUbxSumTy :: Var -> Var
-elimUbxSumTy x = setIdType x (elimUbxSumTy' (idType x))
+elimUbxSumTy x = setIdType x (elimUbxSumTy' (bndrType x))
 
 elimUbxSumTy' :: Type -> Type
 elimUbxSumTy' t@TyVarTy{}
@@ -304,6 +304,11 @@ elimUbxConApp con stg_args ty_args
       new_args = tag_arg : unboxed_args ++ boxed_args
     in
       (tuple_con, new_args)
+
+--------------------------------------------------------------------------------
+
+bndrType :: Var -> Type
+bndrType = expandTypeSynonyms . idType
 
 --------------------------------------------------------------------------------
 
