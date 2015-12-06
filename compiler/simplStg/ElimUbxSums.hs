@@ -83,45 +83,64 @@ elimUbxSums = mapM elimUbxSum
 
 elimUbxSum :: StgBinding -> UniqSM StgBinding
 elimUbxSum (StgNonRec bndr rhs)
-  = StgNonRec (elimUbxSumTy bndr) <$> elimUbxSumRhs rhs
+  = StgNonRec (elimUbxSumTy bndr) <$> elimUbxSumRhs rhs (idType bndr)
+
 elimUbxSum (StgRec bndrs)
-  = StgRec <$> mapM (\(bndr, rhs) -> (elimUbxSumTy bndr,) <$> elimUbxSumRhs rhs) bndrs
+  = StgRec <$> mapM (\(bndr, rhs) -> (elimUbxSumTy bndr,) <$> elimUbxSumRhs rhs (idType bndr)) bndrs
 
-elimUbxSumRhs :: StgRhs -> UniqSM StgRhs
-elimUbxSumRhs (StgRhsClosure ccs b_info fvs update_flag srt args expr)
-  = StgRhsClosure ccs b_info fvs update_flag srt (map elimUbxSumTy args) <$> elimUbxSumExpr expr
+elimUbxSumRhs :: StgRhs -> Type -> UniqSM StgRhs
+elimUbxSumRhs (StgRhsClosure ccs b_info fvs update_flag srt args expr) ty
+  = StgRhsClosure ccs b_info fvs update_flag srt (map elimUbxSumTy args)
+      <$> elimUbxSumExpr expr (Just ty)
 
-elimUbxSumRhs (StgRhsCon ccs con args)
+elimUbxSumRhs (StgRhsCon ccs con args) ty
   | isUnboxedTupleCon con
-  = return (uncurry (StgRhsCon ccs) (elimUbxConApp con (map elimUbxSumArg args)))
+  , (_, ty_args) <- splitTyConApp ty
+  = return (uncurry (StgRhsCon ccs) (elimUbxConApp con args ty_args))
 
   | otherwise
   = return (StgRhsCon ccs con (map elimUbxSumArg args))
 
-elimUbxSumExpr :: StgExpr -> UniqSM StgExpr
-elimUbxSumExpr b@(StgApp v args)
+elimUbxSumExpr :: StgExpr -> Maybe Type -> UniqSM StgExpr
+elimUbxSumExpr (StgApp v []) (Just ty)
+  | isUnboxedSumType ty
+  , (tycon, ty_args) <- splitTyConApp ty
+  , let (fields_unboxed, fields_boxed) =
+          unboxedSumTyConFields tycon ty_args
+  , let ty' =
+          mkTupleTy Unboxed $
+            intPrimTy : replicate fields_unboxed intPrimTy
+                     ++ replicate fields_boxed liftedAny
+  = return (StgApp (setIdType v ty') [])
+
+elimUbxSumExpr (StgApp v args) _
   = return (StgApp (elimUbxSumTy v) (map elimUbxSumArg args))
 
-elimUbxSumExpr e@StgLit{}
+elimUbxSumExpr e@StgLit{} _
   = return e
 
-elimUbxSumExpr e@(StgConApp con args)
+elimUbxSumExpr e@(StgConApp con args) ty
   | isUnboxedSumCon con
-  = return (uncurry StgConApp (elimUbxConApp con (map elimUbxSumArg args)))
+  , Just (_, ty_args) <- fmap splitTyConApp ty
+  = -- This can only happen in scrutinee position of case expressions.
+    -- I don't like how we allow complex expressions in scrutinee position in an
+    -- ANF AST. (I think this was necessary for unboxed tuples)
+    return (uncurry StgConApp (elimUbxConApp con args ty_args))
 
   | otherwise
   = return e
 
-elimUbxSumExpr (StgOpApp op args ty)
+elimUbxSumExpr (StgOpApp op args ty) _
   = return (StgOpApp op (map elimUbxSumArg args) (elimUbxSumTy' ty))
 
-elimUbxSumExpr (StgLam args e)
+elimUbxSumExpr (StgLam args e) _
   = -- this shouldn't happen but whatever
-    StgLam (map elimUbxSumTy args) <$> elimUbxSumExpr e
+    StgLam (map elimUbxSumTy args) <$> elimUbxSumExpr e Nothing
 
-elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
+elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
   | UbxSumAlt ubx_fields bx_fields <- alt_ty
-  = do e' <- elimUbxSumExpr e
+  = do e' <- elimUbxSumExpr e (Just (idType bndr))
+
        let bndr' = elimUbxSumTy bndr
 
        tag_binder <- mkSysLocalM (mkFastString "tag") intPrimTy
@@ -152,20 +171,20 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
 
            mkConAlt (DataAlt con, bndrs, _useds, rhs) = do
                      -- TODO: we should probably make use of `_used`
-             rhs' <- elimUbxSumExpr rhs
+             rhs' <- elimUbxSumExpr rhs ty
 
              let rhs_renamed =
                    foldr rnStgExpr rhs'
                          (genRns ubx_field_binders boxed_field_binders bndrs)
 
              (LitAlt (MachInt (fromIntegral (dataConTag con))), [], [],)
-               <$> elimUbxSumExpr rhs_renamed
+               <$> elimUbxSumExpr rhs_renamed ty -- FIXME: um, why elimExpr rhs twice?
 
            mkConAlt alt@(LitAlt{}, _, _, _) =
              pprPanic "elimUbxSumExpr.mkConAlt" (ppr alt)
 
-           mkConAlt alt@(DEFAULT, bndrs, useds, rhs) =
-             (DEFAULT, bndrs, useds,) <$> elimUbxSumExpr rhs
+           mkConAlt (DEFAULT, bndrs, useds, rhs) =
+             (DEFAULT, bndrs, useds,) <$> elimUbxSumExpr rhs ty
 
            -- We always need a DEFAULT case, because we transform AlgAlts to
            -- PrimAlt here. Which means our pattern matching is never
@@ -194,28 +213,27 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
        return outer_case
 
   | otherwise
-  = do e' <- elimUbxSumExpr e
+  = do e' <- elimUbxSumExpr e (Just (idType bndr))
        alts' <- mapM elimUbxSumAlt alts
        return (StgCase e' case_lives alts_lives (elimUbxSumTy bndr) srt alt_ty alts')
 
-elimUbxSumExpr (StgLet bind e)
-  = StgLet <$> elimUbxSum bind <*> elimUbxSumExpr e
+elimUbxSumExpr (StgLet bind e) ty
+  = StgLet <$> elimUbxSum bind <*> elimUbxSumExpr e ty
 
-elimUbxSumExpr (StgLetNoEscape live_in_let live_in_bind bind e)
-  = StgLetNoEscape live_in_let live_in_bind <$> elimUbxSum bind <*> elimUbxSumExpr e
+elimUbxSumExpr (StgLetNoEscape live_in_let live_in_bind bind e) ty
+  = StgLetNoEscape live_in_let live_in_bind <$> elimUbxSum bind <*> elimUbxSumExpr e ty
 
-elimUbxSumExpr (StgTick tick e)
-  = StgTick tick <$> elimUbxSumExpr e
+elimUbxSumExpr (StgTick tick e) ty
+  = StgTick tick <$> elimUbxSumExpr e ty
 
 --------------------------------------------------------------------------------
 
 elimUbxSumAlt :: StgAlt -> UniqSM StgAlt
-elimUbxSumAlt (con, xs, uses, e) = (con, xs, uses,) <$> elimUbxSumExpr e
+elimUbxSumAlt (con, xs, uses, e) = (con, xs, uses,) <$> elimUbxSumExpr e Nothing
 
 --------------------------------------------------------------------------------
 
 elimUbxSumArg :: StgArg -> StgArg
-
 elimUbxSumArg (StgVarArg v)
   = StgVarArg (elimUbxSumTy v)
 
@@ -235,7 +253,7 @@ elimUbxSumTy' (AppTy t1 t2)
 elimUbxSumTy' (TyConApp con args)
   | isUnboxedSumTyCon con
   , (ubx_fields, bx_fields) <- unboxedSumTyConFields con args
-  = mkTupleTy Unboxed (replicate ubx_fields intPrimTy ++ replicate bx_fields liftedAny)
+  = mkTupleTy Unboxed (intPrimTy : replicate ubx_fields intPrimTy ++ replicate bx_fields liftedAny)
 
   | otherwise
   = TyConApp con (map elimUbxSumTy' args)
@@ -254,24 +272,19 @@ liftedAny = anyTypeOfKind liftedTypeKind
 
 --------------------------------------------------------------------------------
 
--- TODO: We should memoize this somehow, no need to generate same information
--- for every DataCon of a TyCon.
---
--- !!! I think we should memoize this in TycCon (maybe in AlgTyConRhs.SumTyCon) !!!
-elimUbxConApp :: DataCon -> [StgArg] -> (DataCon, [StgArg])
-elimUbxConApp con args
+elimUbxConApp :: DataCon -> [StgArg] -> [Type] -> (DataCon, [StgArg])
+elimUbxConApp con stg_args ty_args
   = let
       (fields_unboxed, fields_boxed) =
-        unboxedSumTyConFields (dataConTyCon con)
-          (map mkTyVarTy $ dataConUnivTyVars con) -- FIXME: this argument is wrong
+        unboxedSumTyConFields (dataConTyCon con) ty_args
 
       con_unboxed_args, con_boxed_args :: [StgArg]
-      (con_unboxed_args, con_boxed_args) = partition (isUnLiftedType . stgArgType) args
+      (con_unboxed_args, con_boxed_args) = partition (isUnLiftedType . stgArgType) stg_args
 
       tuple_con = tupleDataCon Unboxed (length new_args)
       tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag tuple_con)))
 
-      -- FIXME: What to put here in place of undefined?
+      -- FIXME: Is it safe to use this for lifted arguments too?
       dummy_arg = StgLitArg (MachWord 0)
 
       unboxed_args =
