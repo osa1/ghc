@@ -6,16 +6,18 @@ module ElimUbxSums ( elimUbxSums ) where
 
 import BasicTypes (Boxity (..))
 import CoreSyn (AltCon (..))
+import CostCentre (currentCCS)
 import DataCon
 import FastString (mkFastString)
 import Id (idType, mkSysLocalM, setIdType)
 import Literal (Literal (..))
 import Outputable
+import PrimOp (PrimOp (..), primOpSig)
 import StgSyn
 import TyCon
 import Type
 import TypeRep (Type (..))
-import TysPrim (anyTypeOfKind, intPrimTy, intPrimTyCon)
+import TysPrim
 import TysWiredIn (tupleDataCon, mkTupleTy)
 import UniqSet (mapUniqSet)
 import UniqSupply
@@ -28,6 +30,7 @@ import Control.Applicative
 #endif
 
 import Control.Monad (replicateM)
+import Data.Maybe (maybeToList)
 import Data.List (partition)
 
 --------------------------------------------------------------------------------
@@ -51,7 +54,12 @@ elimUbxSumRhs (StgRhsClosure ccs b_info fvs update_flag srt args expr) ty
 elimUbxSumRhs (StgRhsCon ccs con args) ty
   | isUnboxedTupleCon con
   , (_, ty_args) <- splitTyConApp ty
-  = return (uncurry (StgRhsCon ccs) (elimUbxConApp con args ty_args))
+  = do let (con', args') = elimUbxConApp con args ty_args
+       (bindings, coerced_args) <- genCoercions args'
+       return $ if null bindings
+                  then StgRhsCon ccs con' coerced_args
+                  else StgRhsClosure ccs stgSatOcc [] SingleEntry NoSRT [] $
+                         foldr mkBinding (StgConApp con' coerced_args) bindings
 
   | otherwise
   = return (StgRhsCon ccs con (map elimUbxSumArg args))
@@ -77,10 +85,15 @@ elimUbxSumExpr e@StgLit{} _
 elimUbxSumExpr (StgConApp con args) ty
   | isUnboxedSumCon con
   , Just (_, ty_args) <- fmap splitTyConApp ty
-  = -- This can only happen in scrutinee position of case expressions.
-    -- I don't like how we allow complex expressions in scrutinee position in an
-    -- ANF AST. (I think this was necessary for unboxed tuples)
-    return (uncurry StgConApp (elimUbxConApp con args ty_args))
+  = do -- This can only happen in scrutinee position of case expressions.
+       -- I don't like how we allow complex expressions in scrutinee position in an
+       -- ANF AST. (I think this was necessary for unboxed tuples)
+       let (con', args') = elimUbxConApp con args ty_args
+       (bindings, coerced_args) <- genCoercions args'
+       let e = StgConApp con' coerced_args
+       return $ if null bindings
+                  then e
+                  else foldr mkBinding e bindings
 
   | otherwise
   = return (StgConApp con (map elimUbxSumArg args))
@@ -127,14 +140,41 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
 
            mkConAlt (DataAlt con, bndrs, _useds, rhs) = do
                      -- TODO: we should probably make use of `_used`
-             rhs' <- elimUbxSumExpr rhs ty
+             let
+               mb_coerce_bndr :: Var -> Maybe PrimOp
+               mb_coerce_bndr v
+                 | idTy == intPrimTy    = Nothing
+                 | idTy == floatPrimTy  = Just Int2FloatOp
+                 | idTy == doublePrimTy = Just Int2DoubleOp
+                 | idTy == word32PrimTy = Just Int2WordOp
+                 | -- Don't generate coercion for boxed types
+                   not (isPrimitiveType idTy) = Nothing
+                 | otherwise            = pprPanic "elimUbxSumExpr.mb_coerce_bndr" (ppr idTy)
+                 where
+                   idTy = idType v
 
-             let rhs_renamed =
-                   foldr rnStgExpr rhs'
-                         (genRns ubx_field_binders boxed_field_binders bndrs)
+               rns :: [(Var, Var)]
+               rns = genRns ubx_field_binders boxed_field_binders bndrs
+
+               coercions :: [(Maybe PrimOp, Var)]
+               coercions = zip (map mb_coerce_bndr bndrs) (map snd rns)
+
+               apply_coercions :: [(Maybe PrimOp, Var)] -> StgExpr -> UniqSM StgExpr
+               apply_coercions [] e                    = return e
+               apply_coercions ((Nothing, _) : rest) e = apply_coercions rest e
+               apply_coercions ((Just op, v) : rest) e = do
+                 e' <- apply_coercions rest e
+                 let (_, _, op_ret_ty, _, _) = primOpSig op
+                 v' <- mkSysLocalM (mkFastString "co") op_ret_ty
+                 let rhs :: StgRhs
+                     rhs = StgRhsClosure currentCCS stgSatOcc [v] SingleEntry NoSRT []
+                             (StgOpApp (StgPrimOp op) [StgVarArg v] op_ret_ty)
+                 return (StgLet (StgNonRec v' rhs) (rnStgExpr (v, v') e'))
+
+             rhs_renamed <- apply_coercions coercions (foldr rnStgExpr rhs rns)
 
              (LitAlt (MachInt (fromIntegral (dataConTag con))), [], [],)
-               <$> elimUbxSumExpr rhs_renamed ty -- FIXME: um, why elimExpr rhs twice?
+               <$> elimUbxSumExpr rhs_renamed ty
 
            mkConAlt alt@(LitAlt{}, _, _, _) =
              pprPanic "elimUbxSumExpr.mkConAlt" (ppr alt)
@@ -181,6 +221,41 @@ elimUbxSumExpr (StgLetNoEscape live_in_let live_in_bind bind e) ty
 
 elimUbxSumExpr (StgTick tick e) ty
   = StgTick tick <$> elimUbxSumExpr e ty
+
+--------------------------------------------------------------------------------
+
+-- | Generate and return let-bindings that apply primops to arguments + new
+-- argument to apply to the DataCon. (These new arguments are bound by the let
+-- bindings)
+genCoercions :: [(Maybe PrimOp, StgArg)] -> UniqSM ([(Var, StgRhs)], [StgArg])
+genCoercions []
+  = return ([], [])
+
+genCoercions ((Nothing, arg) : rest)
+  = do (bs, as) <- genCoercions rest
+       return (bs, arg : as)
+
+genCoercions ((Just op, arg) : rest)
+  = do (bs, as) <- genCoercions rest
+
+       let
+         mb_arg_var (StgVarArg v) = Just v
+         mb_arg_var  StgLitArg{}  = Nothing
+
+         (_, _, op_ret_ty, _, _) = primOpSig op
+
+         rhs = StgRhsClosure currentCCS stgSatOcc
+                             (maybeToList (mb_arg_var arg))
+                             SingleEntry NoSRT []
+                             (StgOpApp (StgPrimOp op) [arg] op_ret_ty)
+
+
+       v <- mkSysLocalM (mkFastString "co") op_ret_ty
+
+       return ((v, rhs) : bs, StgVarArg v : as)
+
+mkBinding :: (Var, StgRhs) -> StgExpr -> StgExpr
+mkBinding (bndr, rhs) body = StgLet (StgNonRec bndr rhs) body
 
 --------------------------------------------------------------------------------
 
@@ -235,7 +310,7 @@ liftedAny = anyTypeOfKind liftedTypeKind
 
 --------------------------------------------------------------------------------
 
-elimUbxConApp :: DataCon -> [StgArg] -> [Type] -> (DataCon, [StgArg])
+elimUbxConApp :: DataCon -> [StgArg] -> [Type] -> (DataCon, [(Maybe PrimOp, StgArg)])
 elimUbxConApp con stg_args ty_args
   = let
       (fields_unboxed, fields_boxed) =
@@ -244,18 +319,29 @@ elimUbxConApp con stg_args ty_args
       con_unboxed_args, con_boxed_args :: [StgArg]
       (con_unboxed_args, con_boxed_args) = partition (isUnLiftedType . stgArgType) stg_args
 
+      mb_coerce :: StgArg -> Maybe PrimOp
+      mb_coerce arg
+        | argTy == intPrimTy    = Nothing
+        | argTy == floatPrimTy  = Just Float2IntOp
+        | argTy == doublePrimTy = Just Double2IntOp
+        | argTy == word32PrimTy = Just Word2IntOp
+        | otherwise             = pprPanic "elimUbxConApp.coerce" (ppr argTy)
+        where
+          argTy = stgArgType arg
+
       tuple_con = tupleDataCon Unboxed (length new_args)
       tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag con)))
 
-      ubx_dummy_arg = StgLitArg (MachWord 0)
-      bx_dummy_arg = StgVarArg uNDEFINED_ID
+      ubx_dummy_arg = (Nothing, StgLitArg (MachWord 0))
+      bx_dummy_arg  = StgVarArg uNDEFINED_ID
 
       unboxed_args =
-        con_unboxed_args ++ replicate (fields_unboxed - length con_unboxed_args) ubx_dummy_arg
+        zip (map mb_coerce con_unboxed_args) con_unboxed_args
+          ++ replicate (fields_unboxed - length con_unboxed_args) ubx_dummy_arg
       boxed_args   =
         con_boxed_args ++ replicate (fields_boxed - length con_boxed_args) bx_dummy_arg
 
-      new_args = tag_arg : unboxed_args ++ boxed_args
+      new_args = (Nothing, tag_arg) : unboxed_args ++ map (Nothing,) boxed_args
     in
       (tuple_con, new_args)
 
