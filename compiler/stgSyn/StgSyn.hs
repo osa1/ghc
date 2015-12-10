@@ -758,7 +758,7 @@ pprStgOp (StgFCallOp op _) = ppr op
 instance Outputable AltType where
   ppr PolyAlt            = text "Polymorphic"
   ppr (UbxTupAlt n)      = text "UbxTup" <+> ppr n
-  ppr (UbxSumAlt ubx bx) = text "UbxTup" <+> ppr (ubx, bx)
+  ppr (UbxSumAlt ubx bx) = text "UbxSum" <+> ppr (ubx, bx)
   ppr (AlgAlt tc)        = text "Alg"    <+> ppr tc
   ppr (PrimAlt tc)       = text "Prim"   <+> ppr tc
 
