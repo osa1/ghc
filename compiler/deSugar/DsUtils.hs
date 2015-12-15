@@ -699,6 +699,7 @@ mkSelectorBinds is_strict ticks pat val_expr
     is_simple_lpat p = is_simple_pat (unLoc p)
 
     is_simple_pat (TuplePat ps Boxed _) = all is_triv_lpat ps
+    is_simple_pat (SumPat p _ _ _)      = is_triv_lpat p
     is_simple_pat pat@(ConPatOut{})     = case unLoc (pat_con pat) of
         RealDataCon con -> isProductTyCon (dataConTyCon con)
                            && all is_triv_lpat (hsConPatArgs (pat_args pat))
