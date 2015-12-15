@@ -1083,6 +1083,8 @@ data RepType = UbxTupleRep [UnaryType]
 
 instance Outputable RepType where
   ppr (UbxTupleRep tys) = ptext (sLit "UbxTupleRep") <+> ppr tys
+  ppr (UbxSumRep ubx_tys bx_tys) =
+    ptext (sLit "UbxSumRep") <+> ppr ubx_tys <+> ppr bx_tys
   ppr (UnaryRep ty)     = ptext (sLit "UnaryRep")    <+> ppr ty
 
 flattenRepType :: RepType -> [UnaryType]

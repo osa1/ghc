@@ -572,7 +572,7 @@ tc_hs_type mode (HsTupleTy hs_tup_sort tys) exp_kind
                   HsConstraintTuple -> ConstraintTuple
                   _                 -> panic "tc_hs_type HsTupleTy"
 
-tc_hs_type mode hs_ty@(HsUSumTy hs_tys) exp_kind
+tc_hs_type mode (HsUSumTy hs_tys) exp_kind
   = do { levs <- newFlexiTyVarTys (length hs_tys) levityTy
        ; let arg_kinds = map tYPE levs
        ; tau_tys <- zipWithM (tc_lhs_type mode) hs_tys arg_kinds
