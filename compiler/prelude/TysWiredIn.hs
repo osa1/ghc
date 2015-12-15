@@ -607,8 +607,8 @@ mk_tuple boxity arity = (tycon, tuple_con)
             , gHC_TUPLE
             , mkFunTys (nOfThem arity liftedTypeKind) liftedTypeKind
             , arity
-            , boxed_tyvars
-            , mkTyVarTys boxed_tyvars
+            , boxed_tyvars -- tyvars
+            , mkTyVarTys boxed_tyvars -- tyvar_tys
             , VanillaAlgTyCon (mkPrelTyConRepName tc_name)
             )
             -- See Note [Unboxed tuple levity vars] in TyCon
@@ -625,8 +625,8 @@ mk_tuple boxity arity = (tycon, tuple_con)
               mkFunTys (map tyVarKind open_tvs) $
               unliftedTypeKind
             , arity * 2
-            , all_tvs
-            , mkTyVarTys open_tvs
+            , all_tvs -- tyvars
+            , mkTyVarTys open_tvs -- tyvar_tys
             , UnboxedAlgTyCon
             )
 
@@ -709,24 +709,34 @@ unboxedSumArr = listArray (0,mAX_SUM_SIZE) [mk_sum i | i <- [0..mAX_SUM_SIZE]]
 mk_sum :: Int -> (TyCon, Array Int DataCon)
 mk_sum arity = (tycon, sum_cons)
   where
-    tycon   = mkSumTyCon tc_name tc_kind arity tyvars (elems sum_cons)
+    tyvars = mkTemplateTyVars (replicate arity levityTy ++
+                               map (tYPE . mkTyVarTy) (take arity tyvars))
+      -- Same as unboxed tuples: This must be one call to mkTemplateTyVars
+
+    (lev_tvs, open_tvs) = splitAt arity tyvars
+
+    tycon   = mkSumTyCon tc_name tc_kind (arity * 2) tyvars (elems sum_cons)
                          UnboxedAlgTyCon
 
     tc_name = mkWiredInName gHC_PRIM (mkSumTyConOcc arity) tc_uniq
                             (ATyCon tycon) BuiltInSyntax
-    tc_kind = mkFunTys (map tyVarKind tyvars) unliftedTypeKind
-
-    tyvars = take arity alphaTyVars
+    tc_kind = mkInvForAllTys lev_tvs $
+              mkFunTys (map tyVarKind open_tvs) $
+              unliftedTypeKind
 
     sum_cons = listArray (0,arity-1) [sum_con i | i <- [0..arity-1]]
-    sum_con i = let dc = pcDataCon dc_name tyvars [(tyvar_tys !! i)] tycon
+    sum_con i = let dc = pcDataCon dc_name
+                                   tyvars -- univ tyvars
+                                   [tyvar_tys !! i] -- arg types
+                                   tycon
+
                     dc_name = mkWiredInName gHC_PRIM
                                             (mkSumDataConOcc i arity)
                                             (dc_uniq i)
                                             (AConLike (RealDataCon dc))
                                             BuiltInSyntax
                 in dc
-    tyvar_tys = mkTyVarTys tyvars
+    tyvar_tys = mkTyVarTys open_tvs
     tc_uniq   = mkSumTyConUnique   arity
     dc_uniq i = mkSumDataConUnique i arity
 
