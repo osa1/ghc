@@ -1,5 +1,5 @@
 module Type where
-import TyCon
+import {-# SOURCE #-} TyCon
 import {-# SOURCE #-} TyCoRep( Type, Kind )
 
 isPredTy :: Type -> Bool
