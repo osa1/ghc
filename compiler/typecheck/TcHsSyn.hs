@@ -89,7 +89,7 @@ hsPatType (ListPat _ ty Nothing)      = mkListTy ty
 hsPatType (ListPat _ _ (Just (ty,_))) = ty
 hsPatType (PArrPat _ ty)              = mkPArrTy ty
 hsPatType (TuplePat _ bx tys)         = mkTupleTy bx tys
-hsPatType (SumPat _ _ _ tys)    = mkSumTy tys
+hsPatType (SumPat _ _ _ tys)          = mkSumTy tys
 hsPatType (ConPatOut { pat_con = L _ con, pat_arg_tys = tys })
                                       = conLikeResTy con tys
 hsPatType (SigPatOut _ ty)            = ty
