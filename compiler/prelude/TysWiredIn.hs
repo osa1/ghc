@@ -678,9 +678,9 @@ mk_sum arity = (tycon, sum_cons)
 
     tc_name = mkWiredInName gHC_PRIM (mkSumTyConOcc arity) tc_uniq
                             (ATyCon tycon) BuiltInSyntax
-    tc_kind = mkArrowKinds (map tyVarKind tyvars) unliftedTypeKind
+    tc_kind = mkFunTys (map tyVarKind tyvars) unliftedTypeKind
 
-    tyvars = take arity openAlphaTyVars
+    tyvars = take arity alphaTyVars
 
     sum_cons = listArray (0,arity-1) [sum_con i | i <- [0..arity-1]]
     sum_con i = let dc = pcDataCon dc_name tyvars [(tyvar_tys !! i)] tycon

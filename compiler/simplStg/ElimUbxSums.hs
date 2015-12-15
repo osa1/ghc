@@ -16,7 +16,7 @@ import PrimOp (PrimOp (..), primOpSig)
 import StgSyn
 import TyCon
 import Type
-import TypeRep (Type (..))
+import TyCoRep (Type (..), TyBinder (..))
 import TysPrim
 import TysWiredIn (tupleDataCon, mkTupleTy)
 import UniqSet (mapUniqSet)
@@ -143,15 +143,16 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
              let
                mb_coerce_bndr :: Var -> Maybe PrimOp
                mb_coerce_bndr v
-                 | idTy == intPrimTy    = Nothing
-                 | idTy == floatPrimTy  = Just Int2FloatOp
-                 | idTy == doublePrimTy = Just Int2DoubleOp
-                 | idTy == word32PrimTy = Just Int2WordOp
+                 | id_tycon == intPrimTyCon    = Nothing
+                 | id_tycon == floatPrimTyCon  = Just Int2FloatOp
+                 | id_tycon == doublePrimTyCon = Just Int2DoubleOp
+                 | id_tycon == word32PrimTyCon = Just Int2WordOp
                  | -- Don't generate coercion for boxed types
                    not (isPrimitiveType idTy) = Nothing
                  | otherwise            = pprPanic "elimUbxSumExpr.mb_coerce_bndr" (ppr idTy)
                  where
                    idTy = idType v
+                   (id_tycon, []) = splitTyConApp idTy
 
                rns :: [(Var, Var)]
                rns = genRns ubx_field_binders boxed_field_binders bndrs
@@ -296,11 +297,11 @@ elimUbxSumTy' (TyConApp con args)
   | otherwise
   = TyConApp con (map elimUbxSumTy' args)
 
-elimUbxSumTy' (FunTy t1 t2)
-  = FunTy (elimUbxSumTy' t1) (elimUbxSumTy' t2)
+elimUbxSumTy' (ForAllTy (Anon t1) t2) -- FIXME: 
+  = ForAllTy (Anon (elimUbxSumTy' t1)) (elimUbxSumTy' t2)
 
-elimUbxSumTy' (ForAllTy var ty)
-  = ForAllTy var (elimUbxSumTy' ty)
+elimUbxSumTy' (ForAllTy named ty)
+  = ForAllTy named (elimUbxSumTy' ty)
 
 elimUbxSumTy' ty@LitTy{}
   = ty
@@ -321,13 +322,14 @@ elimUbxConApp con stg_args ty_args
 
       mb_coerce :: StgArg -> Maybe PrimOp
       mb_coerce arg
-        | argTy == intPrimTy    = Nothing
-        | argTy == floatPrimTy  = Just Float2IntOp
-        | argTy == doublePrimTy = Just Double2IntOp
-        | argTy == word32PrimTy = Just Word2IntOp
-        | otherwise             = pprPanic "elimUbxConApp.coerce" (ppr argTy)
+        | arg_tycon == intPrimTyCon    = Nothing
+        | arg_tycon == floatPrimTyCon  = Just Float2IntOp
+        | arg_tycon == doublePrimTyCon = Just Double2IntOp
+        | arg_tycon == word32PrimTyCon = Just Word2IntOp
+        | otherwise                = pprPanic "elimUbxConApp.coerce" (ppr argTy)
         where
           argTy = stgArgType arg
+          (arg_tycon, []) = splitTyConApp argTy
 
       tuple_con = tupleDataCon Unboxed (length new_args)
       tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag con)))

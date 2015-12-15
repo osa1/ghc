@@ -1237,7 +1237,6 @@ mkSumTyCon name kind arity tyvars cons parent
         tyConTyVars      = tyvars,
         tcRoles          = replicate arity Representational,
         tyConCType       = Nothing,
-        algTcGadtSyntax  = False,
         algTcStupidTheta = [],
         algTcRhs         = SumTyCon { data_cons = cons },
         algTcFields      = emptyFsEnv,
