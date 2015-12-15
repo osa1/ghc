@@ -306,6 +306,12 @@ elimUbxSumTy' (ForAllTy named ty)
 elimUbxSumTy' ty@LitTy{}
   = ty
 
+elimUbxSumTy' ty@CastTy{}
+  = pprPanic "elimUbxSumTy'" (ppr ty)
+
+elimUbxSumTy' ty@CoercionTy{}
+  = pprPanic "elimUbxSumTy'" (ppr ty)
+
 liftedAny :: Type
 liftedAny = anyTypeOfKind liftedTypeKind
 
