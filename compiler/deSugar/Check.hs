@@ -371,6 +371,8 @@ translatePat pat = case pat of
     let tuple_con = tupleDataCon boxity (length ps)
     return [vanillaConPattern tuple_con tys (concat tidy_ps)]
 
+  SumPat{} -> panic "translatePat SumPat: Not implemented yet"
+
   -- --------------------------------------------------------------------------
   -- Not supposed to happen
   ConPatIn  {} -> panic "Check.translatePat: ConPatIn"
