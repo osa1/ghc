@@ -649,6 +649,7 @@ collectEvVarsPat pat =
     BangPat  p        -> collectEvVarsLPat p
     ListPat  ps _ _   -> unionManyBags $ map collectEvVarsLPat ps
     TuplePat ps _ _   -> unionManyBags $ map collectEvVarsLPat ps
+    SumPat p _ _ _    -> collectEvVarsLPat p
     PArrPat  ps _     -> unionManyBags $ map collectEvVarsLPat ps
     ConPatOut {pat_dicts = dicts, pat_args  = args}
                       -> unionBags (listToBag dicts)
