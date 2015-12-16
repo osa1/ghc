@@ -100,8 +100,6 @@ import StaticFlags( opt_PprStyle_Debug )
 import Data.Data hiding (Fixity)
 import Data.Function (on)
 
-import Data.List (intersperse)
-
 {-
 ************************************************************************
 *                                                                      *
