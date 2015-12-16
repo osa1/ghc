@@ -546,7 +546,7 @@ rnHsTyKi env tupleTy@(HsTupleTy tup_con tys)
        ; return (HsTupleTy tup_con tys', fvs) }
 
 rnHsTyKi what doc sumTy@(HsUSumTy tys)
-  = do { data_kinds <- xoptM Opt_DataKinds
+  = do { data_kinds <- xoptM LangExt.DataKinds
        ; when (not data_kinds && isRnKindLevel what)
               (addErr (dataKindsErr what sumTy))
        ; (tys', fvs) <- mapFvRn (rnLHsTyKi what doc) tys
