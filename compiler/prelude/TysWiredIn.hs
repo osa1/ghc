@@ -1072,7 +1072,8 @@ unitTy = mkTupleTy Boxed []
 -}
 
 mkSumTy :: [Type] -> Type
-mkSumTy tys = mkTyConApp (sumTyCon (length tys)) tys
+mkSumTy tys = mkTyConApp (sumTyCon (length tys))
+                         (map (getLevity "mkSumTy") tys ++ tys)
 
 {- *********************************************************************
 *                                                                      *
