@@ -314,9 +314,9 @@ dsExpr (ExplicitTuple tup_args boxity)
        ; return $ mkCoreLams lam_vars $
                   mkCoreTupBoxity boxity args }
 
-dsExpr (HsSum selector arity expr types)
+dsExpr (HsSum alt arity expr types)
   = do { core_expr <- dsLExpr expr
-       ; return $ mkCoreConApps (sumDataCon selector arity)
+       ; return $ mkCoreConApps (sumDataCon alt arity)
                                 (map (Type . getLevity "dsExpr HsSum") types ++
                                  map Type types ++
                                  [core_expr]) }
