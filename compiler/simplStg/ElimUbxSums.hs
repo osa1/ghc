@@ -142,17 +142,28 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
                      -- TODO: we should probably make use of `_used`
              let
                mb_coerce_bndr :: Var -> Maybe PrimOp
-               mb_coerce_bndr v
-                 | id_tycon == intPrimTyCon    = Nothing
-                 | id_tycon == floatPrimTyCon  = Just Int2FloatOp
-                 | id_tycon == doublePrimTyCon = Just Int2DoubleOp
-                 | id_tycon == word32PrimTyCon = Just Int2WordOp
-                 | -- Don't generate coercion for boxed types
-                   not (isPrimitiveType idTy) = Nothing
-                 | otherwise            = pprPanic "elimUbxSumExpr.mb_coerce_bndr" (ppr idTy)
+               mb_coerce_bndr v =
+                 case splitTyConApp_maybe idTy of
+                   Nothing ->
+                     -- type variable - we only allow polymorphism on boxed
+                     -- types, so this has to be boxed type and so no need for a
+                     -- coercion primop. -- TODO: Where do we handle coercions
+                     -- between Any and boxed types?
+                     Nothing
+                   Just (id_tycon, [])
+                     | id_tycon == intPrimTyCon    -> Nothing
+                     | id_tycon == floatPrimTyCon  -> Just Int2FloatOp
+                     | id_tycon == doublePrimTyCon -> Just Int2DoubleOp
+                     | id_tycon == word32PrimTyCon -> Just Int2WordOp
+                     | -- Don't generate coercion for boxed types
+                       not (isPrimitiveType idTy)  -> Nothing
+                     | otherwise                   ->
+                       pprPanic "elimUbxSumExpr.mb_coerce_bndr" (ppr idTy)
+                   Just _ ->
+                     -- Pretty sure this can't be a primitive type
+                     Nothing
                  where
                    idTy = idType v
-                   (id_tycon, []) = splitTyConApp idTy
 
                rns :: [(Var, Var)]
                rns = genRns ubx_field_binders boxed_field_binders bndrs
@@ -250,7 +261,6 @@ genCoercions ((Just op, arg) : rest)
                              SingleEntry NoSRT []
                              (StgOpApp (StgPrimOp op) [arg] op_ret_ty)
 
-
        v <- mkSysLocalM (mkFastString "co") op_ret_ty
 
        return ((v, rhs) : bs, StgVarArg v : as)
@@ -297,7 +307,7 @@ elimUbxSumTy' (TyConApp con args)
   | otherwise
   = TyConApp con (map elimUbxSumTy' args)
 
-elimUbxSumTy' (ForAllTy (Anon t1) t2) -- FIXME: 
+elimUbxSumTy' (ForAllTy (Anon t1) t2) -- FIXME:
   = ForAllTy (Anon (elimUbxSumTy' t1)) (elimUbxSumTy' t2)
 
 elimUbxSumTy' (ForAllTy named ty)
