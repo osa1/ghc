@@ -465,7 +465,7 @@ tc_pat penv (SumPat pat alt arity _) pat_ty thing_inside
         ; -- Drop levity vars, we don't care about them here
           let con_arg_tys = drop arity arg_tys
         ; (pat', res) <- tc_lpat pat (con_arg_tys `getNth` alt) penv thing_inside
-        ; return (mkHsWrapPat coi (SumPat pat' alt arity arg_tys) pat_ty, res)
+        ; return (mkHsWrapPat coi (SumPat pat' alt arity con_arg_tys) pat_ty, res)
         }
 
 ------------------------
