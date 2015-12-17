@@ -463,7 +463,7 @@ tcExpr (HsSum alt arity expr _) res_ty
        ; (coi, arg_tys) <- matchExpectedTyConApp sum_tc res_ty
        ; -- Drop levity vars, we don't care about them here
          let arg_tys' = drop arity arg_tys
-       ; expr' <- tcMonoExpr expr (arg_tys' `getNth` alt)
+       ; expr' <- tcPolyExpr expr (arg_tys' `getNth` alt)
        ; return $ mkHsWrapCo coi (HsSum alt arity expr' arg_tys') }
 
 tcExpr (ExplicitList _ witness exprs) res_ty
