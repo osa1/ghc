@@ -319,7 +319,9 @@ dsExpr (ExplicitTuple tup_args boxity)
 dsExpr (HsSum selector arity expr types)
   = do { core_expr <- dsLExpr expr
        ; return $ mkCoreConApps (sumDataCon selector arity)
-                                (map Type types ++ [core_expr]) }
+                                (map (Type . getLevity "dsExpr HsSum") types ++
+                                 map Type types ++
+                                 [core_expr]) }
 
 dsExpr (HsSCC _ cc expr@(L loc _)) = do
     dflags <- getDynFlags
