@@ -474,7 +474,9 @@ tcExpr expr@(ExplicitTuple tup_args boxity) res_ty
 tcExpr (HsSum selector arity expr _) res_ty
   = do { let sum_tc = sumTyCon arity
        ; (coi, arg_tys) <- matchExpectedTyConApp sum_tc res_ty
-       ; expr' <- tcMonoExpr expr (arg_tys `getNth` selector)
+       ; -- Drop levity vars, we don't care about them here
+         let arg_tys' = drop arity arg_tys
+       ; expr' <- tcMonoExpr expr (arg_tys' `getNth` selector)
        ; return $ mkHsWrapCo coi (HsSum selector arity expr' arg_tys) }
 
 tcExpr (ExplicitList _ witness exprs) res_ty
