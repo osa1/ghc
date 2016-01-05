@@ -543,11 +543,11 @@ rnHsTyKi env tupleTy@(HsTupleTy tup_con tys)
        ; (tys', fvs) <- mapFvRn (rnLHsTyKi env) tys
        ; return (HsTupleTy tup_con tys', fvs) }
 
-rnHsTyKi what doc sumTy@(HsUSumTy tys)
+rnHsTyKi env sumTy@(HsUSumTy tys)
   = do { data_kinds <- xoptM LangExt.DataKinds
-       ; when (not data_kinds && isRnKindLevel what)
-              (addErr (dataKindsErr what sumTy))
-       ; (tys', fvs) <- mapFvRn (rnLHsTyKi what doc) tys
+       ; when (not data_kinds && isRnKindLevel env)
+              (addErr (dataKindsErr env sumTy))
+       ; (tys', fvs) <- mapFvRn (rnLHsTyKi env) tys
        ; return (HsUSumTy tys', fvs) }
 
 -- Ensure that a type-level integer is nonnegative (#8306, #8412)
