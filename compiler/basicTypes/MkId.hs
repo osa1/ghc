@@ -455,11 +455,33 @@ dataConCPR con
 --------------------------------------------------
 -}
 
+-- | Unboxer decomposes the "src var" (first argument), and generates two piece
+--   of data:
+--
+--   - [Var]: Variables that we bind by pattern matching the first argument of
+--     the function (the "src var").
+--
+--   - CoreExpr -> CoreExpr: A function that takes an expression that uses
+--     variables returned in the first element of the pair, and generates
+--     another expression that binds the variables before the input expression.
+--     (e.g. by wrapping the input expression with a case or let expression)
+--
 type Unboxer = Var -> UniqSM ([Var], CoreExpr -> CoreExpr)
-  -- Unbox: bind rep vars by decomposing src var
 
-data Boxer = UnitBox | Boxer (TCvSubst -> UniqSM ([Var], CoreExpr))
-  -- Box:   build src arg using these rep vars
+-- | Boxer packs fields of an unboxed type to generate the boxed version again.
+--   This is used when pattern matching on the unboxing constructor.
+--
+data Boxer
+  = UnitBox -- ^ The field is not boxed
+  | Boxer (TCvSubst -> UniqSM ([Var], CoreExpr))
+            -- ^ - [Var]: Variables to bind to build the boxed data again.
+            --
+            --   - CoreExpr: How to build the boxed data. Uses variables bound
+            --     in the [Var].
+            --
+            -- 'TCvSubst' is used for getting types of vars from the 'TyCon' and
+            -- for instantiating type argument of the DataCon we use to box the
+            -- data.
 
 newtype DataConBoxer = DCB ([Type] -> [Var] -> UniqSM ([Var], [CoreBind]))
                        -- Bind these src-level vars, returning the
