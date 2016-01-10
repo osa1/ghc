@@ -36,7 +36,7 @@ import Data.Data
 -}
 
 newtype ForeignCall = CCall CCallSpec
-  deriving Eq
+  deriving (Eq, Ord)
   {-! derive: Binary !-}
 
 isSafeForeignCall :: ForeignCall -> Bool
@@ -62,7 +62,7 @@ data Safety
 
   | PlayRisky           -- None of the above can happen; the call will return
                         -- without interacting with the runtime system at all
-  deriving ( Eq, Show, Data, Typeable )
+  deriving ( Eq, Show, Data, Typeable, Ord )
         -- Show used just for Show Lex.Token, I think
   {-! derive: Binary !-}
 
@@ -101,7 +101,7 @@ data CCallSpec
   =  CCallSpec  CCallTarget     -- What to call
                 CCallConv       -- Calling convention to use.
                 Safety
-  deriving( Eq )
+  deriving( Eq, Ord )
   {-! derive: Binary !-}
 
 -- The call target:
@@ -129,7 +129,7 @@ data CCallTarget
                                         -- allowed in CAPI imports
   | DynamicTarget
 
-  deriving( Eq, Data, Typeable )
+  deriving( Eq, Data, Typeable, Ord )
   {-! derive: Binary !-}
 
 isDynamicTarget :: CCallTarget -> Bool
@@ -150,7 +150,7 @@ See: http://www.programmersheaven.com/2/Calling-conventions
 
 -- any changes here should be replicated in  the CallConv type in template haskell
 data CCallConv = CCallConv | CApiConv | StdCallConv | PrimCallConv | JavaScriptCallConv
-  deriving (Eq, Data, Typeable)
+  deriving (Eq, Data, Typeable, Ord)
   {-! derive: Binary !-}
 
 instance Outputable CCallConv where

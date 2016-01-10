@@ -616,7 +616,7 @@ pprPrimOp other_op = pprOccName (primOpOcc other_op)
 -}
 
 data PrimCall = PrimCall CLabelString UnitId
-  deriving (Eq)
+  deriving (Eq, Ord)
 
 instance Outputable PrimCall where
   ppr (PrimCall lbl pkgId)

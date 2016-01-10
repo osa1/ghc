@@ -71,8 +71,10 @@ import Unique      ( Unique )
 import Util
 import VarSet      ( IdSet, isEmptyVarSet )
 
-import TrieMap
+import Control.Monad ((>=>))
+import TrieMap hiding (lkA, mapA, emptyA, foldA, AltMap)
 import VarEnv
+import qualified Data.Map    as Map
 
 {-
 ************************************************************************
@@ -586,7 +588,7 @@ data StgOp
         -- The Unique is occasionally needed by the C pretty-printer
         -- (which lacks a unique supply), notably when generating a
         -- typedef for foreign-export-dynamic
-  deriving (Eq)
+  deriving (Eq, Ord)
 
 {-
 ************************************************************************
@@ -738,6 +740,72 @@ mapArgMap m (ArgMap vm lm) = ArgMap (mapTM m vm) (mapTM m lm)
 
 foldArgMap :: (a -> b -> b) -> ArgMap a -> b -> b
 foldArgMap f (ArgMap vm lm) a = foldTM f lm (foldTM f vm a)
+
+------------------------------------------------------------------------
+type OpMap a = Map.Map StgOp a
+
+------------------------------------------------------------------------
+newtype AltMap a = AltMap (AltConMap (StgMapG a))
+
+instance TrieMap AltMap where
+    type Key AltMap = DeBruijn StgAlt
+    emptyTM = emptyA
+    lookupTM (D env k) m = lkA env k m
+    alterTM (D env (con, bs, _, e)) xt (AltMap m) =
+      AltMap (alterTM con (fmap ( alterTM (D env e) xt )) m)
+    mapTM = mapA
+    foldTM = foldA
+
+emptyA :: AltMap a
+emptyA = AltMap Map.empty
+
+lkA :: CmEnv -> StgAlt -> AltMap a -> Maybe a
+lkA env (con, bs, _, e) (AltMap m) = lookupTM con m >>= lookupTM (D (extendCMEs env bs) e)
+
+mapA :: (a -> b) -> AltMap a -> AltMap b
+mapA f (AltMap m) = AltMap (Map.map (mapTM f) m)
+
+foldA :: (a -> b -> b) -> AltMap a -> b -> b
+foldA f (AltMap m) b = foldTM (foldTM f) m b
+
+------------------------------------------------------------------------
+type AltConMap a = Map.Map AltCon a
+
+------------------------------------------------------------------------
+newtype StgMap a = StgMap (StgMapG a)
+
+type StgMapG = GenMap StgMapX
+
+data StgMapX a
+  = SM { sm_app    :: VarMap (ListMap ArgMap a)
+       , sm_lit    :: LiteralMap a
+       , sm_capp   :: Map.Map DataCon (ListMap ArgMap a)
+       , sm_opapp  :: OpMap (ListMap ArgMap a)
+       , sm_lam    :: ListMap VarMap (StgMapG a)
+       , sm_case   :: StgMapG (ListMap AltMap a)
+       , sm_tick   :: StgMapG (TickishMap a)
+       }
+
+instance TrieMap StgMap where
+    type Key StgMap = StgExpr
+    lookupTM k (StgMap m) = lookupTM (deBruijnize k) m
+
+instance TrieMap StgMapX where
+    type Key StgMapX = DeBruijn StgExpr
+    lookupTM k m = lookupE k m
+
+lookupE :: DeBruijn StgExpr -> StgMapX a -> Maybe a
+lookupE (D env expr) m = go expr m
+  where
+    go (StgApp v as) = sm_app >.> lookupTM v >=> lookupTM as
+    go (StgLit lit) = sm_lit >.> lkLit lit
+    go (StgConApp c as) = sm_capp >.> Map.lookup c >=> lkList lookupTM as
+    go (StgOpApp o as _) = sm_opapp >.> lookupTM o >=> lookupTM as
+    go (StgLam bs e) = sm_lam >.> lookupTM bs >=> lookupTM (D (extendCMEs env bs) e)
+    go (StgCase scrt _ _ b _ _ as) =
+      sm_case >.> lookupTM (D env scrt) >=> lkList (lkA (extendCME env b)) as
+    go (StgTick t e) = sm_tick >.> lookupTM (D env e) >=> lookupTM t
+    go e = pprPanic "lookupE" (text "not implemented yet: " <+> ppr e)
 
 {-
 ************************************************************************
