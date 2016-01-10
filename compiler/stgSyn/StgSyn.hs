@@ -9,7 +9,7 @@ being one that happens to be ideally suited to spineless tagless code
 generation.
 -}
 
-{-# LANGUAGE CPP, FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE CPP, FlexibleInstances, FlexibleContexts, TypeFamilies #-}
 
 module StgSyn (
         GenStgArg(..),
@@ -72,6 +72,7 @@ import Util
 import VarSet      ( IdSet, isEmptyVarSet )
 
 import TrieMap
+import VarEnv
 
 {-
 ************************************************************************
@@ -704,6 +705,37 @@ instance Eq (DeBruijn StgArg) where
     = l1 == l2
 
   _ == _ = False
+
+
+------------------------------------------------------------------------
+data ArgMap a = ArgMap
+    { am_vararg :: VarEnv a
+    , am_litarg :: LiteralMap a }
+
+instance TrieMap ArgMap where
+  type Key ArgMap = StgArg
+  emptyTM = emptyArgMap
+  lookupTM = lookupArgMap
+  alterTM = alterArgMap
+  mapTM = mapArgMap
+  foldTM = foldArgMap
+
+emptyArgMap :: ArgMap a
+emptyArgMap = ArgMap emptyTM emptyTM
+
+lookupArgMap :: StgArg -> ArgMap a -> Maybe a
+lookupArgMap (StgVarArg v) m = lookupVarEnv (am_vararg m) v
+lookupArgMap (StgLitArg l) m = lkLit l (am_litarg m)
+
+alterArgMap :: StgArg -> XT a -> ArgMap a -> ArgMap a
+alterArgMap (StgVarArg v) x m = m { am_vararg = alterVarEnv x (am_vararg m) v }
+alterArgMap (StgLitArg l) x m = m { am_litarg = xtLit l x (am_litarg m) }
+
+mapArgMap :: (a -> b) -> ArgMap a -> ArgMap b
+mapArgMap m (ArgMap vm lm) = ArgMap (mapTM m vm) (mapTM m lm)
+
+foldArgMap :: (a -> b -> b) -> ArgMap a -> b -> b
+foldArgMap f (ArgMap vm lm) a = foldTM f lm (foldTM f vm a)
 
 {-
 ************************************************************************
