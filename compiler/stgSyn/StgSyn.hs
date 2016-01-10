@@ -772,18 +772,34 @@ foldA f (AltMap m) b = foldTM (foldTM f) m b
 type AltConMap a = Map.Map AltCon a
 
 ------------------------------------------------------------------------
+type DataConMap a = Map.Map DataCon a
+
+------------------------------------------------------------------------
+data StgRhsMap a =
+  RM { rm_closure :: StgMapG (ListMap BndrMap a)
+     , rm_con     :: DataConMap (ListMap ArgMap a)
+     }
+
+instance TrieMap StgRhsMap where
+    type Key StgRhsMap = DeBruijn StgRhs
+
+------------------------------------------------------------------------
 newtype StgMap a = StgMap (StgMapG a)
 
 type StgMapG = GenMap StgMapX
 
 data StgMapX a
-  = SM { sm_app    :: VarMap (ListMap ArgMap a)
-       , sm_lit    :: LiteralMap a
-       , sm_capp   :: Map.Map DataCon (ListMap ArgMap a)
-       , sm_opapp  :: OpMap (ListMap ArgMap a)
-       , sm_lam    :: ListMap VarMap (StgMapG a)
-       , sm_case   :: StgMapG (ListMap AltMap a)
-       , sm_tick   :: StgMapG (TickishMap a)
+  = SM { sm_app      :: VarMap (ListMap ArgMap a)
+       , sm_lit      :: LiteralMap a
+       , sm_capp     :: DataConMap (ListMap ArgMap a)
+       , sm_opapp    :: OpMap (ListMap ArgMap a)
+       , sm_lam      :: ListMap VarMap (StgMapG a)
+       , sm_case     :: StgMapG (ListMap AltMap a)
+       , sm_letn     :: StgRhsMap (StgMapG (VarMap a))
+       , sm_letr     :: ListMap StgRhsMap (StgMapG (ListMap VarMap a))
+       , sm_let_ne_n :: StgRhsMap (StgMapG (VarMap a))
+       , sm_let_ne_r :: ListMap StgRhsMap (StgMapG (ListMap VarMap a))
+       , sm_tick     :: StgMapG (TickishMap a)
        }
 
 instance TrieMap StgMap where
@@ -798,14 +814,41 @@ lookupE :: DeBruijn StgExpr -> StgMapX a -> Maybe a
 lookupE (D env expr) m = go expr m
   where
     go (StgApp v as) = sm_app >.> lookupTM v >=> lookupTM as
+
     go (StgLit lit) = sm_lit >.> lkLit lit
+
     go (StgConApp c as) = sm_capp >.> Map.lookup c >=> lkList lookupTM as
+
     go (StgOpApp o as _) = sm_opapp >.> lookupTM o >=> lookupTM as
+
     go (StgLam bs e) = sm_lam >.> lookupTM bs >=> lookupTM (D (extendCMEs env bs) e)
+
     go (StgCase scrt _ _ b _ _ as) =
       sm_case >.> lookupTM (D env scrt) >=> lkList (lkA (extendCME env b)) as
+
+    go (StgLet (StgNonRec b r) e) =
+      sm_letn >.> lookupTM (D env r) >=> lookupTM (D (extendCME env b) e) >=> lookupTM b
+
+    go (StgLet (StgRec prs) e) =
+      let (bndrs, rhss) = unzip prs
+          env1 = extendCMEs env bndrs
+      in sm_letr >.> lkList (lookupTM . D env1) rhss >=> lookupTM (D env1 e) >=> lkList lookupTM bndrs
+
+    go (StgLetNoEscape _ _ (StgNonRec b r) e) =
+      sm_let_ne_n >.>
+      lookupTM (D env r) >=>
+      lookupTM (D (extendCME env b) e) >=>
+      lookupTM b
+
+    go (StgLetNoEscape _ _ (StgRec prs) e) =
+      let (bndrs, rhss) = unzip prs
+          env1 = extendCMEs env bndrs
+      in sm_let_ne_r >.>
+         lkList (lookupTM . D env1) rhss >=>
+         lookupTM (D env1 e) >=>
+         lkList lookupTM bndrs
+
     go (StgTick t e) = sm_tick >.> lookupTM (D env e) >=> lookupTM t
-    go e = pprPanic "lookupE" (text "not implemented yet: " <+> ppr e)
 
 {-
 ************************************************************************
