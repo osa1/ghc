@@ -586,6 +586,7 @@ data StgOp
         -- The Unique is occasionally needed by the C pretty-printer
         -- (which lacks a unique supply), notably when generating a
         -- typedef for foreign-export-dynamic
+  deriving (Eq)
 
 {-
 ************************************************************************
@@ -637,8 +638,9 @@ instance Eq (DeBruijn StgExpr) where
       = con1 == con2 &&
         D env1 args1 == D env2 args2
 
-    go StgOpApp{} StgOpApp{}
-      = undefined -- FIXME: we need some Eq implementations here
+    go (StgOpApp op1 args1 _) (StgOpApp op2 args2 _)
+      = op1 == op2 &&
+        D env1 args1 == D env2 args2
 
     go (StgLam args1 body1) (StgLam args2 body2)
       = D (extendCMEs env1 args1) body1 == D (extendCMEs env2 args2) body2
