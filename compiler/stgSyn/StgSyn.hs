@@ -9,7 +9,7 @@ being one that happens to be ideally suited to spineless tagless code
 generation.
 -}
 
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, FlexibleInstances, FlexibleContexts #-}
 
 module StgSyn (
         GenStgArg(..),
@@ -70,6 +70,8 @@ import UniqSet
 import Unique      ( Unique )
 import Util
 import VarSet      ( IdSet, isEmptyVarSet )
+
+import TrieMap
 
 {-
 ************************************************************************
@@ -611,6 +613,97 @@ nonEmptySRT (SRTEntries vs) = not (isEmptyVarSet vs)
 pprSRT :: SRT -> SDoc
 pprSRT (NoSRT)          = ptext (sLit "_no_srt_")
 pprSRT (SRTEntries ids) = text "SRT:" <> ppr ids
+
+{-
+************************************************************************
+*                                                                      *
+          TrieMap stuff
+*                                                                      *
+************************************************************************
+-}
+
+instance Eq (DeBruijn StgExpr) where
+  D env1 e1 == D env2 e2 = go e1 e2 where
+
+    go (StgApp f1 args1) (StgApp f2 args2)
+      = D env1 f1 == D env2 f2 &&
+        D env1 args1 == D env2 args2
+
+    go (StgLit l1) (StgLit l2)
+      = l1 == l2
+
+    go (StgConApp con1 args1) (StgConApp con2 args2)
+      = con1 == con2 &&
+        D env1 args1 == D env2 args2
+
+    go StgOpApp{} StgOpApp{}
+      = undefined -- FIXME: we need some Eq implementations here
+
+    go (StgLam args1 body1) (StgLam args2 body2)
+      = D (extendCMEs env1 args1) body1 == D (extendCMEs env2 args2) body2
+
+    go (StgCase scrt1 _ _ bndr1 _ _ alts1) (StgCase scrt2 _ _ bndr2 _ _ alts2)
+      = D env1 scrt1 == D env2 scrt2 &&
+        D (extendCME env1 bndr1) alts1 == D (extendCME env2 bndr2) alts2
+
+    go (StgLet (StgNonRec v1 r1) e1) (StgLet (StgNonRec v2 r2) e2)
+      = D env1 r1 == D env2 r2 &&
+        D (extendCME env1 v1) e1 == D (extendCME env2 v2) e2
+
+    go (StgLet (StgRec ps1) e1) (StgLet (StgRec ps2) e2)
+      = length ps1 == length ps2 &&
+        D env1' rs1 == D env2' rs2 &&
+        D env1' e1 == D env2' e2
+        where
+          (bs1, rs1) = unzip ps1
+          (bs2, rs2) = unzip ps2
+          env1' = extendCMEs env1 bs1
+          env2' = extendCMEs env2 bs2
+
+    go (StgLetNoEscape _ _ (StgNonRec v1 r1) e1) (StgLetNoEscape _ _ (StgNonRec v2 r2) e2)
+      = D env1 r1 == D env2 r2 &&
+        D (extendCME env1 v1) e1 == D (extendCME env2 v2) e2
+
+    go (StgLetNoEscape _ _ (StgRec ps1) e1) (StgLetNoEscape _ _ (StgRec ps2) e2)
+      = length ps1 == length ps2 &&
+        D env1' rs1 == D env2' rs2 &&
+        D env1' e1 == D env2' e2
+        where
+          (bs1, rs1) = unzip ps1
+          (bs2, rs2) = unzip ps2
+          env1' = extendCMEs env1 bs1
+          env2' = extendCMEs env2 bs2
+
+    go (StgTick n1 e1) (StgTick n2 e2)
+      = n1 == n2 && go e1 e2
+
+    go _ _ = False
+
+instance Eq (DeBruijn StgRhs) where
+  D env1 (StgRhsClosure _ _ _ _ _ args1 rhs1) == D env2 (StgRhsClosure _ _ _ _ _ args2 rhs2)
+    = length args1 == length args2 &&
+      D (extendCMEs env1 args1) rhs1 == D (extendCMEs env2 args2) rhs2
+
+  D env1 (StgRhsCon _ con1 args1) == D env2 (StgRhsCon _ con2 args2)
+    = con1 == con2 &&
+      D env1 args1 == D env2 args2
+
+  _ == _ = False
+
+instance Eq (DeBruijn StgAlt) where
+  D env1 (con1, bndrs1, _, rhs1) == D env2 (con2, bndrs2, _, rhs2)
+    = con1 == con2 &&
+      length bndrs1 == length bndrs2 &&
+      D (extendCMEs env1 bndrs1) rhs1 == D (extendCMEs env2 bndrs2) rhs2
+
+instance Eq (DeBruijn StgArg) where
+  D env1 (StgVarArg v1) == D env2 (StgVarArg v2)
+    = D env1 v1 == D env2 v2
+
+  D _ (StgLitArg l1) == D _ (StgLitArg l2)
+    = l1 == l2
+
+  _ == _ = False
 
 {-
 ************************************************************************

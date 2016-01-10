@@ -9,14 +9,15 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
-module TrieMap(
-   CoreMap, emptyCoreMap, extendCoreMap, lookupCoreMap, foldCoreMap,
-   TypeMap, emptyTypeMap, extendTypeMap, lookupTypeMap, foldTypeMap,
-   LooseTypeMap,
-   MaybeMap,
-   ListMap,
-   TrieMap(..), insertTM, deleteTM
- ) where
+-- module TrieMap(
+--    CoreMap, emptyCoreMap, extendCoreMap, lookupCoreMap, foldCoreMap,
+--    TypeMap, emptyTypeMap, extendTypeMap, lookupTypeMap, foldTypeMap,
+--    LooseTypeMap,
+--    MaybeMap,
+--    ListMap,
+--    TrieMap(..), insertTM, deleteTM
+--  ) where
+module TrieMap where
 
 import CoreSyn
 import Coercion
@@ -422,12 +423,16 @@ data CoreMapX a
        , cm_ecase :: CoreMapG (TypeMapG a)    -- Note [Empty case alternatives]
      }
 
+instance Eq (DeBruijn Id) where
+  D env1 v1 == D env2 v2 =
+    case (lookupCME env1 v1, lookupCME env2 v2) of
+      (Just b1, Just b2) -> b1 == b2
+      (Nothing, Nothing) -> v1 == v2
+      _ -> False
+
 instance Eq (DeBruijn CoreExpr) where
   D env1 e1 == D env2 e2 = go e1 e2 where
-    go (Var v1) (Var v2) = case (lookupCME env1 v1, lookupCME env2 v2) of
-                            (Just b1, Just b2) -> b1 == b2
-                            (Nothing, Nothing) -> v1 == v2
-                            _ -> False
+    go (Var v1) (Var v2) = D env1 v1 == D env2 v2
     go (Lit lit1)    (Lit lit2)      = lit1 == lit2
     go (Type t1)    (Type t2)        = D env1 t1 == D env2 t2
     go (Coercion co1) (Coercion co2) = D env1 co1 == D env2 co2
