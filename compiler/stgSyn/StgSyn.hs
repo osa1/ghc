@@ -72,7 +72,7 @@ import Util
 import VarSet      ( IdSet, isEmptyVarSet )
 
 import Control.Monad ((>=>))
-import TrieMap hiding (lkA, mapA, emptyA, foldA, AltMap)
+import TrieMap hiding (lkA, mapA, emptyE, mapE, AltMap)
 import VarEnv
 import qualified Data.Map    as Map
 
@@ -751,7 +751,7 @@ instance TrieMap AltMap where
     type Key AltMap = DeBruijn StgAlt
     emptyTM = emptyA
     lookupTM (D env k) m = lkA env k m
-    alterTM (D env (con, bs, _, e)) xt (AltMap m) =
+    alterTM (D env (con, _, _, e)) xt (AltMap m) =
       AltMap (alterTM con (fmap ( alterTM (D env e) xt )) m)
     mapTM = mapA
     foldTM = foldA
@@ -802,13 +802,38 @@ data StgMapX a
        , sm_tick     :: StgMapG (TickishMap a)
        }
 
+-- TODO: We may end up accidentally using this instead of DeBruijn indexed
+-- variant. Maybe remove the insntance and make sure we manually call the right
+-- alter/lookup etc. functions?
 instance TrieMap StgMap where
     type Key StgMap = StgExpr
+    emptyTM = StgMap EmptyMap
     lookupTM k (StgMap m) = lookupTM (deBruijnize k) m
+    alterTM k xt (StgMap m) = StgMap (alterTM (deBruijnize k) xt m)
+    mapTM f (StgMap m) = StgMap (mapTM f m)
+    foldTM f (StgMap m) b = foldTM f m b
 
 instance TrieMap StgMapX where
     type Key StgMapX = DeBruijn StgExpr
-    lookupTM k m = lookupE k m
+    emptyTM = emptyE
+    lookupTM = lookupE
+    alterTM = alterE
+    mapTM = mapE
+    foldTM = foldE
+
+emptyE :: StgMapX a
+emptyE = SM { sm_app = emptyTM
+            , sm_lit = emptyTM
+            , sm_capp = emptyTM
+            , sm_opapp = emptyTM
+            , sm_lam = emptyTM
+            , sm_case = emptyTM
+            , sm_letn = emptyTM
+            , sm_letr = emptyTM
+            , sm_let_ne_n = emptyTM
+            , sm_let_ne_r = emptyTM
+            , sm_tick = emptyTM
+            }
 
 lookupE :: DeBruijn StgExpr -> StgMapX a -> Maybe a
 lookupE (D env expr) m = go expr m
@@ -832,7 +857,10 @@ lookupE (D env expr) m = go expr m
     go (StgLet (StgRec prs) e) =
       let (bndrs, rhss) = unzip prs
           env1 = extendCMEs env bndrs
-      in sm_letr >.> lkList (lookupTM . D env1) rhss >=> lookupTM (D env1 e) >=> lkList lookupTM bndrs
+      in sm_letr >.>
+         lkList (lookupTM . D env1) rhss >=>
+         lookupTM (D env1 e) >=>
+         lkList lookupTM bndrs
 
     go (StgLetNoEscape _ _ (StgNonRec b r) e) =
       sm_let_ne_n >.>
@@ -849,6 +877,15 @@ lookupE (D env expr) m = go expr m
          lkList lookupTM bndrs
 
     go (StgTick t e) = sm_tick >.> lookupTM (D env e) >=> lookupTM t
+
+alterE :: DeBruijn StgExpr -> XT a -> StgMapX a -> StgMapX a
+alterE = undefined
+
+mapE :: (a -> b) -> StgMapX a -> StgMapX b
+mapE = undefined
+
+foldE :: (a -> b -> b) -> StgMapX a -> b -> b
+foldE = undefined
 
 {-
 ************************************************************************
