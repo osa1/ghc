@@ -752,7 +752,8 @@ dataConArgUnpack arg_ty
       -- A recursive newtype might mean that
       -- 'arg_ty' is a newtype
   , let rep_tys = dataConInstArgTys con tc_args
-  = ASSERT( isVanillaDataCon con )
+  = -- UNPACK a single datacon type
+    ASSERT( isVanillaDataCon con )
     ( rep_tys `zip` dataConRepStrictness con
     ,( \ arg_id ->
        do { rep_ids <- mapM newLocal rep_tys
@@ -765,6 +766,57 @@ dataConArgUnpack arg_ty
           ; return (rep_ids, Var (dataConWorkId con)
                              `mkTyApps` (substTysUnchecked subst tc_args)
                              `mkVarApps` rep_ids ) } ) )
+
+  | Just (tc, tc_args) <- splitTyConApp_maybe arg_ty
+  = -- UNPACK a sum type
+    let
+      cons :: [DataCon]
+      cons = tyConDataCons tc
+
+      ubx_sum_arity = length cons
+
+      rep_tys :: [[Type]]
+      rep_tys = map (flip dataConInstArgTys tc_args) cons
+
+      sum_ty :: Type
+      sum_ty = mkSumTy (map (mkTupleTy Boxed) rep_tys)
+
+      unboxer :: Unboxer
+      unboxer arg_id = do
+        con_binders <- mapM (mapM newLocal . dataConRepArgTys) cons
+
+        let
+          mkUbxSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
+          mkUbxSumAlt alt con bndrs =
+            let tuple = mkConApp (tupleDataCon Unboxed (length bndrs)) (map Var bndrs)
+             in ( DataAlt con, bndrs, mkConApp (sumDataCon alt ubx_sum_arity) [ tuple ] )
+
+          unbox_fn body =
+            Case (Var arg_id) arg_id (exprType body)
+                 (zipWith3 mkUbxSumAlt [ 0 .. ] cons con_binders)
+
+        return unbox_fn
+
+      boxer :: Boxer
+      boxer = Boxer $ \ subst -> do
+                rep_id <- newLocal (TcType.substTy subst sum_ty)
+                con_binders <- mapM (mapM newLocal . dataConRepArgTys) cons
+
+                let mkSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
+                    mkSumAlt alt con bndrs =
+                      ( DataAlt (sumDataCon alt (length bndrs)), bndrs,
+                        mkConApp con (map Var bndrs) )
+
+                return ( [rep_id], Case (Var rep_id) rep_id arg_ty
+                                        (zipWith3 mkSumAlt [ 0 .. ] cons con_binders) )
+    in
+      ( [ (sum_ty, MarkedStrict) ] -- NOTE(osa): I don't completely understand
+                                   -- this part. The idea: Unpacked variant will
+                                   -- be one field only, and the type of the
+                                   -- field will be an unboxed sum. It's strict,
+                                   -- because it's a hash type.
+      , ( unboxer, boxer ) )
+
   | otherwise
   = pprPanic "dataConArgUnpack" (ppr arg_ty)
     -- An interface file specified Unpacked, but we couldn't unpack it
@@ -777,9 +829,10 @@ isUnpackableType :: DynFlags -> FamInstEnvs -> Type -> Bool
 -- end up relying on ourselves!
 isUnpackableType dflags fam_envs ty
   | Just (tc, _) <- splitTyConApp_maybe ty
-  , Just con <- tyConSingleAlgDataCon_maybe tc
-  , isVanillaDataCon con
-  = ok_con_args (unitNameSet (getName tc)) con
+  , cons <- tyConDataCons tc
+  , all isVanillaDataCon cons
+  = all (ok_con_args (unitNameSet (getName tc))) cons
+
   | otherwise
   = False
   where
