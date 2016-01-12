@@ -466,13 +466,23 @@ dataConCPR con
 --     another expression that binds the variables before the input expression.
 --     (e.g. by wrapping the input expression with a case or let expression)
 --
-type Unboxer = Var -> UniqSM ([Var], CoreExpr -> CoreExpr)
+-- NOTE(osa): As a part of generalizing UNPACK support, I'm changing what second
+-- element of the pair does. It should now take, as argument, the data con, and
+-- it should apply the variables. Previously, the argument was the data con
+-- application, the variables were applied by the caller. Now we're handling
+-- that.
+--
+-- EDIT: Actually, since we're applying whatever we want to the constructor, we
+-- don't need to return variables. So I'm removing the pair, we now return just
+-- a `CoreExpr -> CoreExpr` functions.
+--
+type Unboxer = Var -> UniqSM (CoreExpr -> CoreExpr)
 
 -- | Boxer packs fields of an unboxed type to generate the boxed version again.
 --   This is used when pattern matching on the unboxing constructor.
 --
 data Boxer
-  = UnitBox -- ^ The field is not boxed
+  = UnitBox -- ^ The field is already boxed
   | Boxer (TCvSubst -> UniqSM ([Var], CoreExpr))
             -- ^ - [Var]: Variables to bind to build the boxed data again.
             --
@@ -605,9 +615,8 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
     mk_rep_app [] con_app
       = return con_app
     mk_rep_app ((wrap_arg, unboxer) : prs) con_app
-      = do { (rep_ids, unbox_fn) <- unboxer wrap_arg
-           ; expr <- mk_rep_app prs (mkVarApps con_app rep_ids)
-           ; return (unbox_fn expr) }
+      = do { unbox_fn <- unboxer wrap_arg
+           ; mk_rep_app prs (unbox_fn con_app) }
 
 {-
 Note [Bangs on imported data constructors]
@@ -708,9 +717,9 @@ wrapCo co rep_ty (unbox_rep, box_rep)  -- co :: arg_ty ~ rep_ty
   = (unboxer, boxer)
   where
     unboxer arg_id = do { rep_id <- newLocal rep_ty
-                        ; (rep_ids, rep_fn) <- unbox_rep rep_id
+                        ; rep_fn <- unbox_rep rep_id
                         ; let co_bind = NonRec rep_id (Var arg_id `Cast` co)
-                        ; return (rep_ids, Let co_bind . rep_fn) }
+                        ; return (Let co_bind . rep_fn) }
     boxer = Boxer $ \ subst ->
             do { (rep_ids, rep_expr)
                     <- case box_rep of
@@ -722,10 +731,10 @@ wrapCo co rep_ty (unbox_rep, box_rep)  -- co :: arg_ty ~ rep_ty
 
 ------------------------
 seqUnboxer :: Unboxer
-seqUnboxer v = return ([v], \e -> Case (Var v) v (exprType e) [(DEFAULT, [], e)])
+seqUnboxer v = return (\e -> Case (Var v) v (exprType e) [(DEFAULT, [], mkVarApps e [v])])
 
 unitUnboxer :: Unboxer
-unitUnboxer v = return ([v], \e -> e)
+unitUnboxer v = return (\e -> mkVarApps e [v])
 
 unitBoxer :: Boxer
 unitBoxer = UnitBox
@@ -749,8 +758,8 @@ dataConArgUnpack arg_ty
        do { rep_ids <- mapM newLocal rep_tys
           ; let unbox_fn body
                   = Case (Var arg_id) arg_id (exprType body)
-                         [(DataAlt con, rep_ids, body)]
-          ; return (rep_ids, unbox_fn) }
+                         [(DataAlt con, rep_ids, mkVarApps body rep_ids )]
+          ; return unbox_fn }
      , Boxer $ \ subst ->
        do { rep_ids <- mapM (newLocal . TcType.substTyUnchecked subst) rep_tys
           ; return (rep_ids, Var (dataConWorkId con)
