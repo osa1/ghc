@@ -804,7 +804,7 @@ dataConArgUnpack arg_ty
 
                 let mkSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
                     mkSumAlt alt con bndrs =
-                      ( DataAlt (sumDataCon alt (length bndrs)), bndrs,
+                      ( DataAlt (sumDataCon alt ubx_sum_arity), bndrs,
                         mkConApp con (map Var bndrs) )
 
                 return ( [rep_id], Case (Var rep_id) rep_id arg_ty
