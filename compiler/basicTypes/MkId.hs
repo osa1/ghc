@@ -791,6 +791,12 @@ dataConArgUnpack arg_ty
 
         let
           mkUbxSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
+          mkUbxSumAlt alt con [] =
+            ( DataAlt con, [], mkConApp (sumDataCon alt ubx_sum_arity) [ Var unitDataConId ] )
+
+          mkUbxSumAlt alt con [bndr] =
+            ( DataAlt con, [bndr], mkConApp (sumDataCon alt ubx_sum_arity) [ Var bndr ] )
+
           mkUbxSumAlt alt con bndrs =
             let tuple = mkConApp (tupleDataCon Unboxed (length bndrs)) (map Var bndrs)
              in ( DataAlt con, bndrs, mkConApp (sumDataCon alt ubx_sum_arity) [ tuple ] )
