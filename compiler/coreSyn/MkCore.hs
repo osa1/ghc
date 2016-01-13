@@ -340,9 +340,10 @@ mkCoreTupBoxity Unboxed exps = mkCoreUbxTup (map exprType exps) exps
 mkCoreUbxSum :: [Type] -> AltIx -> CoreExpr -> CoreExpr
 mkCoreUbxSum alt_tys alt arg
   = ASSERT( alt < length alt_tys )
-    let ty = alt_tys !! alt
-     in mkCoreConApps (sumDataCon alt (length alt_tys))
-          [ Type (getLevity "mkCoreUbxSum" ty), Type ty, arg ]
+    mkCoreConApps (sumDataCon alt (length alt_tys))
+      (map (Type . getLevity "mkCoreUbxSum") alt_tys ++
+       map Type alt_tys ++
+       [arg])
 
 -- | Build a big tuple holding the specified variables
 mkBigCoreVarTup :: [Id] -> CoreExpr
