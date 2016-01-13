@@ -76,6 +76,7 @@ import FastString
 import ListSetOps
 import qualified GHC.LanguageExtensions as LangExt
 
+import Data.List        ( zipWith4 )
 import Data.Maybe       ( maybeToList )
 
 {-
@@ -781,6 +782,9 @@ dataConArgUnpack arg_ty
       sum_ty :: Type
       sum_ty = mkSumTy (map (mkTupleTy Boxed) rep_tys)
 
+      tuple_tys :: [Type]
+      tuple_tys = map (mkTupleTy Unboxed) rep_tys
+
       unboxer :: Unboxer
       unboxer arg_id = do
         con_binders <- mapM (mapM newLocal . dataConRepArgTys) cons
@@ -800,15 +804,27 @@ dataConArgUnpack arg_ty
       boxer :: Boxer
       boxer = Boxer $ \ subst -> do
                 rep_id <- newLocal (TcType.substTy subst sum_ty)
+                tuple_bndrs <- mapM (newLocal . TcType.substTy subst) tuple_tys
                 con_binders <- mapM (mapM newLocal . dataConRepArgTys) cons
 
-                let mkSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
-                    mkSumAlt alt con bndrs =
-                      ( DataAlt (sumDataCon alt ubx_sum_arity), bndrs,
-                        mkConApp con (map Var bndrs) )
+                -- TODO: remove duplication
+                let mkSumAlt :: Int -> DataCon -> Var -> [Var] -> CoreAlt
+                    mkSumAlt alt con tuple_bndr [] =
+                      ( DataAlt (sumDataCon alt ubx_sum_arity), [tuple_bndr],
+                        mkConApp con [] )
+
+                    mkSumAlt alt con _ [datacon_bndr] =
+                      ( DataAlt (sumDataCon alt ubx_sum_arity), [datacon_bndr],
+                        mkConApp con [Var datacon_bndr] )
+
+                    mkSumAlt alt con tuple_bndr datacon_bndrs =
+                      ( DataAlt (sumDataCon alt ubx_sum_arity), [tuple_bndr],
+                        Case (Var tuple_bndr) tuple_bndr arg_ty
+                          [ ( DataAlt (tupleDataCon Unboxed (length datacon_bndrs)), datacon_bndrs,
+                              mkConApp con (map Var datacon_bndrs) ) ] )
 
                 return ( [rep_id], Case (Var rep_id) rep_id arg_ty
-                                        (zipWith3 mkSumAlt [ 0 .. ] cons con_binders) )
+                                        (zipWith4 mkSumAlt [ 0 .. ] cons tuple_bndrs con_binders) )
     in
       ( [ (sum_ty, MarkedStrict) ] -- NOTE(osa): I don't completely understand
                                    -- this part. The idea: Unpacked variant will
