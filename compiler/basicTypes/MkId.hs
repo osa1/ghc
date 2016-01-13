@@ -811,23 +811,26 @@ dataConArgUnpack arg_ty
       boxer = Boxer $ \ subst -> do
                 rep_id <- newLocal (TcType.substTy subst sum_ty)
                 tuple_bndrs <- mapM (newLocal . TcType.substTy subst) tuple_tys
-                con_binders <- mapM (mapM newLocal . dataConRepArgTys) cons
+                con_binders <-
+                  mapM (mapM newLocal . map (TcType.substTy subst) . dataConRepArgTys) cons
 
                 -- TODO: remove duplication
                 let mkSumAlt :: Int -> DataCon -> Var -> [Var] -> CoreAlt
                     mkSumAlt alt con tuple_bndr [] =
                       ( DataAlt (sumDataCon alt ubx_sum_arity), [tuple_bndr],
-                        mkConApp con [] )
+                        Var (dataConWorkId con) `mkTyApps` substTys subst tc_args )
 
                     mkSumAlt alt con _ [datacon_bndr] =
                       ( DataAlt (sumDataCon alt ubx_sum_arity), [datacon_bndr],
-                        mkConApp con [Var datacon_bndr] )
+                        Var (dataConWorkId con) `mkTyApps`  (substTys subst tc_args)
+                                                `mkVarApps` [datacon_bndr] )
 
                     mkSumAlt alt con tuple_bndr datacon_bndrs =
                       ( DataAlt (sumDataCon alt ubx_sum_arity), [tuple_bndr],
                         Case (Var tuple_bndr) tuple_bndr arg_ty
                           [ ( DataAlt (tupleDataCon Unboxed (length datacon_bndrs)), datacon_bndrs,
-                              mkConApp con (map Var datacon_bndrs) ) ] )
+                              Var (dataConWorkId con) `mkTyApps`  (substTys subst tc_args)
+                                                      `mkVarApps` datacon_bndrs ) ] )
 
                 return ( [rep_id], Case (Var rep_id) rep_id arg_ty
                                         (zipWith4 mkSumAlt [ 0 .. ] cons tuple_bndrs con_binders) )
