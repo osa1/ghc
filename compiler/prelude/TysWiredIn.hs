@@ -68,7 +68,7 @@ module TysWiredIn (
         cTupleTyConName, cTupleTyConNames, isCTupleTyConName,
 
         -- * Sums
-        mkSumTy, sumTyCon, sumDataCon,
+        mkSumTy, sumTyCon, sumDataCon, AltIx,
 
         -- * Kinds
         typeNatKindCon, typeNatKind, typeSymbolKindCon, typeSymbolKind,

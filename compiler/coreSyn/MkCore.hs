@@ -23,6 +23,8 @@ module MkCore (
         mkCoreVarTup, mkCoreVarTupTy, mkCoreTup, mkCoreUbxTup,
         mkCoreTupBoxity,
 
+        mkCoreUbxSum,
+
         -- * Constructing big tuples
         mkBigCoreVarTup, mkBigCoreVarTupTy,
         mkBigCoreTup, mkBigCoreTupTy,
@@ -334,6 +336,13 @@ mkCoreUbxTup tys exps
 mkCoreTupBoxity :: Boxity -> [CoreExpr] -> CoreExpr
 mkCoreTupBoxity Boxed   exps = mkCoreTup exps
 mkCoreTupBoxity Unboxed exps = mkCoreUbxTup (map exprType exps) exps
+
+mkCoreUbxSum :: [Type] -> AltIx -> CoreExpr -> CoreExpr
+mkCoreUbxSum alt_tys alt arg
+  = ASSERT( alt < length alt_tys )
+    let ty = alt_tys !! alt
+     in mkCoreConApps (sumDataCon alt (length alt_tys))
+          [ Type (getLevity "mkCoreUbxSum" ty), Type ty, arg ]
 
 -- | Build a big tuple holding the specified variables
 mkBigCoreVarTup :: [Id] -> CoreExpr
