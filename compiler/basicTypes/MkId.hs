@@ -732,7 +732,10 @@ wrapCo co rep_ty (unbox_rep, box_rep)  -- co :: arg_ty ~ rep_ty
 
 ------------------------
 seqUnboxer :: Unboxer
-seqUnboxer v = return (\e -> Case (Var v) v (exprType e) [(DEFAULT, [], mkVarApps e [v])])
+seqUnboxer v =
+    return $ \e ->
+      let app = mkVarApps e [v]
+       in Case (Var v) v (exprType app) [(DEFAULT, [], app)]
 
 unitUnboxer :: Unboxer
 unitUnboxer v = return (\e -> mkVarApps e [v])
