@@ -48,7 +48,7 @@ import FamInstEnv
 import Coercion
 import TcType
 import MkCore
-import CoreUtils        ( exprType, mkCast )
+import CoreUtils        ( exprType, mkCast, coreAltsType )
 import CoreUnfold
 import Literal
 import TyCon
@@ -759,8 +759,9 @@ dataConArgUnpack arg_ty
     ,( \ arg_id ->
        do { rep_ids <- mapM newLocal rep_tys
           ; let unbox_fn body
-                  = Case (Var arg_id) arg_id (exprType body)
-                         [(DataAlt con, rep_ids, mkVarApps body rep_ids )]
+                  = let app = mkVarApps body rep_ids
+                     in Case (Var arg_id) arg_id (exprType app)
+                             [( DataAlt con, rep_ids, app )]
           ; return unbox_fn }
      , Boxer $ \ subst ->
        do { rep_ids <- mapM (newLocal . TcType.substTyUnchecked subst) rep_tys
@@ -777,42 +778,47 @@ dataConArgUnpack arg_ty
       ubx_sum_arity = length cons
 
       rep_tys :: [[Type]]
-      rep_tys = map (flip dataConInstArgTys tc_args) cons
+      rep_tys = map (\con -> dataConInstArgTys con tc_args) cons
 
       sum_ty :: Type
       sum_ty = mkSumTy (map (mkTupleTy Boxed) rep_tys)
 
-      tuple_tys :: [Type]
-      tuple_tys = map (mkTupleTy Unboxed) rep_tys
+      mk_sum_alt_ty :: [Type] -> Type
+      mk_sum_alt_ty []   = unitTy
+      mk_sum_alt_ty [ty] = ty
+      mk_sum_alt_ty tys  = mkTupleTy Unboxed tys
+
+      sum_alt_tys :: [Type]
+      sum_alt_tys = map mk_sum_alt_ty rep_tys
 
       unboxer :: Unboxer
       unboxer arg_id = do
-        con_binders <- mapM (mapM newLocal . dataConRepArgTys) cons
+        con_arg_binders <- mapM (mapM newLocal) rep_tys
 
         let
-          mkUbxSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
-          mkUbxSumAlt alt con [] =
-            ( DataAlt con, [], mkCoreUbxSum tuple_tys alt (Var unitDataConId) )
+          mkUbxSumAlt :: CoreExpr -> Int -> DataCon -> [Var] -> CoreAlt
+          mkUbxSumAlt body alt con [] =
+            ( DataAlt con, [], App body (mkCoreUbxSum sum_alt_tys alt (Var unitDataConId)) )
 
-          mkUbxSumAlt alt con [bndr] =
-            ( DataAlt con, [bndr], mkCoreUbxSum tuple_tys alt (Var bndr) )
+          mkUbxSumAlt body alt con [bndr] =
+            ( DataAlt con, [bndr], App body (mkCoreUbxSum sum_alt_tys alt (Var bndr)) )
 
-          mkUbxSumAlt alt con bndrs =
+          mkUbxSumAlt body alt con bndrs =
             let tuple = mkCoreUbxTup (map idType bndrs) (map Var bndrs)
-             in ( DataAlt con, bndrs, mkCoreUbxSum tuple_tys alt tuple )
+             in ( DataAlt con, bndrs, App body (mkCoreUbxSum sum_alt_tys alt tuple) )
 
           unbox_fn body =
-            Case (Var arg_id) arg_id (exprType body)
-                 (zipWith3 mkUbxSumAlt [ 0 .. ] cons con_binders)
+            let alts = zipWith3 (mkUbxSumAlt body) [ 0 .. ] cons con_arg_binders
+             in Case (Var arg_id) arg_id (coreAltsType alts) alts
 
         return unbox_fn
 
       boxer :: Boxer
       boxer = Boxer $ \ subst -> do
-                rep_id <- newLocal (TcType.substTy subst sum_ty)
-                tuple_bndrs <- mapM (newLocal . TcType.substTy subst) tuple_tys
-                con_binders <-
-                  mapM (mapM newLocal . map (TcType.substTy subst) . dataConRepArgTys) cons
+                unboxed_field_id <- newLocal (TcType.substTy subst sum_ty)
+                tuple_bndrs <- mapM (newLocal . TcType.substTy subst) sum_alt_tys
+                con_arg_binders <-
+                  mapM (mapM newLocal . map (TcType.substTy subst)) rep_tys
 
                 -- TODO: remove duplication
                 let mkSumAlt :: Int -> DataCon -> Var -> [Var] -> CoreAlt
@@ -832,9 +838,11 @@ dataConArgUnpack arg_ty
                               Var (dataConWorkId con) `mkTyApps`  (substTys subst tc_args)
                                                       `mkVarApps` datacon_bndrs ) ] )
 
-                return ( [rep_id], Case (Var rep_id) rep_id arg_ty
-                                        (zipWith4 mkSumAlt [ 0 .. ] cons tuple_bndrs con_binders) )
+                return ( [unboxed_field_id],
+                         Case (Var unboxed_field_id) unboxed_field_id arg_ty
+                              (zipWith4 mkSumAlt [ 0 .. ] cons tuple_bndrs con_arg_binders) )
     in
+      pprTrace "sum_alt_tys" (ppr sum_alt_tys) $
       ( [ (sum_ty, MarkedStrict) ] -- NOTE(osa): I don't completely understand
                                    -- this part. The idea: Unpacked variant will
                                    -- be one field only, and the type of the
