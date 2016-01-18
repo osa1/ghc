@@ -225,6 +225,7 @@ dsHsBind dflags
                                     mkVarApps (Var poly_tup_id) (tyvars ++ dicts)
                      ; rhs <- dsHsWrapper wrap $
                               mkLams tyvars $ mkLams dicts $
+                              mkCoreLets ds_binds $
                               inner_rhs
                      ; let rhs_for_spec = Let (NonRec poly_tup_id poly_tup_rhs) rhs
                      ; (spec_binds, rules) <- dsSpecs rhs_for_spec spec_prags
