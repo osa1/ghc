@@ -1410,10 +1410,10 @@ tyConToIfaceDecl env tycon
   -- For pretty printing purposes only.
   = ( env
     , IfaceData { ifName       = getOccName tycon,
+                  ifKind       = tidyToIfaceType emptyTidyEnv (tyConKind tycon),
                   ifCType      = Nothing,
                   ifTyVars     = funAndPrimTyVars,
                   ifRoles      = tyConRoles tycon,
-                  ifKind       = if_kind,
                   ifCtxt       = [],
                   ifCons       = IfDataTyCon [] False [],
                   ifRec        = boolToRecFlag False,
