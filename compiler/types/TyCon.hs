@@ -1919,7 +1919,7 @@ newTyConCo tc = case newTyConCo_maybe tc of
 -- | Find the primitive representation of a 'TyCon'
 tyConPrimRep :: TyCon -> PrimRep
 tyConPrimRep (PrimTyCon {primTyConRep = rep}) = rep
-tyConPrimRep tc = ASSERT(not (isUnboxedTupleTyCon tc)) PtrRep
+tyConPrimRep tc = ASSERT(not (isUnboxedTupleTyCon tc) && not (isUnboxedSumTyCon tc)) PtrRep
 
 -- | Find the \"stupid theta\" of the 'TyCon'. A \"stupid theta\" is the context
 -- to the left of an algebraic type declaration, e.g. @Eq a@ in the declaration
