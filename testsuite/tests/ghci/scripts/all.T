@@ -237,4 +237,4 @@ test('T11252', normal, ghci_script, ['T11252.script'])
 
 test('T10576a', expect_broken(10576), ghci_script, ['T10576a.script'])
 test('T10576b', expect_broken(10576), ghci_script, ['T10576b.script'])
-test('T11266', normal, ghci_script, ['T11266.script'])
+test('T11266', check_stdout(lambda *args: 1), ghci_script, ['T11266.script'])
