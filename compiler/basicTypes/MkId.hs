@@ -865,7 +865,8 @@ isUnpackableType :: DynFlags -> FamInstEnvs -> Type -> Bool
 -- end up relying on ourselves!
 isUnpackableType dflags fam_envs ty
   | Just (tc, _) <- splitTyConApp_maybe ty
-  , cons <- tyConDataCons tc
+  , -- guess how many constructors prim types have?
+    cons@(_ : _) <- tyConDataCons tc
   , all isVanillaDataCon cons
   = all (ok_con_args (unitNameSet (getName tc))) cons
 
