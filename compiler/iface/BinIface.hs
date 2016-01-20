@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE BinaryLiterals, CPP #-}
 
 --
 --  (c) The University of Glasgow 2002-2006
@@ -406,8 +406,12 @@ getSymtabName _ncu _dict symtab bh = do
                   where arity = fromIntegral (i .&. 0x0FFFFFFF)
                 1 -> ASSERT ( arity > alt )
                      dataConName $ sumDataCon alt arity
-                  where arity = fromIntegral (i .&. 0x0FFFFFFF `shiftR` 14)
-                        alt = fromIntegral (i .&. 0x00003FFF)
+                  where alt =
+                          -- first (least significant) 14 bits
+                          fromIntegral (i .&. 0b11111111111111)
+                        arity =
+                          -- next 14 bits
+                          fromIntegral ((i `shiftR` 14) .&. 0b11111111111111)
                 _ -> pprPanic "getSymtabName:unknown sum sort" (ppr i)
               where
                 thing = (i .&. 0x10000000) `shiftR` 28
