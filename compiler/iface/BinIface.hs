@@ -368,7 +368,7 @@ putSumTyConName_ bh tc
 putSumDataConName_ :: BinHandle -> DataCon -> IO ()
 putSumDataConName_ bh dc
   = -- ASSERT(arity < 2^(14 :: Int) && alt < 2^(14 :: Int))
-    put_ bh (0xB0000000 .|. arity `shiftL` 14 .|. alt)
+    put_ bh (0xB0000000 .|. (arity `shiftL` 14) .|. alt)
   where
     tc       = dataConTyCon dc
     alt      = fromIntegral (dataConTag dc)
