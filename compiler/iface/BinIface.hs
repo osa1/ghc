@@ -404,7 +404,8 @@ getSymtabName _ncu _dict symtab bh = do
             0x20000000 -> return $! case thing of
                 0 -> tyConName $ sumTyCon arity
                   where arity = fromIntegral (i .&. 0x0FFFFFFF)
-                1 -> dataConName $ sumDataCon alt arity
+                1 -> ASSERT ( arity > alt )
+                     dataConName $ sumDataCon alt arity
                   where arity = fromIntegral (i .&. 0x0FFFFFFF `shiftR` 14)
                         alt = fromIntegral (i .&. 0x00003FFF)
                 _ -> pprPanic "getSymtabName:unknown sum sort" (ppr i)
