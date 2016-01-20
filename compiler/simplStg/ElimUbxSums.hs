@@ -11,19 +11,18 @@ import DataCon
 import FastString (mkFastString)
 import Id (idType, mkSysLocalM, setIdType)
 import Literal (Literal (..))
+import MkCore (rUNTIME_ERROR_ID)
 import Outputable
 import PrimOp (PrimOp (..), primOpSig)
 import StgSyn
 import TyCon
-import Type
 import TyCoRep (Type (..), TyBinder (..))
+import Type
 import TysPrim
 import TysWiredIn (tupleDataCon, mkTupleTy)
 import UniqSet (mapUniqSet)
 import UniqSupply
 import VarSet (mapVarSet)
-
-import MkCore (uNDEFINED_ID)
 
 #if __GLASGOW_HASKELL__ < 709
 import Control.Applicative
@@ -204,7 +203,7 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
            mkDefaultAlt alts@((DEFAULT, _, _, _) : _) = alts
            mkDefaultAlt alts = dummyDefaultAlt : alts
 
-           dummyDefaultAlt = (DEFAULT, [], [], StgApp uNDEFINED_ID [])
+           dummyDefaultAlt = (DEFAULT, [], [], StgApp rUNTIME_ERROR_ID [])
 
        inner_case <-
          StgCase (StgApp tag_binder []) case_lives alts_lives tag_binder srt' (PrimAlt intPrimTyCon)
@@ -351,7 +350,7 @@ elimUbxConApp con stg_args ty_args
       tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag con)))
 
       ubx_dummy_arg = (Nothing, StgLitArg (MachWord 0))
-      bx_dummy_arg  = StgVarArg uNDEFINED_ID
+      bx_dummy_arg  = StgVarArg rUNTIME_ERROR_ID
 
       unboxed_args =
         zip (map mb_coerce con_unboxed_args) con_unboxed_args
