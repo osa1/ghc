@@ -811,7 +811,7 @@ dataConArgUnpack arg_ty
              in ( DataAlt con, bndrs, App body (mkCoreUbxSum sum_alt_tys alt tuple) )
 
           unbox_fn body =
-            let alts = zipWith3 (mkUbxSumAlt body) [ 0 .. ] cons con_arg_binders
+            let alts = zipWith3 (mkUbxSumAlt body) [ 1 .. ] cons con_arg_binders
              in Case (Var arg_id) arg_id (coreAltsType alts) alts
 
         return unbox_fn
@@ -843,7 +843,7 @@ dataConArgUnpack arg_ty
 
                 return ( [unboxed_field_id],
                          Case (Var unboxed_field_id) unboxed_field_id arg_ty
-                              (zipWith4 mkSumAlt [ 0 .. ] cons tuple_bndrs con_arg_binders) )
+                              (zipWith4 mkSumAlt [ 1 .. ] cons tuple_bndrs con_arg_binders) )
     in
       pprTrace "sum_alt_tys" (ppr sum_alt_tys) $
       ( [ (sum_ty, MarkedStrict) ] -- NOTE(osa): I don't completely understand

@@ -134,7 +134,7 @@ data Pat id
     --            'ApiAnnotation.AnnClose' @')'@ or  @'#)'@
 
   | SumPat      (LPat id)          -- ^ Sum sub-pattern
-                Int                -- ^ Alternative (zero-based)
+                Int                -- ^ Alternative (one-based)
                 Arity              -- ^ Arity
                 (PostTc id [Type]) -- ^ PlaceHolder before typechecker, filled in afterwards
                                    -- with the types of the alternative
