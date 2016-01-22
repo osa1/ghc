@@ -51,7 +51,7 @@ elimUbxSumRhs (StgRhsClosure ccs b_info fvs update_flag srt args expr) ty
       <$> elimUbxSumExpr expr (Just ty)
 
 elimUbxSumRhs (StgRhsCon ccs con args) ty
-  | isUnboxedTupleCon con
+  | isUnboxedSumCon con
   , (_, ty_args) <- splitTyConApp ty
   = do let (con', args') = elimUbxConApp con args ty_args
        (bindings, coerced_args) <- genCoercions args'
