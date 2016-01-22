@@ -845,7 +845,6 @@ dataConArgUnpack arg_ty
                          Case (Var unboxed_field_id) unboxed_field_id arg_ty
                               (zipWith4 mkSumAlt [ 1 .. ] cons tuple_bndrs con_arg_binders) )
     in
-      pprTrace "sum_alt_tys" (ppr sum_alt_tys) $
       ( [ (sum_ty, MarkedStrict) ] -- NOTE(osa): I don't completely understand
                                    -- this part. The idea: Unpacked variant will
                                    -- be one field only, and the type of the
