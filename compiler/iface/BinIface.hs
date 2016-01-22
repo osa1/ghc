@@ -348,7 +348,7 @@ putName _dict BinSymbolTable{
 
 putTupleName_ :: BinHandle -> TyCon -> TupleSort -> Word32 -> IO ()
 putTupleName_ bh tc tup_sort thing_tag
-  = -- ASSERT(arity < 2^(29 :: Int))
+  = ASSERT(arity < 2^(25 :: Int))
     put_ bh (0x80000000 .|. (sort_tag `shiftL` 27) .|. (thing_tag `shiftL` 25) .|. arity)
   where
     (sort_tag, arity) = case tup_sort of
@@ -359,19 +359,19 @@ putTupleName_ bh tc tup_sort thing_tag
 
 putSumTyConName_ :: BinHandle -> TyCon -> IO ()
 putSumTyConName_ bh tc
-  = -- ASSERT(arity < 2^(28 :: Int))
+  = ASSERT(arity < 2^(28 :: Int))
     put_ bh (0xA0000000 .|. arity)
   where
-    arity    = fromIntegral (tyConArity tc) :: Word32
+    arity = (fromIntegral (tyConArity tc) `div` 2) :: Word32
 
 putSumDataConName_ :: BinHandle -> DataCon -> IO ()
 putSumDataConName_ bh dc
-  = -- ASSERT(arity < 2^(14 :: Int) && alt < 2^(14 :: Int))
+  = ASSERT(arity < 2^(14 :: Int) && alt < 2^(14 :: Int))
     put_ bh (0xB0000000 .|. (arity `shiftL` 14) .|. alt)
   where
     tc       = dataConTyCon dc
     alt      = fromIntegral (dataConTag dc)
-    arity    = fromIntegral (tyConArity tc) :: Word32
+    arity    = (fromIntegral (tyConArity tc) `div` 2) :: Word32
 
 -- See Note [Symbol table representation of names]
 getSymtabName :: NameCacheUpdater
