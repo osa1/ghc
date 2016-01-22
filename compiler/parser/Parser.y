@@ -2394,7 +2394,7 @@ tup_exprs :: { Either (Int, Int, LHsExpr RdrName) [LHsTupArg RdrName] }
 
            | texp bars
                           {% do { mapM_ (\ll -> addAnnotation ll AnnComma ll) (fst $2)
-                                ; return (Left (0, snd $2 + 1, $1)) } }
+                                ; return (Left (1, snd $2 + 1, $1)) } }
 
            | commas tup_tail
                 {% do { mapM_ (\ll -> addAnnotation ll AnnComma ll) (fst $1)
@@ -2403,7 +2403,7 @@ tup_exprs :: { Either (Int, Int, LHsExpr RdrName) [LHsTupArg RdrName] }
 
            | bars texp bars0
                 {% do { mapM_ (\ll -> addAnnotation ll AnnVbar ll) (fst $1)
-                      ; return (Left (snd $1, snd $1 + snd $3 + 1, $2)) } }
+                      ; return (Left (snd $1 + 1, snd $1 + snd $3 + 1, $2)) } }
 
 -- Always starts with commas; always follows an expr
 commas_tup_tail :: { (SrcSpan,[LHsTupArg RdrName]) }

@@ -630,7 +630,7 @@ pprAlternative :: (a -> SDoc) -- ^ The pretty printing function to use
                -> SDoc        -- ^ 'SDoc' where the alternative havs been pretty
                               -- printed and finally packed into a paragraph.
 pprAlternative pp x alt arity =
-    fsep (replicate alt vbar ++ [pp x] ++ replicate (arity - alt - 1) vbar)
+    fsep (replicate alt vbar ++ [pp x] ++ replicate (arity - alt) vbar)
 
 {-
 ************************************************************************

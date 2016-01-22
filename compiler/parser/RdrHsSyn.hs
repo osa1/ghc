@@ -1434,8 +1434,8 @@ mkImpExpSubSpec [L l Nothing] =
   return ([\s -> addAnnotation s AnnDotdot l], ImpExpAll)
 mkImpExpSubSpec xs =
   if (any (isNothing . unLoc) xs)
-    then return $ ([], ImpExpAllWith xs)
-    else return $ ([], ImpExpList ([L l x | L l (Just x) <- xs]))
+    then return ([], ImpExpAllWith xs)
+    else return ([], ImpExpList ([L l x | L l (Just x) <- xs]))
 
 
 -----------------------------------------------------------------------------
@@ -1447,8 +1447,8 @@ parseErrorSDoc span s = failSpanMsgP span s
 -- TODO: Get the exact source loc of the whole experssion.
 mkSumOrTuple :: Boxity -> Either (Int, Int, LHsExpr RdrName) [LHsTupArg RdrName]
              -> P (HsExpr RdrName)
-mkSumOrTuple Unboxed (Left (i, n, e))     = return $ HsSum i n e PlaceHolder
-mkSumOrTuple boxity (Right es)            = return $ ExplicitTuple es boxity
+mkSumOrTuple Unboxed (Left (alt, arity, e)) = return $ HsSum alt arity e PlaceHolder
+mkSumOrTuple boxity (Right es) = return $ ExplicitTuple es boxity
 mkSumOrTuple Boxed (Left (_, _, (L l e))) =
     parseErrorSDoc l $
     hang (text "Boxed sums not supported:")

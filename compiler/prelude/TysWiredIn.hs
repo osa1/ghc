@@ -500,7 +500,7 @@ isBuiltInOcc_maybe occ
         "()"             -> tup_name Boxed      0
         "(##)"           -> tup_name Unboxed    0
         '(':'#':'|':rest -> parse_sum 2 rest
-        '(':'#':'_':rest -> parse_sum_dc 0 2 rest
+        '(':'#':'_':rest -> parse_sum_dc 1 2 rest
         '(':',':rest     -> parse_tuple Boxed   2 rest
         '(':'#':',':rest -> parse_tuple Unboxed 2 rest
         _other           -> Nothing
@@ -512,15 +512,15 @@ isBuiltInOcc_maybe occ
       | tail_matches sort rest  = tup_name sort n
       | otherwise               = Nothing
 
-    parse_sum n rest
-      | ('|' : rest2) <- rest = parse_sum (n+1) rest2
-      | ('_' : rest2) <- rest = parse_sum_dc (n-1) n rest2
-      | "#)" <- rest          = Just $ getName (sumTyCon n)
+    parse_sum arity rest
+      | ('|' : rest2) <- rest = parse_sum (arity+1) rest2
+      | ('_' : rest2) <- rest = parse_sum_dc arity arity rest2
+      | "#)" <- rest          = Just $ getName (sumTyCon arity)
       | otherwise             = Nothing
 
-    parse_sum_dc i n rest
-      | ('|' : rest2) <- rest = parse_sum_dc i (n+1) rest2
-      | "#)" <- rest          = Just $ getName (sumDataCon i n)
+    parse_sum_dc alt arity rest
+      | ('|' : rest2) <- rest = parse_sum_dc alt (arity+1) rest2
+      | "#)" <- rest          = Just $ getName (sumDataCon arity alt)
       | otherwise             = Nothing
 
     tail_matches Boxed   ")" = True
@@ -694,10 +694,20 @@ type AltIx = Int  -- TODO: Change to ConTag
 sumDataCon :: AltIx  -- ^ Alternative
            -> Arity  -- ^ Arity
            -> DataCon
-sumDataCon i n | i >= n = panic ("sumDataCon: index out of bounds: "
-                                 ++ show i ++ " >= " ++ show n)
-sumDataCon i n | n > mAX_SUM_SIZE = snd (mk_sum n) ! i  -- Build one specially
-sumDataCon i n = snd (unboxedSumArr ! n) ! i
+sumDataCon alt arity
+  | alt > arity
+  = panic ("sumDataCon: index out of bounds: alt "
+           ++ show alt ++ " > arity " ++ show arity)
+
+  | alt <= 0
+  = panic ("sumDataCon: Alts start from 1. (alt: " ++ show alt
+           ++ ", arity: " ++ show arity ++ ")")
+
+  | arity > mAX_SUM_SIZE
+  = snd (mk_sum arity) ! (alt - 1)  -- Build one specially
+
+  | otherwise
+  = snd (unboxedSumArr ! arity) ! (alt - 1)
 
 -- | Cached type and data constructors for sums. The outer array is
 -- indexed by the arity of the sum and the inner array is indexed by
