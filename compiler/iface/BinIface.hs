@@ -329,8 +329,7 @@ putName _dict BinSymbolTable{
      Just (AConLike (RealDataCon dc))
        | let tc = dataConTyCon dc
        , Just sort <- tyConTuple_maybe tc -> putTupleName_ bh tc sort 1
-       | let tc = dataConTyCon dc
-       , isUnboxedSumTyCon tc -> putSumDataConName_ bh dc
+       | isUnboxedSumCon dc -> putSumDataConName_ bh dc
      Just (AnId x)
        | Just dc <- isDataConWorkId_maybe x
        , let tc = dataConTyCon dc
