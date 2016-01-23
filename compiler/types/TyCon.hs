@@ -1643,7 +1643,7 @@ unboxedSumTyConFields ty_args
       flattenTuple ty
         | Just (tc, args) <- splitTyConApp_maybe ty
         , isUnboxedTupleTyCon tc
-        = drop (length args `div` 2) args
+        = concatMap flattenTuple (drop (length args `div` 2) args)
 
         | otherwise
         = [ty]
