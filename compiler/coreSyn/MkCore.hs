@@ -339,7 +339,7 @@ mkCoreTupBoxity Unboxed exps = mkCoreUbxTup (map exprType exps) exps
 
 mkCoreUbxSum :: [Type] -> AltIx -> CoreExpr -> CoreExpr
 mkCoreUbxSum alt_tys alt arg
-  = ASSERT( alt < length alt_tys )
+  = ASSERT( alt > 0 && alt <= length alt_tys )
     mkCoreConApps (sumDataCon alt (length alt_tys))
       (map (Type . getLevity "mkCoreUbxSum") alt_tys ++
        map Type alt_tys ++
