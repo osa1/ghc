@@ -820,6 +820,8 @@ dataConArgUnpack arg_ty
       boxer = Boxer $ \ subst -> do
                 unboxed_field_id <- newLocal (TcType.substTy subst sum_ty)
                 tuple_bndrs <- mapM (newLocal . TcType.substTy subst) sum_alt_tys
+
+                let tc_args' = substTys subst tc_args
                 con_arg_binders <-
                   mapM (mapM newLocal . map (TcType.substTy subst)) rep_tys
 
@@ -827,18 +829,18 @@ dataConArgUnpack arg_ty
                 let mkSumAlt :: Int -> DataCon -> Var -> [Var] -> CoreAlt
                     mkSumAlt alt con tuple_bndr [] =
                       ( DataAlt (sumDataCon alt ubx_sum_arity), [tuple_bndr],
-                        Var (dataConWorkId con) `mkTyApps` substTys subst tc_args )
+                        Var (dataConWorkId con) `mkTyApps` tc_args' )
 
                     mkSumAlt alt con _ [datacon_bndr] =
                       ( DataAlt (sumDataCon alt ubx_sum_arity), [datacon_bndr],
-                        Var (dataConWorkId con) `mkTyApps`  (substTys subst tc_args)
+                        Var (dataConWorkId con) `mkTyApps`  tc_args'
                                                 `mkVarApps` [datacon_bndr] )
 
                     mkSumAlt alt con tuple_bndr datacon_bndrs =
                       ( DataAlt (sumDataCon alt ubx_sum_arity), [tuple_bndr],
                         Case (Var tuple_bndr) tuple_bndr arg_ty
                           [ ( DataAlt (tupleDataCon Unboxed (length datacon_bndrs)), datacon_bndrs,
-                              Var (dataConWorkId con) `mkTyApps`  (substTys subst tc_args)
+                              Var (dataConWorkId con) `mkTyApps`  tc_args'
                                                       `mkVarApps` datacon_bndrs ) ] )
 
                 return ( [unboxed_field_id],
