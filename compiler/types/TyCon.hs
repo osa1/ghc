@@ -111,9 +111,8 @@ module TyCon(
 #include "HsVersions.h"
 
 import {-# SOURCE #-} TyCoRep ( Kind, Type, PredType )
-import {-# SOURCE #-} DataCon ( DataCon, dataConExTyVars, dataConFieldLabels,
-                                dataConInstArgTys )
-import {-# SOURCE #-} Type    ( isPrimitiveType )
+import {-# SOURCE #-} DataCon ( DataCon, dataConExTyVars, dataConFieldLabels )
+import {-# SOURCE #-} Type    ( isPrimitiveType, splitTyConApp_maybe )
 
 import Binary
 import Var
@@ -1664,23 +1663,39 @@ isUnboxedSumTyCon (AlgTyCon { algTcRhs = rhs })
   = True
 isUnboxedSumTyCon _ = False
 
--- | Returns (# unboxed fields, # boxed fields) for a UnboxedSum TyCon.
--- NOTE: Tag field is not included.
-unboxedSumTyConFields :: TyCon -> [Type] -> (Int, Int)
-unboxedSumTyConFields tycon ty_args
+-- | Returns (# unboxed fields, # boxed fields) for a UnboxedSum TyCon
+-- application. NOTE: Tag field is not included.
+unboxedSumTyConFields :: [Type] -> (Int, Int)
+unboxedSumTyConFields ty_args
   = let
-      all_cons         = tyConDataCons tycon
-      cons_rep_arg_tys = map (flip dataConInstArgTys ty_args) all_cons
+      flattenTuple :: Type -> [Type]
+      flattenTuple ty
+        | Just (tc, args) <- splitTyConApp_maybe ty
+        , isUnboxedTupleTyCon tc
+        = drop (length args `div` 2) args
+
+        | otherwise
+        = [ty]
+
+      flat_ty_args :: [[Type]]
+      flat_ty_args = map flattenTuple ty_args
 
       -- fst: prim types
       -- snd: non-prim types
       con_rep_tys_parts :: [([Type], [Type])]
-      con_rep_tys_parts = map (partition isPrimitiveType) cons_rep_arg_tys
+      con_rep_tys_parts = map (partition isPrimitiveType) flat_ty_args
 
       fields_unboxed = maximum (0 : map (length . fst) con_rep_tys_parts)
       fields_boxed   = maximum (0 : map (length . snd) con_rep_tys_parts)
     in
-      (fields_unboxed, fields_boxed)
+      -- pprTrace "unboxedSumTyConFields" (ppr (fields_unboxed, fields_boxed) $$
+      --                                   -- text "cons_rep_arg_tys:" <+> ppr cons_rep_arg_tys $$
+      --                                   -- text "ty_args:" <+> ppr ty_args $$
+      --                                   -- text "con_rep_tys_parts:" <+> ppr con_rep_tys_parts $$
+      --                                   -- text "parts:" <+> ppr con_rep_tys_parts $$
+      --                                   text "flat_ty_args:" <+> ppr flat_ty_args $$
+      --                                   empty)
+        (fields_unboxed, fields_boxed)
 
 -- | Is this a recursive 'TyCon'?
 isRecursiveTyCon :: TyCon -> Bool
