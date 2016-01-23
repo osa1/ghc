@@ -1,5 +1,5 @@
-SRC_HC_OPTS        = -O -H64m
-GhcStage1HcOpts    = -O
+SRC_HC_OPTS        = -O -H64m -DDEBUG
+GhcStage1HcOpts    = -O -DDEBUG
 GhcStage2HcOpts    = -O0 -DDEBUG
 GhcLibHcOpts       = -O -dcore-lint
 BUILD_PROF_LIBS    = NO
