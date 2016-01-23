@@ -784,7 +784,7 @@ dataConArgUnpack arg_ty
       rep_tys = map (\con -> dataConInstArgTys con tc_args) cons
 
       sum_ty :: Type
-      sum_ty = mkSumTy (map (mkTupleTy Boxed) rep_tys)
+      sum_ty = mkSumTy (map mk_sum_alt_ty rep_tys)
 
       mk_sum_alt_ty :: [Type] -> Type
       mk_sum_alt_ty []   = unitTy
