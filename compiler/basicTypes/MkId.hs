@@ -822,6 +822,8 @@ dataConArgUnpack arg_ty
                 tuple_bndrs <- mapM (newLocal . TcType.substTy subst) sum_alt_tys
 
                 let tc_args' = substTys subst tc_args
+                    arg_ty' = substTy subst arg_ty
+
                 con_arg_binders <-
                   mapM (mapM newLocal . map (TcType.substTy subst)) rep_tys
 
@@ -838,13 +840,13 @@ dataConArgUnpack arg_ty
 
                     mkSumAlt alt con tuple_bndr datacon_bndrs =
                       ( DataAlt (sumDataCon alt ubx_sum_arity), [tuple_bndr],
-                        Case (Var tuple_bndr) tuple_bndr arg_ty
+                        Case (Var tuple_bndr) tuple_bndr arg_ty'
                           [ ( DataAlt (tupleDataCon Unboxed (length datacon_bndrs)), datacon_bndrs,
                               Var (dataConWorkId con) `mkTyApps`  tc_args'
                                                       `mkVarApps` datacon_bndrs ) ] )
 
                 return ( [unboxed_field_id],
-                         Case (Var unboxed_field_id) unboxed_field_id arg_ty
+                         Case (Var unboxed_field_id) unboxed_field_id arg_ty'
                               (zipWith4 mkSumAlt [ 1 .. ] cons tuple_bndrs con_arg_binders) )
     in
       ( [ (sum_ty, MarkedStrict) ] -- NOTE(osa): I don't completely understand
