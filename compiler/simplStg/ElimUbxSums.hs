@@ -23,6 +23,7 @@ import TysWiredIn (tupleDataCon, mkTupleTy)
 import UniqSet (mapUniqSet)
 import UniqSupply
 import VarSet (mapVarSet)
+import Util
 
 #if __GLASGOW_HASKELL__ < 709
 import Control.Applicative
@@ -65,10 +66,10 @@ elimUbxSumRhs (StgRhsCon ccs con args) ty
 
 elimUbxSumExpr :: StgExpr -> Maybe Type -> UniqSM StgExpr
 elimUbxSumExpr (StgApp v []) (Just ty)
-  | isUnboxedSumType ty
-  , (tycon, ty_args) <- splitTyConApp ty
+  | Just (tycon, ty_args) <- splitTyConApp_maybe ty
+  , isUnboxedSumTyCon tycon
   , let (fields_unboxed, fields_boxed) =
-          unboxedSumTyConFields tycon ty_args
+          unboxedSumTyConFields (drop (length ty_args `div` 2) ty_args)
   , let ty' =
           mkTupleTy Unboxed $
             intPrimTy : replicate fields_unboxed intPrimTy
@@ -300,7 +301,7 @@ elimUbxSumTy' (AppTy t1 t2)
 
 elimUbxSumTy' (TyConApp con args)
   | isUnboxedSumTyCon con
-  , (ubx_fields, bx_fields) <- unboxedSumTyConFields con args
+  , (ubx_fields, bx_fields) <- unboxedSumTyConFields (drop (length args `div` 2) args)
   = mkTupleTy Unboxed (intPrimTy : replicate ubx_fields intPrimTy ++ replicate bx_fields liftedAny)
 
   | otherwise
@@ -328,23 +329,30 @@ liftedAny = anyTypeOfKind liftedTypeKind
 
 elimUbxConApp :: DataCon -> [StgArg] -> [Type] -> (DataCon, [(Maybe PrimOp, StgArg)])
 elimUbxConApp con stg_args ty_args
-  = let
+  = ASSERT (isUnboxedSumCon con)
+    -- pprTrace "elimUbxConApp"
+    --   (text "con:" <+> ppr con $$
+    --    text "stg_args:" <+> ppr stg_args $$
+    --    text "ty_args:" <+> ppr ty_args) $
+    let
       (fields_unboxed, fields_boxed) =
-        unboxedSumTyConFields (dataConTyCon con) ty_args
+        -- FIXME: Can't find a reliable way of dropping levity args, using this
+        -- awful div-by-2 method.
+        unboxedSumTyConFields (drop (length ty_args `div` 2) ty_args)
 
       con_unboxed_args, con_boxed_args :: [StgArg]
       (con_unboxed_args, con_boxed_args) = partition (isUnLiftedType . stgArgType) stg_args
 
-      mb_coerce :: StgArg -> Maybe PrimOp
-      mb_coerce arg
-        | arg_tycon == intPrimTyCon    = Nothing
-        | arg_tycon == floatPrimTyCon  = Just Float2IntOp
-        | arg_tycon == doublePrimTyCon = Just Double2IntOp
-        | arg_tycon == word32PrimTyCon = Just Word2IntOp
-        | otherwise                = pprPanic "elimUbxConApp.coerce" (ppr argTy)
-        where
-          argTy = stgArgType arg
-          (arg_tycon, []) = splitTyConApp argTy
+      -- mb_coerce :: StgArg -> Maybe PrimOp
+      -- mb_coerce arg
+      --   | arg_tycon == intPrimTyCon    = Nothing
+      --   | arg_tycon == floatPrimTyCon  = Just Float2IntOp
+      --   | arg_tycon == doublePrimTyCon = Just Double2IntOp
+      --   | arg_tycon == word32PrimTyCon = Just Word2IntOp
+      --   | otherwise                    = pprPanic "elimUbxConApp.coerce" (ppr argTy)
+      --   where
+      --     argTy = stgArgType arg
+      --     (arg_tycon, []) = splitTyConApp argTy
 
       tuple_con = tupleDataCon Unboxed (length new_args)
       tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag con)))
@@ -352,15 +360,17 @@ elimUbxConApp con stg_args ty_args
       ubx_dummy_arg = (Nothing, StgLitArg (MachWord 0))
       bx_dummy_arg  = StgVarArg rUNTIME_ERROR_ID
 
-      unboxed_args =
-        zip (map mb_coerce con_unboxed_args) con_unboxed_args
-          ++ replicate (fields_unboxed - length con_unboxed_args) ubx_dummy_arg
+      -- unboxed_args =
+      --   zip (map mb_coerce con_unboxed_args) con_unboxed_args
+      --     ++ replicate (fields_unboxed - length con_unboxed_args) ubx_dummy_arg
       boxed_args   =
         con_boxed_args ++ replicate (fields_boxed - length con_boxed_args) bx_dummy_arg
 
-      new_args = (Nothing, tag_arg) : unboxed_args ++ map (Nothing,) boxed_args
+      new_args = (Nothing, tag_arg) : [] {- unboxed_args -} ++ map (Nothing,) boxed_args
     in
-      (tuple_con, new_args)
+      if fields_unboxed /= 0
+        then pprPanic "Unboxed sums with unboxed types not supported yet." empty
+        else (tuple_con, new_args)
 
 --------------------------------------------------------------------------------
 

@@ -1141,7 +1141,7 @@ repType ty
          else UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_levity_tys)
 
       | isUnboxedSumTyCon tc
-      , let (ubx_fields, bx_fields) = unboxedSumTyConFields tc tys
+      , let (ubx_fields, bx_fields) = unboxedSumTyConFields (drop (length tys `div` 2) tys)
       = -- TODO: Currently all unlifted types are held as 'Int#'.
         UbxSumRep (intPrimTy : replicate ubx_fields intPrimTy)
                   (replicate bx_fields (anyTypeOfKind liftedTypeKind))
