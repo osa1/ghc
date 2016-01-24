@@ -24,19 +24,24 @@ import TyCoRep (Type (..), TyBinder (..))
 import Type
 import TysPrim
 import TysWiredIn (tupleDataCon, mkTupleTy)
+import UniqSet
 import UniqSet (mapUniqSet)
 import UniqSupply
-import VarSet (mapVarSet)
 import Util
-import UniqSet
+import VarSet (mapVarSet)
 
 #if __GLASGOW_HASKELL__ < 709
 import Control.Applicative
 #endif
 
 import Control.Monad (replicateM)
-import Data.Maybe (maybeToList)
 import Data.List (partition)
+import Data.Maybe (maybeToList)
+
+--------------------------------------------------------------------------------
+
+uBX_DUMMY_ARG = StgLitArg (MachWord 0)
+bX_DUMMY_ARG  = StgVarArg rUNTIME_ERROR_ID
 
 --------------------------------------------------------------------------------
 
@@ -70,17 +75,6 @@ elimUbxSumRhs (StgRhsCon ccs con args) ty
   = return (StgRhsCon ccs con (map elimUbxSumArg args))
 
 elimUbxSumExpr :: StgExpr -> Maybe Type -> UniqSM StgExpr
-elimUbxSumExpr (StgApp v []) (Just ty)
-  | Just (tycon, ty_args) <- splitTyConApp_maybe ty
-  , isUnboxedSumTyCon tycon
-  , let (fields_unboxed, fields_boxed) =
-          unboxedSumTyConFields (drop (length ty_args `div` 2) ty_args)
-  , let ty' =
-          mkTupleTy Unboxed $
-            intPrimTy : replicate fields_unboxed intPrimTy
-                     ++ replicate fields_boxed liftedAny
-  = return (StgApp (setIdType v ty') [])
-
 elimUbxSumExpr (StgApp v args) _
   = return (StgApp (elimUbxSumTy v) (map elimUbxSumArg args))
 
@@ -398,9 +392,6 @@ elimUbxConApp con stg_args ty_args
 
       tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag con)))
 
-      ubx_dummy_arg = StgLitArg (MachWord 0)
-      bx_dummy_arg  = StgVarArg rUNTIME_ERROR_ID
-
       stgArgVar (StgVarArg v) = v
       stgArgVar  StgLitArg{} = error "stgArgVar"
     in
@@ -420,9 +411,9 @@ elimUbxConApp con stg_args ty_args
                     con_args =
                       tag_arg :
                       map StgVarArg ubx_bndrs ++
-                        replicate (fields_unboxed - length ubx_bndrs) ubx_dummy_arg ++
+                        replicate (fields_unboxed - length ubx_bndrs) uBX_DUMMY_ARG ++
                       map StgVarArg bx_bndrs ++
-                        replicate (fields_boxed - length bx_bndrs) bx_dummy_arg
+                        replicate (fields_boxed - length bx_bndrs) bX_DUMMY_ARG
 
                     case_ = StgCase (StgApp arg_var [])
                                     (unitUniqSet arg_var)
@@ -439,11 +430,18 @@ elimUbxConApp con stg_args ty_args
                 return case_
 
           | isPrimitiveType arg_ty
-          -> let args = tag_arg : arg : replicate fields_boxed bx_dummy_arg
+          -> let args =
+                   tag_arg : arg :
+                   replicate (fields_unboxed - 1) uBX_DUMMY_ARG ++
+                   replicate fields_boxed bX_DUMMY_ARG
               in return (StgConApp tuple_con args)
 
           | otherwise
-          -> let args = tag_arg : replicate fields_unboxed ubx_dummy_arg ++ [arg]
+          -> let args =
+                   tag_arg :
+                   replicate fields_unboxed uBX_DUMMY_ARG ++
+                   [arg] ++
+                   replicate (fields_boxed - 1) bX_DUMMY_ARG
               in return (StgConApp tuple_con args)
 
 --------------------------------------------------------------------------------
