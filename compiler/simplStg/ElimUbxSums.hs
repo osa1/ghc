@@ -201,12 +201,15 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
            dummyDefaultAlt = (DEFAULT, [], [], StgApp rUNTIME_ERROR_ID [])
 
        inner_case <-
-         StgCase (StgApp tag_binder []) case_lives alts_lives tag_binder srt' (PrimAlt intPrimTyCon)
+         StgCase (StgApp tag_binder []) (mapUniqSet elimUbxSumTy case_lives)
+                                        (mapUniqSet elimUbxSumTy alts_lives)
+                                        tag_binder srt' (PrimAlt intPrimTyCon)
            . mkDefaultAlt <$> mapM mkConAlt alts
 
        let outer_case =
              -- TODO: not sure about lives parts
-             StgCase e' case_lives alts_lives bndr' srt' (UbxTupAlt (length args))
+             StgCase e' (mapUniqSet elimUbxSumTy case_lives)
+                        (mapUniqSet elimUbxSumTy alts_lives) bndr' srt' (UbxTupAlt (length args))
                [ (DataAlt (tupleDataCon Unboxed (length args)),
                   args,
                   replicate (length args) True, -- TODO: fix this
@@ -221,7 +224,9 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
   | otherwise
   = do e' <- elimUbxSumExpr e (Just (bndrType bndr))
        alts' <- mapM elimUbxSumAlt alts
-       return (StgCase e' case_lives alts_lives (elimUbxSumTy bndr) (elimUbxSumSRT srt) alt_ty alts')
+       return (StgCase e' (mapUniqSet elimUbxSumTy case_lives)
+                          (mapUniqSet elimUbxSumTy alts_lives)
+                          (elimUbxSumTy bndr) (elimUbxSumSRT srt) alt_ty alts')
 
 elimUbxSumExpr (StgLet bind e) ty
   = StgLet <$> elimUbxSum bind <*> elimUbxSumExpr e ty
