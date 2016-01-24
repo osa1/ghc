@@ -28,6 +28,7 @@ import UniqSet (mapUniqSet)
 import UniqSupply
 import VarSet (mapVarSet)
 import Util
+import UniqSet
 
 #if __GLASGOW_HASKELL__ < 709
 import Control.Applicative
@@ -58,12 +59,12 @@ elimUbxSumRhs (StgRhsClosure ccs b_info fvs update_flag srt args expr) ty
 elimUbxSumRhs (StgRhsCon ccs con args) ty
   | isUnboxedSumCon con
   , (_, ty_args) <- splitTyConApp ty
-  = do let (con', args') = elimUbxConApp con args ty_args
-       (bindings, coerced_args) <- genCoercions args'
-       return $ if null bindings
-                  then StgRhsCon ccs con' coerced_args
-                  else StgRhsClosure ccs stgSatOcc [] SingleEntry NoSRT [] $
-                         foldr mkBinding (StgConApp con' coerced_args) bindings
+  = do expr <- elimUbxConApp con args ty_args
+       case expr of
+         StgConApp con args ->
+           return (StgRhsCon ccs con args)
+         _ ->
+           return (StgRhsClosure ccs stgSatOcc [] SingleEntry NoSRT [] expr)
 
   | otherwise
   = return (StgRhsCon ccs con (map elimUbxSumArg args))
@@ -92,12 +93,7 @@ elimUbxSumExpr (StgConApp con args) ty
   = do -- This can only happen in scrutinee position of case expressions.
        -- I don't like how we allow complex expressions in scrutinee position in an
        -- ANF AST. (I think this was necessary for unboxed tuples)
-       let (con', args') = elimUbxConApp con args ty_args
-       (bindings, coerced_args) <- genCoercions args'
-       let e = StgConApp con' coerced_args
-       return $ if null bindings
-                  then e
-                  else foldr mkBinding e bindings
+       elimUbxConApp con args ty_args
 
   | otherwise
   = return (StgConApp con (map elimUbxSumArg args))
@@ -222,6 +218,10 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
                   replicate (length args) True, -- TODO: fix this
                   inner_case) ]
 
+       pprTrace "elimubxSumExpr" (text "e:" <+> ppr e $$
+                                  text "e':" <+> ppr e' $$
+                                  text "inner_case:" <+> ppr inner_case $$
+                                  text "outer_case:" <+> ppr outer_case) $ return outer_case
        return outer_case
 
   | otherwise
@@ -372,7 +372,7 @@ unboxedSumTyConFields alts =
     in
       (length ubx_tys, length bx_tys)
 
-elimUbxConApp :: DataCon -> [StgArg] -> [Type] -> (DataCon, [(Maybe PrimOp, StgArg)])
+elimUbxConApp :: DataCon -> [StgArg] -> [Type] -> UniqSM StgExpr
 elimUbxConApp con stg_args ty_args
   = ASSERT (isUnboxedSumCon con)
     -- One assumption here is that we only have one argument. The reason is
@@ -384,42 +384,67 @@ elimUbxConApp con stg_args ty_args
     --    text "stg_args:" <+> ppr stg_args $$
     --    text "ty_args:" <+> ppr ty_args) $
     let
+      [arg] = stg_args
+      arg_ty = stgArgType arg
+
       (fields_unboxed, fields_boxed) =
         -- FIXME: Can't find a reliable way of dropping levity args, using this
         -- awful div-by-2 method.
         unboxedSumTyConFields (drop (length ty_args `div` 2) ty_args)
 
-      con_unboxed_args, con_boxed_args :: [StgArg]
-      (con_unboxed_args, con_boxed_args) = partition (isUnLiftedType . stgArgType) stg_args
+      tuple_con =
+        -- add 1 for the tag
+        tupleDataCon Unboxed (fields_unboxed + fields_boxed + 1)
 
-      -- mb_coerce :: StgArg -> Maybe PrimOp
-      -- mb_coerce arg
-      --   | arg_tycon == intPrimTyCon    = Nothing
-      --   | arg_tycon == floatPrimTyCon  = Just Float2IntOp
-      --   | arg_tycon == doublePrimTyCon = Just Double2IntOp
-      --   | arg_tycon == word32PrimTyCon = Just Word2IntOp
-      --   | otherwise                    = pprPanic "elimUbxConApp.coerce" (ppr argTy)
-      --   where
-      --     argTy = stgArgType arg
-      --     (arg_tycon, []) = splitTyConApp argTy
-
-      tuple_con = tupleDataCon Unboxed (length new_args)
       tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag con)))
 
-      ubx_dummy_arg = (Nothing, StgLitArg (MachWord 0))
+      ubx_dummy_arg = StgLitArg (MachWord 0)
       bx_dummy_arg  = StgVarArg rUNTIME_ERROR_ID
 
-      -- unboxed_args =
-      --   zip (map mb_coerce con_unboxed_args) con_unboxed_args
-      --     ++ replicate (fields_unboxed - length con_unboxed_args) ubx_dummy_arg
-      boxed_args   =
-        con_boxed_args ++ replicate (fields_boxed - length con_boxed_args) bx_dummy_arg
-
-      new_args = (Nothing, tag_arg) : [] {- unboxed_args -} ++ map (Nothing,) boxed_args
+      stgArgVar (StgVarArg v) = v
+      stgArgVar  StgLitArg{} = error "stgArgVar"
     in
-      if fields_unboxed /= 0
-        then pprPanic "Unboxed sums with unboxed types not supported yet." empty
-        else (tuple_con, new_args)
+      case () of
+        _ | Just (tycon, args) <- splitTyConApp_maybe arg_ty
+          , isUnboxedTupleTyCon tycon
+          -> do -- pprTrace "found nested unboxed tuple"
+                  -- (text "args:" <+> ppr args $$
+                  --  text "fields_unboxed:" <+> ppr fields_unboxed $$
+                  --  text "fields_boxed:" <+> ppr fields_boxed) (return ())
+                tupleBndrs <- mapM (mkSysLocalM (mkFastString "tup"))
+                                   (drop (length args `div` 2) args)
+
+                let (ubx_bndrs, bx_bndrs) = partition (isPrimitiveType . idType) tupleBndrs
+
+                    arg_var = stgArgVar arg
+                    con_args =
+                      tag_arg :
+                      map StgVarArg ubx_bndrs ++
+                        replicate (fields_unboxed - length ubx_bndrs) ubx_dummy_arg ++
+                      map StgVarArg bx_bndrs ++
+                        replicate (fields_boxed - length bx_bndrs) bx_dummy_arg
+
+                    case_ = StgCase (StgApp arg_var [])
+                                    (unitUniqSet arg_var)
+                                    (mkUniqSet tupleBndrs)
+                                    arg_var
+                                    NoSRT
+                                    (UbxTupAlt (length con_args))
+                                    [ (DataAlt (head (tyConDataCons tycon)),
+                                       tupleBndrs,
+                                       replicate (length tupleBndrs) True,
+                                       StgConApp tuple_con con_args) ]
+
+                -- pprTrace "elimUbxConApp" (text "case:" <+> ppr case_) $ return case_
+                return case_
+
+          | isPrimitiveType arg_ty
+          -> let args = tag_arg : arg : replicate fields_boxed bx_dummy_arg
+              in return (StgConApp tuple_con args)
+
+          | otherwise
+          -> let args = tag_arg : replicate fields_unboxed ubx_dummy_arg ++ [arg]
+              in return (StgConApp tuple_con args)
 
 --------------------------------------------------------------------------------
 
