@@ -40,6 +40,7 @@ import Data.Maybe (maybeToList)
 
 --------------------------------------------------------------------------------
 
+uBX_DUMMY_ARG, bX_DUMMY_ARG :: StgArg
 uBX_DUMMY_ARG = StgLitArg (MachWord 0)
 bX_DUMMY_ARG  = StgVarArg rUNTIME_ERROR_ID
 
