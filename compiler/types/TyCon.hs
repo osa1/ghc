@@ -84,7 +84,6 @@ module TyCon(
         newTyConRhs, newTyConEtadArity, newTyConEtadRhs,
         unwrapNewTyCon_maybe, unwrapNewTyConEtad_maybe,
         algTcFields,
-        unboxedSumTyConFields,
 
         -- ** Manipulating TyCons
         expandSynTyCon_maybe,
@@ -1662,40 +1661,6 @@ isUnboxedSumTyCon (AlgTyCon { algTcRhs = rhs })
   | SumTyCon {} <- rhs
   = True
 isUnboxedSumTyCon _ = False
-
--- | Returns (# unboxed fields, # boxed fields) for a UnboxedSum TyCon
--- application. NOTE: Tag field is not included.
-unboxedSumTyConFields :: [Type] -> (Int, Int)
-unboxedSumTyConFields ty_args
-  = let
-      flattenTuple :: Type -> [Type]
-      flattenTuple ty
-        | Just (tc, args) <- splitTyConApp_maybe ty
-        , isUnboxedTupleTyCon tc
-        = concatMap flattenTuple (drop (length args `div` 2) args)
-
-        | otherwise
-        = [ty]
-
-      flat_ty_args :: [[Type]]
-      flat_ty_args = map flattenTuple ty_args
-
-      -- fst: prim types
-      -- snd: non-prim types
-      con_rep_tys_parts :: [([Type], [Type])]
-      con_rep_tys_parts = map (partition isPrimitiveType) flat_ty_args
-
-      fields_unboxed = maximum (0 : map (length . fst) con_rep_tys_parts)
-      fields_boxed   = maximum (0 : map (length . snd) con_rep_tys_parts)
-    in
-      -- pprTrace "unboxedSumTyConFields" (ppr (fields_unboxed, fields_boxed) $$
-      --                                   -- text "cons_rep_arg_tys:" <+> ppr cons_rep_arg_tys $$
-      --                                   -- text "ty_args:" <+> ppr ty_args $$
-      --                                   -- text "con_rep_tys_parts:" <+> ppr con_rep_tys_parts $$
-      --                                   -- text "parts:" <+> ppr con_rep_tys_parts $$
-      --                                   text "flat_ty_args:" <+> ppr flat_ty_args $$
-      --                                   empty)
-        (fields_unboxed, fields_boxed)
 
 -- | Is this a recursive 'TyCon'?
 isRecursiveTyCon :: TyCon -> Bool
