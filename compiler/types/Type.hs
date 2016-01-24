@@ -223,6 +223,7 @@ import FastString
 import Pair
 import ListSetOps
 import Digraph
+import {-# SOURCE #-} ElimUbxSums ( unboxedSumTyConFields )
 
 import Maybes           ( orElse )
 import Data.Maybe       ( isJust, mapMaybe )
