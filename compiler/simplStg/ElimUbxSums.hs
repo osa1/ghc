@@ -109,6 +109,53 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
 
        tag_binder <- mkSysLocalM (mkFastString "tag") intPrimTy
 
+       -- OK, so I realized that the current implementation broken. Here's the
+       -- problem: Suppose we have a nested sum, like
+       --
+       --   (# (# a | b #) | (# c | d #) #)
+       --
+       -- We translate this to
+       --
+       --   (# Int#, Int#, Any #)
+       --
+       -- Now, suppose we also have this code:
+       --
+       --   case (x :: our sum type) of
+       --     (# a | #) ->
+       --       case a of
+       --         (# a | #) -> ...
+       --
+       -- We translate this to:
+       --
+       --   case x of
+       --     (# tag, x1, x2 #) ->
+       --       case tag of
+       --         1# -> ???
+       --
+       -- Now, the ??? part is the tricky part. Previously the nested sum types
+       -- were bound to a single variable (a), but we can't do that anymore,
+       -- because we flattened the structure and now if the tag is 1, we have
+       -- fields of first alt of the outer sum bound to x1 and x2, like so:
+       --
+       --    x1 :: Tag of the sum type in the first alt of the outer sum.
+       --    x2 :: Any that stands for `a` or `b` in the first alt of the outer sum.
+       --
+       -- So the generated code should be something like:
+       --
+       --   case x of
+       --     (# tag, x1, x2 #) ->
+       --       case tag of
+       --         1# ->
+       --           case (# x1, x2 #) of
+       --             (# tag1, x #) ->
+       --               case tag1 of
+       --                 1# -> ... x (and x2) is a ...
+       --                 2# -> ... x (and x2) is b ...
+       --
+       -- How do we do this? We need to somehow keep track of expanded binders.
+       -- i.e. we need to know that binders of outer sum fields are now expanded
+       -- to multiple fields like x1 and x2. I don't know how to do this yet.
+
        ubx_field_binders <-
          replicateM (ubx_fields - 1) (mkSysLocalM (mkFastString "ubx") intPrimTy)
 
@@ -120,6 +167,16 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
        let genRns :: [Var] -> [Var] -> [Var] -> [(Var, Var)]
            genRns _ _ [] = []
            genRns ubx bx (v : vs)
+             | isUnboxedSumType (bndrType v)
+             = pprPanic "elimUbxSumExpr.genRns: found unboxed sum"
+                        (ppr v <+> parens (ppr (bndrType v)))
+
+             | isUnboxedTupleType (bndrType v)
+             = -- TODO(osa): This is where we need to be careful. We need to
+               -- return a [Var] instead of a single Var to handle this case.
+               pprPanic "elimUbxSumExpr.genRns: found unboxed tuple"
+                        (ppr v <+> parens (ppr (bndrType v)))
+
              | isUnLiftedType (bndrType v)
              , (ubx_v : ubx_vs) <- ubx
              = (v, ubx_v) : genRns ubx_vs bx vs
@@ -136,49 +193,51 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
            mkConAlt (DataAlt con, bndrs, _useds, rhs) = do
                      -- TODO: we should probably make use of `_used`
              let
-               mb_coerce_bndr :: Var -> Maybe PrimOp
-               mb_coerce_bndr v =
-                 case splitTyConApp_maybe idTy of
-                   Nothing ->
-                     -- type variable - we only allow polymorphism on boxed
-                     -- types, so this has to be boxed type and so no need for a
-                     -- coercion primop. -- TODO: Where do we handle coercions
-                     -- between Any and boxed types?
-                     Nothing
-                   Just (id_tycon, [])
-                     | id_tycon == intPrimTyCon    -> Nothing
-                     | id_tycon == floatPrimTyCon  -> Just Int2FloatOp
-                     | id_tycon == doublePrimTyCon -> Just Int2DoubleOp
-                     | id_tycon == word32PrimTyCon -> Just Int2WordOp
-                     | -- Don't generate coercion for boxed types
-                       not (isPrimitiveType idTy)  -> Nothing
-                     | otherwise                   ->
-                       pprPanic "elimUbxSumExpr.mb_coerce_bndr" (ppr idTy)
-                   Just _ ->
-                     -- Pretty sure this can't be a primitive type
-                     Nothing
-                 where
-                   idTy = idType v
+               -- mb_coerce_bndr :: Var -> Maybe PrimOp
+               -- mb_coerce_bndr v =
+               --   case splitTyConApp_maybe idTy of
+               --     Nothing ->
+               --       -- type variable - we only allow polymorphism on boxed
+               --       -- types, so this has to be boxed type and so no need for a
+               --       -- coercion primop. -- TODO: Where do we handle coercions
+               --       -- between Any and boxed types?
+               --       Nothing
+               --     Just (id_tycon, [])
+               --       | id_tycon == intPrimTyCon    -> Nothing
+               --       | id_tycon == floatPrimTyCon  -> Just Int2FloatOp
+               --       | id_tycon == doublePrimTyCon -> Just Int2DoubleOp
+               --       | id_tycon == word32PrimTyCon -> Just Int2WordOp
+               --       | -- Don't generate coercion for boxed types
+               --         not (isPrimitiveType idTy)  -> Nothing
+               --       | otherwise                   ->
+               --         pprPanic "elimUbxSumExpr.mb_coerce_bndr" (ppr idTy)
+               --     Just _ ->
+               --       -- Pretty sure this can't be a primitive type
+               --       Nothing
+               --   where
+               --     idTy = idType v
 
                rns :: [(Var, Var)]
                rns = genRns ubx_field_binders boxed_field_binders bndrs
 
-               coercions :: [(Maybe PrimOp, Var)]
-               coercions = zip (map mb_coerce_bndr bndrs) (map snd rns)
+               -- coercions :: [(Maybe PrimOp, Var)]
+               -- coercions = zip (map mb_coerce_bndr bndrs) (map snd rns)
 
-               apply_coercions :: [(Maybe PrimOp, Var)] -> StgExpr -> UniqSM StgExpr
-               apply_coercions [] e                    = return e
-               apply_coercions ((Nothing, _) : rest) e = apply_coercions rest e
-               apply_coercions ((Just op, v) : rest) e = do
-                 e' <- apply_coercions rest e
-                 let (_, _, op_ret_ty, _, _) = primOpSig op
-                 v' <- mkSysLocalM (mkFastString "co") op_ret_ty
-                 let rhs :: StgRhs
-                     rhs = StgRhsClosure currentCCS stgSatOcc [v] SingleEntry NoSRT []
-                             (StgOpApp (StgPrimOp op) [StgVarArg v] op_ret_ty)
-                 return (StgLet (StgNonRec v' rhs) (rnStgExpr (v, v') e'))
+               -- apply_coercions :: [(Maybe PrimOp, Var)] -> StgExpr -> UniqSM StgExpr
+               -- apply_coercions [] e                    = return e
+               -- apply_coercions ((Nothing, _) : rest) e = apply_coercions rest e
+               -- apply_coercions ((Just op, v) : rest) e = do
+               --   e' <- apply_coercions rest e
+               --   let (_, _, op_ret_ty, _, _) = primOpSig op
+               --   v' <- mkSysLocalOrCoVarM (mkFastString "co") op_ret_ty
+               --   let rhs :: StgRhs
+               --       rhs = StgRhsClosure currentCCS stgSatOcc [v] SingleEntry NoSRT []
+               --               (StgOpApp (StgPrimOp op) [StgVarArg v] op_ret_ty)
+               --   return (StgLet (StgNonRec v' rhs) (rnStgExpr (v, v') e'))
 
-             rhs_renamed <- apply_coercions coercions (foldr rnStgExpr rhs rns)
+             -- FIXME(osa): Disabling coercions for now.
+             -- rhs_renamed <- apply_coercions coercions (foldr rnStgExpr rhs rns)
+             let rhs_renamed = foldr rnStgExpr rhs rns
 
              (LitAlt (MachInt (fromIntegral (dataConTag con))), [], [],)
                <$> elimUbxSumExpr rhs_renamed ty
