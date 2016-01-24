@@ -420,7 +420,7 @@ elimUbxConApp con stg_args ty_args
                                     (mkUniqSet tupleBndrs)
                                     arg_var
                                     NoSRT
-                                    (UbxTupAlt (length con_args))
+                                    (UbxTupAlt (length tupleBndrs))
                                     [ (DataAlt (head (tyConDataCons tycon)),
                                        tupleBndrs,
                                        replicate (length tupleBndrs) True,
