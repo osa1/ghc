@@ -460,8 +460,9 @@ elimUbxConApp con stg_args ty_args0
     let
       ty_args = drop (length ty_args0 `div` 2) ty_args0
 
-      [arg] = stg_args
-      arg_ty = stgArgType arg
+      [arg0] = stg_args
+      arg_ty = stgArgType arg0
+      arg = elimUbxSumArg arg0
 
       (fields_unboxed, fields_boxed) = unboxedSumTyConFields ty_args
 
