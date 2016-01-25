@@ -405,11 +405,11 @@ unboxedSumRepTypes alts =
       go ty
         | Just (tc, args) <- splitTyConApp_maybe ty
         , isUnboxedTupleTyCon tc
-        = args
+        = drop (length args `div` 2) args
 
         | Just (tc, args) <- splitTyConApp_maybe ty
         , isUnboxedSumTyCon tc
-        = unboxedSumRepTypes args
+        = unboxedSumRepTypes (drop (length args `div` 2) args)
 
         | otherwise
         = [ty]
