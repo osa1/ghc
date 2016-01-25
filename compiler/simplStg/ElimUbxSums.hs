@@ -164,25 +164,30 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
 
        let args = tag_binder : ubx_field_binders ++ boxed_field_binders
 
-       let genRns :: [Var] -> [Var] -> [Var] -> [(Var, Var)]
+       let genRns :: [Var] -> [Var] -> [Var] -> [Rn]
            genRns _ _ [] = []
            genRns ubx bx (v : vs)
              | isUnboxedSumType (bndrType v)
              = pprPanic "elimUbxSumExpr.genRns: found unboxed sum"
                         (ppr v <+> parens (ppr (bndrType v)))
 
-             | isUnboxedTupleType (bndrType v)
+             | Just (tycon, args) <- splitTyConApp_maybe (bndrType v)
+             , isUnboxedTupleTyCon tycon
              = -- TODO(osa): This is where we need to be careful. We need to
                -- return a [Var] instead of a single Var to handle this case.
-               pprPanic "elimUbxSumExpr.genRns: found unboxed tuple"
-                        (ppr v <+> parens (ppr (bndrType v)))
+               let
+                 (ubx_tys,   bx_tys)   = partition isUnLiftedType (drop (length args `div` 2) args)
+                 (ubx_bndrs, ubx_rest) = splitAt (length ubx_tys) ubx
+                 (bx_bndrs,  bx_rest)  = splitAt (length bx_tys)  bx
+               in
+                 (v, ubx_bndrs ++ bx_bndrs) : genRns ubx_rest bx_rest vs
 
              | isUnLiftedType (bndrType v)
              , (ubx_v : ubx_vs) <- ubx
-             = (v, ubx_v) : genRns ubx_vs bx vs
+             = (v, [ubx_v]) : genRns ubx_vs bx vs
 
              | (bx_v : bx_vs) <- bx
-             = (v, bx_v) : genRns ubx bx_vs vs
+             = (v, [bx_v]) : genRns ubx bx_vs vs
 
              | otherwise
              = pprPanic "elimUbxSumExpr.genRns" (ppr case_)
@@ -217,7 +222,7 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
                --   where
                --     idTy = idType v
 
-               rns :: [(Var, Var)]
+               rns :: [Rn]
                rns = genRns ubx_field_binders boxed_field_binders bndrs
 
                -- coercions :: [(Maybe PrimOp, Var)]
@@ -238,6 +243,12 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
              -- FIXME(osa): Disabling coercions for now.
              -- rhs_renamed <- apply_coercions coercions (foldr rnStgExpr rhs rns)
              let rhs_renamed = foldr rnStgExpr rhs rns
+
+             -- pprTrace "mkConAlt" (text "making alt for:" <+> ppr con $$
+             --                      text "bndrs:" <+> ppr bndrs $$
+             --                      text "renamings:" <+> ppr rns $$
+             --                      text "rhs:" <+> ppr rhs $$
+             --                      text "rhs_renamed:" <+> ppr rhs_renamed) (return ())
 
              (LitAlt (MachInt (fromIntegral (dataConTag con))), [], [],)
                <$> elimUbxSumExpr rhs_renamed ty
@@ -275,10 +286,10 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
                   replicate (length args) True, -- TODO: fix this
                   inner_case) ]
 
-       pprTrace "elimubxSumExpr" (text "e:" <+> ppr e $$
-                                  text "e':" <+> ppr e' $$
-                                  text "inner_case:" <+> ppr inner_case $$
-                                  text "outer_case:" <+> ppr outer_case) $ return outer_case
+       -- pprTrace "elimubxSumExpr" (text "e:" <+> ppr e $$
+       --                            text "e':" <+> ppr e' $$
+       --                            text "inner_case:" <+> ppr inner_case $$
+       --                            text "outer_case:" <+> ppr outer_case) $ return outer_case
        return outer_case
 
   | otherwise
@@ -365,7 +376,8 @@ elimUbxSumTy' (AppTy t1 t2)
 elimUbxSumTy' (TyConApp con args)
   | isUnboxedSumTyCon con
   , (ubx_fields, bx_fields) <- unboxedSumTyConFields (drop (length args `div` 2) args)
-  = mkTupleTy Unboxed (intPrimTy : replicate ubx_fields intPrimTy ++ replicate bx_fields liftedAny)
+  = mkTupleTy Unboxed (intPrimTy : replicate (ubx_fields - 1) intPrimTy ++
+                                   replicate bx_fields liftedAny)
 
   | otherwise
   = TyConApp con (map elimUbxSumTy' args)
@@ -419,7 +431,11 @@ unboxedSumRepTypes alts =
             replicate fields_boxed liftedAny
     in
       ASSERT (not (any isUnboxedSumType ret) && not (any isUnboxedTupleType ret))
-      ret
+      -- pprTrace "unboxedSumRetTypes"
+      --   (text "input:" <+> ppr alts $$
+      --    text "con_rep_tys_parts:" <+> ppr con_rep_tys_parts $$
+      --    text "output:" <+> ppr ret) $
+        ret
 
 -- | Returns (# unboxed fields, # boxed fields) for a UnboxedSum TyCon
 -- application. NOTE: Tag field is included.
@@ -432,7 +448,7 @@ unboxedSumTyConFields alts =
       (length ubx_tys, length bx_tys)
 
 elimUbxConApp :: DataCon -> [StgArg] -> [Type] -> UniqSM StgExpr
-elimUbxConApp con stg_args ty_args
+elimUbxConApp con stg_args ty_args0
   = ASSERT (isUnboxedSumCon con)
     -- One assumption here is that we only have one argument. The reason is
     -- because alts of sum types accept only one argument and multiple arguments
@@ -443,17 +459,14 @@ elimUbxConApp con stg_args ty_args
     --    text "stg_args:" <+> ppr stg_args $$
     --    text "ty_args:" <+> ppr ty_args) $
     let
+      ty_args = drop (length ty_args0 `div` 2) ty_args0
+
       [arg] = stg_args
       arg_ty = stgArgType arg
 
-      (fields_unboxed, fields_boxed) =
-        -- FIXME: Can't find a reliable way of dropping levity args, using this
-        -- awful div-by-2 method.
-        unboxedSumTyConFields (drop (length ty_args `div` 2) ty_args)
+      (fields_unboxed, fields_boxed) = unboxedSumTyConFields ty_args
 
-      tuple_con =
-        -- add 1 for the tag
-        tupleDataCon Unboxed (fields_unboxed + fields_boxed + 1)
+      tuple_con = tupleDataCon Unboxed (fields_unboxed + fields_boxed)
 
       tag_arg   = StgLitArg (MachWord (fromIntegral (dataConTag con)))
 
@@ -476,7 +489,7 @@ elimUbxConApp con stg_args ty_args
                     con_args =
                       tag_arg :
                       map StgVarArg ubx_bndrs ++
-                        replicate (fields_unboxed - length ubx_bndrs) uBX_DUMMY_ARG ++
+                        replicate (fields_unboxed - length ubx_bndrs - 1) uBX_DUMMY_ARG ++
                       map StgVarArg bx_bndrs ++
                         replicate (fields_boxed - length bx_bndrs) bX_DUMMY_ARG
 
@@ -491,7 +504,15 @@ elimUbxConApp con stg_args ty_args
                                        replicate (length tupleBndrs) True,
                                        StgConApp tuple_con con_args) ]
 
-                -- pprTrace "elimUbxConApp" (text "case:" <+> ppr case_) $ return case_
+                -- pprTrace "elimUbxConApp" (text "case:" <+> ppr case_ $$
+                --                           text "con:" <+> ppr con $$
+                --                           text "stg_args:" <+> ppr stg_args $$
+                --                           text "ty_args0:" <+> ppr ty_args0 $$
+                --                           text "ty_args:" <+> ppr ty_args $$
+                --                           text "tupleBndrs:" <+> ppr tupleBndrs $$
+                --                           text "con_args:" <+> ppr con_args $$
+                --                           text "arg_var:" <+> ppr arg_var $$
+                --                           text "arg_var type:" <+> ppr (idType arg_var)) $
                 return case_
 
           | isPrimitiveType arg_ty
@@ -504,7 +525,7 @@ elimUbxConApp con stg_args ty_args
           | otherwise
           -> let args =
                    tag_arg :
-                   replicate fields_unboxed uBX_DUMMY_ARG ++
+                   replicate (fields_unboxed - 1) uBX_DUMMY_ARG ++
                    [arg] ++
                    replicate (fields_boxed - 1) bX_DUMMY_ARG
               in return (StgConApp tuple_con args)
@@ -515,15 +536,39 @@ bndrType :: Var -> Type
 bndrType = expandTypeSynonyms . idType
 
 --------------------------------------------------------------------------------
+-- * Variable renaming
+--
+-- NOTE: This is not a substitution! We sometimes replace a single variable with
+-- multiple variables, by replacing the variable with an application of an
+-- unboxed tuple constructor. Similarly if the variable is at an argument
+-- position, we end up applying more arguments by replacing one variable with
+-- many variables!
+--
+-- TODO: Give this a different name to avoid confusion with variable
+-- substitution.
 
-type Rn = (Var, Var)
+type Rn = (Var, [Var])
 
 -- Do I need to worry about capturing and shadowing here? I think every binder
 -- in the program has a unique 'Unique'.
 
 rnStgExpr :: Rn -> StgExpr -> StgExpr
-rnStgExpr r (StgApp f as)
-  = StgApp (rnStgVar r f) (rnStgArgs r as)
+rnStgExpr r (StgApp f [])
+  = case rnStgVar r f of
+      [f'] -> StgApp f' []
+      vs   -> StgConApp (tupleDataCon Unboxed (length vs)) (map StgVarArg vs)
+
+rnStgExpr r@(v, vs) e@(StgApp f as)
+  | v == f && length vs > 1
+  = pprPanic "rnStgExpr: can't replace variable at function position"
+      (text "rn:" <+> ppr r $$
+       text "expr:" <+>  ppr e)
+
+  | [f'] <- rnStgVar r f
+  = StgApp f' (rnStgArgs r as)
+
+  | otherwise
+  = pprPanic "rnStgExpr: bug happened" (ppr r $$ ppr e)
 
 rnStgExpr _ e@StgLit{}
   = e
@@ -560,35 +605,35 @@ rnStgBinding rn (StgRec bs)
 
 rnStgRhs :: Rn -> StgRhs -> StgRhs
 rnStgRhs rn (StgRhsClosure ccs b_info fvs update_flag srt args expr)
-  = StgRhsClosure ccs b_info (map (rnStgVar rn) fvs) update_flag
+  = StgRhsClosure ccs b_info (concatMap (rnStgVar rn) fvs) update_flag
                   (rnSRT rn srt) args (rnStgExpr rn expr)
 
 rnStgRhs rn (StgRhsCon ccs con args)
   = StgRhsCon ccs con (rnStgArgs rn args)
 
 rnStgArgs :: Rn -> [StgArg] -> [StgArg]
-rnStgArgs = map . rnStgArg
+rnStgArgs = concatMap . rnStgArg
 
-rnStgArg :: Rn -> StgArg -> StgArg
+rnStgArg :: Rn -> StgArg -> [StgArg]
 rnStgArg rn (StgVarArg v)
-  = StgVarArg (rnStgVar rn v)
-rnStgArg _ a@StgLitArg{} = a
+  = map StgVarArg (rnStgVar rn v)
+rnStgArg _ a@StgLitArg{} = [a]
 
 rnStgAlts :: Rn -> [StgAlt] -> [StgAlt]
 rnStgAlts = map . rnStgAlt
 
 rnStgAlt :: Rn -> StgAlt -> StgAlt
 rnStgAlt rn (pat, bndrs, uses, rhs)
-  = (pat, bndrs, uses, rnStgExpr rn rhs)
+  = (pat, concatMap (rnStgVar rn) bndrs, uses, rnStgExpr rn rhs)
 
 rnLives :: Rn -> StgLiveVars -> StgLiveVars
-rnLives rn = mapUniqSet (rnStgVar rn)
+rnLives rn us = mkUniqSet (concatMap (rnStgVar rn) (uniqSetToList us))
 
 rnSRT :: Rn -> SRT -> SRT
 rnSRT _ NoSRT = NoSRT
-rnSRT rn (SRTEntries s) = SRTEntries (mapVarSet (rnStgVar rn) s)
+rnSRT rn (SRTEntries s) = SRTEntries (mkUniqSet (concatMap (rnStgVar rn) (uniqSetToList s)))
 
-rnStgVar :: Rn -> Var -> Var
+rnStgVar :: Rn -> Var -> [Var]
 rnStgVar (v1, v2) v3
   | v1 == v3  = v2
-  | otherwise = v3
+  | otherwise = [v3]
