@@ -49,7 +49,13 @@ stg2stg dflags module_name binds
 
         ; let (us2, us3) = splitUniqSupply us1
 
+        ; dumpIfSet_dyn dflags Opt_D_dump_stg "pre elim ubx syntax:"
+                        (pprStgBindings processed_binds)
+
         ; let post_elim_ubx_sums = initUs_ us2 (elimUbxSums processed_binds)
+
+        ; dumpIfSet_dyn dflags Opt_D_dump_stg "post elim ubx syntax:"
+                        (pprStgBindings post_elim_ubx_sums)
 
         ; let un_binds = unarise us3 post_elim_ubx_sums
 
