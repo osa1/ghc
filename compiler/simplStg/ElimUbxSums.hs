@@ -164,37 +164,6 @@ elimUbxSumExpr case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts) ty
 
        let args = tag_binder : ubx_field_binders ++ boxed_field_binders
 
-       let genRns :: [Var] -> [Var] -> [Var] -> [Rn]
-           genRns _ _ [] = []
-           genRns ubx bx (v : vs)
-             | isUnboxedSumType (bndrType v)
-             = pprPanic "elimUbxSumExpr.genRns: found unboxed sum"
-                        (ppr v <+> parens (ppr (bndrType v)))
-
-             | Just (tycon, args) <- splitTyConApp_maybe (bndrType v)
-             , isUnboxedTupleTyCon tycon
-             = -- TODO(osa): This is where we need to be careful. We need to
-               -- return a [Var] instead of a single Var to handle this case.
-               let
-                 (ubx_tys,   bx_tys)   = partition isUnLiftedType (drop (length args `div` 2) args)
-                 (ubx_bndrs, ubx_rest) = splitAt (length ubx_tys) ubx
-                 (bx_bndrs,  bx_rest)  = splitAt (length bx_tys)  bx
-               in
-                 (v, ubx_bndrs ++ bx_bndrs) : genRns ubx_rest bx_rest vs
-
-             | isUnLiftedType (bndrType v)
-             , (ubx_v : ubx_vs) <- ubx
-             = (v, [ubx_v]) : genRns ubx_vs bx vs
-
-             | (bx_v : bx_vs) <- bx
-             = (v, [bx_v]) : genRns ubx bx_vs vs
-
-             | otherwise
-             = pprPanic "elimUbxSumExpr.genRns" (ppr case_)
-                 -- TODO: Make sure printing the whole expression is OK here.
-                 -- (I think the data is cyclic, we don't want GHC to loop in
-                 -- case of a panic)
-
            mkConAlt (DataAlt con, bndrs, _useds, rhs) = do
                      -- TODO: we should probably make use of `_used`
              let
@@ -307,6 +276,36 @@ elimUbxSumExpr (StgLetNoEscape live_in_let live_in_bind bind e) ty
 
 elimUbxSumExpr (StgTick tick e) ty
   = StgTick tick <$> elimUbxSumExpr e ty
+
+--------------------------------------------------------------------------------
+
+genRns :: [Var] -> [Var] -> [Var] -> [Rn]
+genRns _ _ [] = []
+genRns ubx bx (v : vs)
+  | isUnboxedSumType (bndrType v)
+  = pprPanic "elimUbxSumExpr.genRns: found unboxed sum"
+             (ppr v <+> parens (ppr (bndrType v)))
+
+  | Just (tycon, args) <- splitTyConApp_maybe (bndrType v)
+  , isUnboxedTupleTyCon tycon
+  = -- TODO(osa): This is where we need to be careful. We need to
+    -- return a [Var] instead of a single Var to handle this case.
+    let
+      (ubx_tys,   bx_tys)   = partition isUnLiftedType (drop (length args `div` 2) args)
+      (ubx_bndrs, ubx_rest) = splitAt (length ubx_tys) ubx
+      (bx_bndrs,  bx_rest)  = splitAt (length bx_tys)  bx
+    in
+      (v, ubx_bndrs ++ bx_bndrs) : genRns ubx_rest bx_rest vs
+
+  | isUnLiftedType (bndrType v)
+  , (ubx_v : ubx_vs) <- ubx
+  = (v, [ubx_v]) : genRns ubx_vs bx vs
+
+  | (bx_v : bx_vs) <- bx
+  = (v, [bx_v]) : genRns ubx bx_vs vs
+
+  | otherwise
+  = pprPanic "elimUbxSumExpr.genRns" (ppr ubx $$ ppr bx $$ ppr (v : vs))
 
 --------------------------------------------------------------------------------
 
