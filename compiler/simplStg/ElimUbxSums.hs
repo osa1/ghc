@@ -83,8 +83,8 @@ elimUbxSumExpr e@StgLit{} _
   = return e
 
 elimUbxSumExpr (StgConApp con args) ty
-  | isUnboxedSumCon con
-  , Just (_, ty_args) <- fmap splitTyConApp ty
+  | Just (tycon, ty_args) <- ty >>= splitTyConApp_maybe
+  , isUnboxedSumTyCon tycon
   = do -- This can only happen in scrutinee position of case expressions.
        -- I don't like how we allow complex expressions in scrutinee position in an
        -- ANF AST. (I think this was necessary for unboxed tuples)
