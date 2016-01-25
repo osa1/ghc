@@ -474,14 +474,14 @@ elimUbxConApp con stg_args ty_args0
       stgArgVar  StgLitArg{} = error "stgArgVar"
     in
       case () of
-        _ | Just (tycon, args) <- splitTyConApp_maybe arg_ty
+        _ | Just (tycon, args0) <- splitTyConApp_maybe arg_ty
           , isUnboxedTupleTyCon tycon
           -> do -- pprTrace "found nested unboxed tuple"
                   -- (text "args:" <+> ppr args $$
                   --  text "fields_unboxed:" <+> ppr fields_unboxed $$
                   --  text "fields_boxed:" <+> ppr fields_boxed) (return ())
-                tupleBndrs <- mapM (mkSysLocalM (mkFastString "tup"))
-                                   (drop (length args `div` 2) args)
+                let args = map elimUbxSumTy' (drop (length args0 `div` 2) args0)
+                tupleBndrs <- mapM (mkSysLocalM (mkFastString "tup")) args
 
                 let (ubx_bndrs, bx_bndrs) = partition (isPrimitiveType . idType) tupleBndrs
 
