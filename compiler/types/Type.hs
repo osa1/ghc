@@ -1144,7 +1144,7 @@ repType ty
       | isUnboxedSumTyCon tc
       , let (ubx_fields, bx_fields) = unboxedSumTyConFields (drop (length tys `div` 2) tys)
       = -- TODO: Currently all unlifted types are held as 'Int#'.
-        UbxSumRep (intPrimTy : replicate ubx_fields intPrimTy)
+        UbxSumRep (intPrimTy : replicate (ubx_fields - 1) intPrimTy)
                   (replicate bx_fields (anyTypeOfKind liftedTypeKind))
 
     go rec_nts (CastTy ty _)
