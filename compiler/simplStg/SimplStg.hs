@@ -13,7 +13,6 @@ module SimplStg ( stg2stg ) where
 import StgSyn
 
 import CostCentre       ( CollectedCCs )
-import ElimUbxSums      ( elimUbxSums )
 import SCCfinal         ( stgMassageForProfiling )
 import StgLint          ( lintStgBindings )
 import StgStats         ( showStgStats )
@@ -49,15 +48,10 @@ stg2stg dflags module_name binds
 
         ; let (us2, us3) = splitUniqSupply us1
 
-        ; dumpIfSet_dyn dflags Opt_D_dump_stg "pre elim ubx syntax:"
+        ; dumpIfSet_dyn dflags Opt_D_dump_stg "pre-unarisation:"
                         (pprStgBindings processed_binds)
 
-        ; let post_elim_ubx_sums = initUs_ us2 (elimUbxSums processed_binds)
-
-        ; dumpIfSet_dyn dflags Opt_D_dump_stg "post elim ubx syntax:"
-                        (pprStgBindings post_elim_ubx_sums)
-
-        ; let un_binds = unarise us3 post_elim_ubx_sums
+        ; let un_binds = unarise us3 processed_binds
 
         ; dumpIfSet_dyn dflags Opt_D_dump_stg "STG syntax:"
                         (pprStgBindings un_binds)
