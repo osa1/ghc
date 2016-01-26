@@ -33,22 +33,28 @@ module UnariseStg (unarise) where
 
 #include "HsVersions.h"
 
-import CoreSyn
-import StgSyn
-import VarEnv
-import UniqSupply
-import Id
-import MkId (realWorldPrimId)
-import Type
-import TysWiredIn
-import DataCon
-import VarSet
-import OccName
-import Name
-import Util
-import Outputable
 import BasicTypes
+import CoreSyn
+import DataCon
+import FastString (FastString, mkFastString)
+import Id
+import Literal (Literal (..))
+import MkCore (rUNTIME_ERROR_ID)
+import MkId (realWorldPrimId)
+import Name
+import OccName
+import Outputable
+import StgSyn
+import Type
+import TysPrim (intPrimTy, anyTypeOfKind, intPrimTyCon)
+import TysWiredIn
+import UniqSupply
+import Util
+import VarEnv
+import VarSet
 
+import Data.Bifunctor (second)
+import Data.List (partition)
 
 -- | A mapping from unboxed-tuple binders to the Ids they were expanded to.
 --
@@ -91,14 +97,34 @@ unariseExpr _ rho (StgApp f args)
     StgConApp (tupleDataCon Unboxed (length tys))
               (map StgVarArg (unariseId rho f))
 
+  | null args
+  , ty <- idType f
+  , UbxSumRep ubx_fields bx_fields <- repType ty
+  , (ubx_args, bx_args) <- partition (isUnLiftedType . idType) (unariseId rho f)
+  = -- This is simple, we have the type information so we just fill blanks with
+    -- dummy variables.
+    -- TODO: Actually, I'm not sure if we have type information here. Id type
+    -- may not be precise enough?
+    -- pprTrace "unariseExpr" (text "sum var type:" <+> ppr ty) $
+    StgConApp (tupleDataCon Unboxed (length ubx_fields + length bx_fields))
+              (map StgVarArg ubx_args ++
+               replicate (length ubx_fields - length ubx_args) uBX_DUMMY_ARG ++
+               map StgVarArg bx_args ++
+               replicate (length bx_fields - length bx_args) bX_DUMMY_ARG)
+
   | otherwise
   = StgApp f (unariseArgs rho args)
 
 unariseExpr _ _ (StgLit l)
   = StgLit l
 
-unariseExpr _ rho (StgConApp dc args)
+unariseExpr _ rho e@(StgConApp dc args)
   | isUnboxedTupleCon dc = StgConApp (tupleDataCon Unboxed (length args')) args'
+  | isUnboxedSumCon dc   =
+    -- TODO: This is where we need the type information, because we need to pass
+    -- some number of dummy unlifted and lifted things to the constructor.
+    -- (so yeah type also tells us which constructor to use)
+    pprPanic "unariseExpr" (text "found sum con app:" <+> ppr e)
   | otherwise            = StgConApp dc args'
   where
     args' = unariseArgs rho args
@@ -111,13 +137,17 @@ unariseExpr us rho (StgLam xs e)
   where
     (us', rho', xs') = unariseIdBinders us rho xs
 
-unariseExpr us rho (StgCase e case_lives alts_lives bndr srt alt_ty alts)
-  = StgCase (unariseExpr us1 rho e) (unariseLives rho case_lives)
-            (unariseLives rho alts_lives) bndr (unariseSRT rho srt)
-            alt_ty alts'
+unariseExpr us rho case_@(StgCase e case_lives alts_lives bndr srt alt_ty alts)
+  = let ret = StgCase (unariseExpr us1 rho e) (unariseLives rho case_lives)
+                      (unariseLives rho alts_lives) bndr (unariseSRT rho srt)
+                      alt_ty' alts'
+     in pprTrace "unariseExpr" (text "before:" <+> ppr case_ $$ text "after:" <+> ppr ret) ret
  where
     (us1, us2) = splitUniqSupply us
     alts'      = unariseAlts us2 rho alt_ty bndr alts
+    alt_ty'    = case alt_ty of
+                   UbxSumAlt ubx_fields bx_fields -> UbxTupAlt (ubx_fields + bx_fields)
+                   _ -> alt_ty
 
 unariseExpr us rho (StgLet bind e)
   = StgLet (unariseBinding us1 rho bind) (unariseExpr us2 rho e)
@@ -150,6 +180,40 @@ unariseAlts us rho (UbxTupAlt n) bndr [(DataAlt _, ys, uses, e)]
 unariseAlts _ _ (UbxTupAlt _) _ alts
   = pprPanic "unariseExpr: strange unboxed tuple alts" (ppr alts)
 
+unariseAlts us rho (UbxSumAlt ubx_fields bx_fields) bndr alts
+  = ASSERT (length ys == ubx_fields + bx_fields)
+    [(DataAlt (tupleDataCon Unboxed (ubx_fields + bx_fields)), ys, undefined, inner_case)]
+  where
+    (us2, rho', ys) = unariseIdBinder us rho bndr
+    (tag_bndr : ubx_ys, bx_ys) = partition (isUnLiftedType . idType) ys
+
+    inner_case =
+      let
+        mkAlt :: StgAlt -> StgAlt
+        mkAlt (DataAlt sumCon, bs, uses, e) =
+          let
+            (ubx_bs, bx_bs) = partition (isUnLiftedType . idType) bs
+            rns = map (second (:[])) (zip ubx_bs ubx_ys ++ zip bx_bs bx_ys)
+            rho'' = extendVarEnvList rho' rns
+          in
+            ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], [],
+              unariseExpr us2 rho'' e )
+      in
+        StgCase (StgApp tag_bndr []) undefined undefined tag_bndr undefined
+                (PrimAlt intPrimTyCon)
+                (mkDefaultAlt (map mkAlt alts))
+
+    -- (us', rho', ys', uses') = unariseUsedIdBinders us rho ys uses
+    -- (ubx_ys, bx_ys) = partition (isUnLiftedType . idType) ys'
+
+    -- unused_ubxs = zipWith (mkSysLocalOrCoVar (mkFastString "ubx"))
+    --                       (uniqsFromSupply us'1)
+    --                       (replicate (ubx_fields - length ubx_ys) intPrimTy)
+
+    -- unused_bxs = zipWith (mkSysLocalOrCoVar (mkFastString "bx"))
+    --                      (uniqsFromSupply us'2)
+    --                      (replicate (bx_fields - length bx_ys) liftedAny)
+
 unariseAlts us rho _ _ alts
   = zipWith (\us alt -> unariseAlt us rho alt) (listSplitUniqSupply us) alts
 
@@ -181,13 +245,14 @@ unariseIds rho = concatMap (unariseId rho)
 unariseId :: UnariseEnv -> Id -> [Id]
 unariseId rho x
   | Just ys <- lookupVarEnv rho x
-  = ASSERT2( case repType (idType x) of UbxTupleRep _ -> True; _ -> x == ubxTupleId0
-           , text "unariseId: not unboxed tuple" <+> ppr x )
+  = -- Disabling the assertion as we also use the env for renaming now.
+    -- ASSERT2( case repType (idType x) of UbxTupleRep{} -> True; UbxSumRep{} -> True; _ -> x == ubxTupleId0
+    --        , text "unariseId: not unboxed tuple or sum" <+> ppr x <+> parens (ppr (idType x)) )
     ys
 
   | otherwise
-  = ASSERT2( case repType (idType x) of UbxTupleRep _ -> False; _ -> True
-           , text "unariseId: was unboxed tuple" <+> ppr x )
+  = ASSERT2( case repType (idType x) of UbxTupleRep{} -> False; UbxSumRep{} -> False; _ -> True
+           , text "unariseId: was unboxed tuple or sum" <+> ppr x )
     [x]
 
 unariseUsedIdBinders :: UniqSupply -> UnariseEnv -> [Id] -> [Bool]
@@ -208,12 +273,38 @@ unariseIdBinder us rho x = case repType (idType x) of
                            ys   = unboxedTupleBindersFrom us0 x tys
                            rho' = extendVarEnv rho x ys
                        in (us1, rho', ys)
-    UbxSumRep _ _   -> pprPanic "unariseIdBinder: Found unboxed sum type"
-                                (ppr x)
+    UbxSumRep ubx_fields bx_fields
+                    -> let (us0, us1) = splitUniqSupply us
+                           ys = unboxedTupleBindersFrom us0 x
+                                   (replicate (length ubx_fields) intPrimTy ++
+                                    replicate (length bx_fields) liftedAny)
+                           rho' = extendVarEnv rho x ys
+                        in (us1, rho', ys)
 
 unboxedTupleBindersFrom :: UniqSupply -> Id -> [UnaryType] -> [Id]
-unboxedTupleBindersFrom us x tys = zipWith (mkSysLocalOrCoVar fs) (uniqsFromSupply us) tys
+unboxedTupleBindersFrom us x tys = mkIds us fs tys
   where fs = occNameFS (getOccName x)
+
+mkIds :: UniqSupply -> FastString -> [UnaryType] -> [Id]
+mkIds us fs tys = zipWith (mkSysLocalOrCoVar fs) (uniqsFromSupply us) tys
 
 concatMapVarSet :: (Var -> [Var]) -> VarSet -> VarSet
 concatMapVarSet f xs = mkVarSet [x' | x <- varSetElems xs, x' <- f x]
+
+--------------------------------------------------------------------------------
+
+liftedAny :: Type
+liftedAny = anyTypeOfKind liftedTypeKind
+
+uBX_DUMMY_ARG :: StgArg
+uBX_DUMMY_ARG = StgLitArg (MachWord 0)
+
+bX_DUMMY_ARG :: StgArg
+bX_DUMMY_ARG = StgVarArg rUNTIME_ERROR_ID
+
+mkDefaultAlt :: [StgAlt] -> [StgAlt]
+mkDefaultAlt [] = pprPanic "elimUbxSumExpr.mkDefaultAlt" (text "Empty alts")
+mkDefaultAlt alts@((DEFAULT, _, _, _) : _) = alts
+mkDefaultAlt alts = dummyDefaultAlt : alts
+
+dummyDefaultAlt = (DEFAULT, [], [], StgApp rUNTIME_ERROR_ID [])
