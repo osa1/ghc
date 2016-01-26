@@ -461,7 +461,7 @@ elimUbxConApp con stg_args ty_args0
       ty_args = drop (length ty_args0 `div` 2) ty_args0
 
       [arg0] = stg_args
-      arg_ty = stgArgType arg0
+      arg_ty = elimUbxSumTy' (stgArgType arg0)
       arg = elimUbxSumArg arg0
 
       (fields_unboxed, fields_boxed) = unboxedSumTyConFields ty_args
