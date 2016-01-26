@@ -60,7 +60,7 @@ elimUbxSumRhs :: StgRhs -> Type -> UniqSM StgRhs
 elimUbxSumRhs (StgRhsClosure ccs b_info fvs update_flag srt args expr) ty
   = StgRhsClosure ccs b_info (map elimUbxSumTy fvs)
                   update_flag (elimUbxSumSRT srt) (map elimUbxSumTy args)
-      <$> elimUbxSumExpr expr (Just ty)
+      <$> elimUbxSumExpr expr (Just (dropFunArgs (length args) ty))
 
 elimUbxSumRhs (StgRhsCon ccs con args) ty
   | isUnboxedSumCon con
