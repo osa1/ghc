@@ -284,9 +284,11 @@ unariseIdBinder us rho x = case repType (idType x) of
                        in (us1, rho', ys)
     UbxSumRep ubx_fields bx_fields
                     -> let (us0, us1) = splitUniqSupply us
-                           ys = unboxedTupleBindersFrom us0 x
-                                   (replicate (length ubx_fields) intPrimTy ++
-                                    replicate (length bx_fields) liftedAny)
+                           (us0_1, us0_2) = splitUniqSupply us0
+                           ys = -- unboxedTupleBindersFrom us0 x
+                                mkIds us0_1 (mkFastString "ubx")
+                                    (replicate (length ubx_fields) intPrimTy) ++
+                                mkIds us0_2 (mkFastString "bx")  (replicate (length bx_fields) liftedAny)
                            rho' = extendVarEnv rho x ys
                         in (us1, rho', ys)
 
