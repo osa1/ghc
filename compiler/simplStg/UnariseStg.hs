@@ -195,7 +195,7 @@ unariseAlts us rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
   = ASSERT (length ys == ubx_fields + bx_fields)
     [(DataAlt (tupleDataCon Unboxed (ubx_fields + bx_fields)), ys, undefined, inner_case)]
   where
-    (us2, rho', ys) = unariseIdBinder us rho bndr
+    (us2, rho_sum_bndrs, ys) = unariseIdBinder us rho bndr
     (tag_bndr : ubx_ys, bx_ys) = splitAt ubx_fields ys
 
     inner_case =
@@ -203,17 +203,32 @@ unariseAlts us rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
         mkAlt :: StgAlt -> StgAlt
         mkAlt (DataAlt sumCon, bs, uses, e) =
           let
-            (us', rho'', bs') = unariseIdBinders us rho' bs
+            (us', rho_alt_bndrs, bs') = unariseIdBinders us rho_sum_bndrs bs
             (ubx_bs, bx_bs) = partition (isUnLiftedType . idType) bs'
-            rns = map (second (:[])) (zip ubx_bs ubx_ys ++ zip bx_bs bx_ys)
-            rho''' = extendVarEnvList rho'' rns
+            rns = zip ubx_bs ubx_ys ++ zip bx_bs bx_ys
+
+            rho_alt_bndrs_renamed = flip mapVarEnv rho_alt_bndrs $ \vals ->
+                       flip map vals $ \val ->
+                         case lookup val rns of
+                           Nothing -> val
+                           Just val' -> val'
+
+            rho_alt_bndrs_orig_bndr_added =
+              extendVarEnvList rho_alt_bndrs_renamed (map (second (:[])) rns)
           in
-            -- pprTrace "mkAlt" (text "alt bs:" $$ ppr bs $$ ppr ubx_bs $$ ppr bx_bs $$ ppr rns)
-            ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], [],
-              unariseExpr us2 rho''' e ty )
+            let ret = unariseExpr us2 rho_alt_bndrs_orig_bndr_added e ty
+             in
+               --pprTrace "mkAlt" (text "unarising alt with rns:" <+> ppr rho''' $$
+               --                  text "rho'':" <+> ppr rho'' $$
+               --                  text "rho':" <+> ppr rho' $$
+               --                  text "rho:" <+> ppr rho $$
+               --                  text "rns:" <+> ppr rns $$
+               --                  ppr e $$ ppr ty $$ text "ret:" <+> ppr ret) -- (text "alt bs:" $$ ppr bs $$ ppr ubx_bs $$ ppr bx_bs $$ ppr rns)
+               ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], [],
+                 ret )
 
         mkAlt (DEFAULT, _, _, e) =
-          ( DEFAULT, [], [], unariseExpr us2 rho' e ty )
+          ( DEFAULT, [], [], unariseExpr us2 rho_sum_bndrs e ty )
       in
         StgCase (StgApp tag_bndr []) undefined undefined tag_bndr undefined
                 (PrimAlt intPrimTyCon)
