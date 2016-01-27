@@ -403,7 +403,7 @@ getSymtabName _ncu _dict symtab bh = do
             0x20000000 -> return $! case thing of
                 0 -> tyConName $ sumTyCon arity
                   where arity = fromIntegral (i .&. 0x0FFFFFFF)
-                1 -> ASSERT ( arity > alt )
+                1 -> ASSERT ( arity >= alt )
                      dataConName $ sumDataCon alt arity
                   where alt =
                           -- first (least significant) 14 bits
