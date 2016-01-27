@@ -707,6 +707,8 @@ tcIfaceRule (IfaceRule {ifRuleName = name, ifActivation = act, ifRuleBndrs = bnd
     ifTopFreeName :: IfaceExpr -> Maybe Name
     ifTopFreeName (IfaceType (IfaceTyConApp tc _ )) = Just (ifaceTyConName tc)
     ifTopFreeName (IfaceType (IfaceTupleTy s _ ts)) = Just (tupleTyConName s (length (tcArgsIfaceTypes ts)))
+    ifTopFreeName (IfaceType (IfaceSumTy _ ts))      =
+      Just (tyConName (sumTyCon (length (tcArgsIfaceTypes ts) `div` 2)))
     ifTopFreeName (IfaceApp f _)                    = ifTopFreeName f
     ifTopFreeName (IfaceExt n)                      = Just n
     ifTopFreeName _                                 = Nothing
@@ -882,6 +884,7 @@ tcIfaceType = go
     go (IfaceFunTy t1 t2)     = ForAllTy <$> (Anon <$> go t1) <*> go t2
     go (IfaceDFunTy t1 t2)    = ForAllTy <$> (Anon <$> go t1) <*> go t2
     go (IfaceTupleTy s i tks) = tcIfaceTupleTy s i tks
+    go (IfaceSumTy c tks)     = tcIfaceSumTy c tks
     go (IfaceTyConApp tc tks)
       = do { tc' <- tcIfaceTyCon tc
            ; tks' <- mapM go (tcArgsIfaceTypes tks)
@@ -904,6 +907,22 @@ tcIfaceTupleTy sort info args
             -> do { let tc        = promoteDataCon (tyConSingleDataCon base_tc)
                         kind_args = map typeKind args'
                   ; return (mkTyConApp tc (kind_args ++ args')) } }
+
+tcIfaceSumTy :: IfaceTyConInfo -> IfaceTcArgs -> IfL Type
+tcIfaceSumTy info args
+  = do { args' <- tcIfaceTcArgs args
+       ; let arity = length args'
+             tc = sumTyCon (arity `div` 2)
+       ; case info of
+           NoIfaceTyConInfo
+             -> return (mkTyConApp tc args')
+
+           IfacePromotedDataCon
+             -> do { let tc = promoteDataCon (tyConSingleDataCon tc)
+                         kind_args = map typeKind args'
+                   ; return (mkTyConApp tc (kind_args ++ args'))
+                   }
+       }
 
 -- See Note [Unboxed tuple levity vars] in TyCon
 tcTupleTyCon :: Bool    -- True <=> typechecking a *type* (vs. an expr)
