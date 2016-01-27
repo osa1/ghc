@@ -294,7 +294,8 @@ unariseIdBinder :: UniqSupply -> UnariseEnv -> Id -> (UniqSupply, UnariseEnv, [I
 unariseIdBinder us rho x = case repType (idType x) of
     UnaryRep _      -> (us, rho, [x])
     UbxTupleRep tys -> let (us0, us1) = splitUniqSupply us
-                           ys   = unboxedTupleBindersFrom us0 x tys
+                           ys   = -- unboxedTupleBindersFrom us0 x tys
+                                  mkIds us0 (mkFastString "tup") tys
                            rho' = extendVarEnv rho x ys
                        in (us1, rho', ys)
     UbxSumRep ubx_fields bx_fields
