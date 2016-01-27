@@ -334,6 +334,11 @@ putName _dict BinSymbolTable{
        | Just dc <- isDataConWorkId_maybe x
        , let tc = dataConTyCon dc
        , Just sort <- tyConTuple_maybe tc -> putTupleName_ bh tc sort 2
+     Just (AnId x)
+       | Just dc <- isDataConWorkId_maybe x
+       , let tc = dataConTyCon dc
+       , isUnboxedSumTyCon tc
+       -> pprPanic "found unboxed sum worker id" (ppr x $$ ppr dc $$ ppr tc)
      _ -> do
        symtab_map <- readIORef symtab_map_ref
        case lookupUFM symtab_map name of
