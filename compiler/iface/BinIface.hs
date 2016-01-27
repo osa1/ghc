@@ -294,14 +294,16 @@ serialiseName bh name _ = do
 --    x is the tuple sort (00b ==> boxed, 01b ==> unboxed, 10b ==> constraint)
 --    y is the thing (00b ==> tycon, 01b ==> datacon, 10b ==> datacon worker)
 --    z is the arity
---  1010xxxx xxxxxxxx xxxxxxxx xxxxxxxx
+--
+--  10100xxx xxxxxxxx xxxxxxxx xxxxxxxx
 --   A sum tycon name:
 --    x is the arity
---  1011xxxx xxxxxxxx xxyyyyyy yyyyyyyy
+--  10101xxx xxxxxxxx xxyyyyyy yyyyyyyy
 --   A sum datacon name:
 --    x is the arity
 --    y is the alternative
---    -- TODO: Do we need to distringuish datacon workers?
+--  10110xxx xxxxxxxx xxyyyyyy yyyyyyyy
+--    worker
 --  11xxxxxx xxxxxxxx xxxxxxxx xxxxxxxx
 --   An implicit parameter TyCon name. x is an index into the FastString *dictionary*
 --
@@ -336,9 +338,8 @@ putName _dict BinSymbolTable{
        , Just sort <- tyConTuple_maybe tc -> putTupleName_ bh tc sort 2
      Just (AnId x)
        | Just dc <- isDataConWorkId_maybe x
-       , let tc = dataConTyCon dc
-       , isUnboxedSumTyCon tc
-       -> pprPanic "found unboxed sum worker id" (ppr x $$ ppr dc $$ ppr tc)
+       , isUnboxedSumCon dc
+       -> putSumWorkerId_ bh dc
      _ -> do
        symtab_map <- readIORef symtab_map_ref
        case lookupUFM symtab_map name of
@@ -364,15 +365,23 @@ putTupleName_ bh tc tup_sort thing_tag
 
 putSumTyConName_ :: BinHandle -> TyCon -> IO ()
 putSumTyConName_ bh tc
-  = ASSERT(arity < 2^(28 :: Int))
+  = ASSERT(arity < 2^(27 :: Int))
     put_ bh (0xA0000000 .|. arity)
   where
     arity = (fromIntegral (tyConArity tc) `div` 2) :: Word32
 
 putSumDataConName_ :: BinHandle -> DataCon -> IO ()
 putSumDataConName_ bh dc
-  = ASSERT(arity < 2^(14 :: Int) && alt < 2^(14 :: Int))
-    put_ bh (0xB0000000 .|. (arity `shiftL` 14) .|. alt)
+  = ASSERT(arity < 2^(13 :: Int) && alt < 2^(14 :: Int))
+    put_ bh (0xA8000000 .|. (arity `shiftL` 14) .|. alt)
+  where
+    tc       = dataConTyCon dc
+    alt      = fromIntegral (dataConTag dc)
+    arity    = (fromIntegral (tyConArity tc) `div` 2) :: Word32
+
+putSumWorkerId_ :: BinHandle -> DataCon -> IO ()
+putSumWorkerId_ bh dc
+  = put_ bh (0xB0000000 .|. (arity `shiftL` 14) .|. alt)
   where
     tc       = dataConTyCon dc
     alt      = fromIntegral (dataConTag dc)
@@ -414,18 +423,30 @@ getSymtabName _ncu _dict symtab bh = do
                 _ -> pprPanic "getSymtabName:unknown tuple thing" (ppr i)
 
           0x20000000 ->
-            return $! case ((i .&. 0x10000000) `shiftR` 28) of
-              0 -> tyConName $ sumTyCon ( fromIntegral (i .&. 0x0FFFFFFF) )
+            -- return $! case ((i .&. 0x10000000) `shiftR` 28) of
+            return $! case ((i .&. 0x18000000) `shiftR` 27) of
+              0 -> tyConName $ sumTyCon ( fromIntegral (i .&. 0x7ffffff) )
               1 -> let
                      alt =
                        -- first (least significant) 14 bits
                        fromIntegral (i .&. 0b11111111111111)
                      arity =
-                       -- next 14 bits
-                       fromIntegral ((i `shiftR` 14) .&. 0b11111111111111)
+                       -- next 13 bits
+                       fromIntegral ((i `shiftR` 14) .&. 0b1111111111111)
                    in
                      ASSERT ( arity >= alt )
-                     dataConName $ sumDataCon alt arity
+                     dataConName (sumDataCon alt arity)
+              2 -> let
+                     alt =
+                       -- first (least significant) 14 bits
+                       fromIntegral (i .&. 0b11111111111111)
+                     arity =
+                       -- next 13 bits
+                       fromIntegral ((i `shiftR` 14) .&. 0b1111111111111)
+                   in
+                     ASSERT ( arity >= alt )
+                     idName (dataConWorkId (sumDataCon alt arity))
+
               _ -> pprPanic "getSymtabName:unknown sum sort" (ppr i)
           _ -> pprPanic "getSyntabName:unknown `tuple or sum` tag" (ppr i)
       _ -> pprPanic "getSymtabName:unknown name tag" (ppr i)
