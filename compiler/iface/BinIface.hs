@@ -385,42 +385,50 @@ getSymtabName :: NameCacheUpdater
 getSymtabName _ncu _dict symtab bh = do
     i <- get bh
     case i .&. 0xC0000000 of
-        0x00000000 -> return $! symtab ! fromIntegral (i ::  Word32)
-        0x40000000 -> return $! case lookupUFM_Directly knownKeyNamesMap (mkUnique tag ix) of
-                        Nothing -> pprPanic "getSymtabName:unknown known-key unique" (ppr i)
-                        Just n  -> n
-          where tag = chr (fromIntegral ((i .&. 0x3FC00000) `shiftR` 22))
-                ix = fromIntegral i .&. 0x003FFFFF
-        0x80000000 -> case i .&. 0x20000000 of
-            0x00000000 -> return $! case thing_tag of
+      0x00000000 -> return $! symtab ! fromIntegral (i ::  Word32)
+
+      0x40000000 ->
+        let
+          tag = chr (fromIntegral ((i .&. 0x3FC00000) `shiftR` 22))
+          ix  = fromIntegral i .&. 0x003FFFFF
+        in
+          return $! case lookupUFM_Directly knownKeyNamesMap (mkUnique tag ix) of
+                      Nothing -> pprPanic "getSymtabName:unknown known-key unique" (ppr i)
+                      Just n  -> n
+
+      0x80000000 ->
+        case i .&. 0x20000000 of
+          0x00000000 ->
+            let
+              dc = tupleDataCon sort arity
+              sort = case (i .&. 0x18000000) `shiftR` 27 of
+                       0 -> Boxed
+                       1 -> Unboxed
+                       _ -> pprPanic "getSymtabName:unknown tuple sort" (ppr i)
+              arity = fromIntegral (i .&. 0x01FFFFFF)
+            in
+              return $! case ( (i .&. 0x06FFFFFF) `shiftR` 25 ) of
                 0 -> tyConName (tupleTyCon sort arity)
                 1 -> dataConName dc
                 2 -> idName (dataConWorkId dc)
                 _ -> pprPanic "getSymtabName:unknown tuple thing" (ppr i)
-              where
-                dc = tupleDataCon sort arity
-                sort = case (i .&. 0x18000000) `shiftR` 27 of
-                         0 -> Boxed
-                         1 -> Unboxed
-                         _ -> pprPanic "getSymtabName:unknown tuple sort" (ppr i)
-                thing_tag = (i .&. 0x06FFFFFF) `shiftR` 25
-                arity = fromIntegral (i .&. 0x01FFFFFF)
-            0x20000000 -> return $! case thing of
-                0 -> tyConName $ sumTyCon arity
-                  where arity = fromIntegral (i .&. 0x0FFFFFFF)
-                1 -> ASSERT ( arity >= alt )
+
+          0x20000000 ->
+            return $! case ((i .&. 0x10000000) `shiftR` 28) of
+              0 -> tyConName $ sumTyCon ( fromIntegral (i .&. 0x0FFFFFFF) )
+              1 -> let
+                     alt =
+                       -- first (least significant) 14 bits
+                       fromIntegral (i .&. 0b11111111111111)
+                     arity =
+                       -- next 14 bits
+                       fromIntegral ((i `shiftR` 14) .&. 0b11111111111111)
+                   in
+                     ASSERT ( arity >= alt )
                      dataConName $ sumDataCon alt arity
-                  where alt =
-                          -- first (least significant) 14 bits
-                          fromIntegral (i .&. 0b11111111111111)
-                        arity =
-                          -- next 14 bits
-                          fromIntegral ((i `shiftR` 14) .&. 0b11111111111111)
-                _ -> pprPanic "getSymtabName:unknown sum sort" (ppr i)
-              where
-                thing = (i .&. 0x10000000) `shiftR` 28
-            _ -> pprPanic "getSyntabName:unknown `tuple or sum` tag" (ppr i)
-        _          -> pprPanic "getSymtabName:unknown name tag" (ppr i)
+              _ -> pprPanic "getSymtabName:unknown sum sort" (ppr i)
+          _ -> pprPanic "getSyntabName:unknown `tuple or sum` tag" (ppr i)
+      _ -> pprPanic "getSymtabName:unknown name tag" (ppr i)
 
 data BinSymbolTable = BinSymbolTable {
         bin_symtab_next :: !FastMutInt, -- The next index to use
