@@ -204,13 +204,14 @@ unariseAlts us rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
         mkAlt :: StgAlt -> StgAlt
         mkAlt (DataAlt sumCon, bs, uses, e) =
           let
-            (ubx_bs, bx_bs) = partition (isUnLiftedType . idType) bs
+            (us', rho'', bs') = unariseIdBinders us rho' bs
+            (ubx_bs, bx_bs) = partition (isUnLiftedType . idType) bs'
             rns = map (second (:[])) (zip ubx_bs ubx_ys ++ zip bx_bs bx_ys)
-            rho'' = extendVarEnvList rho' rns
+            rho''' = extendVarEnvList rho'' rns
           in
             -- pprTrace "mkAlt" (text "alt bs:" $$ ppr bs $$ ppr ubx_bs $$ ppr bx_bs $$ ppr rns)
             ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], [],
-              unariseExpr us2 rho'' e ty )
+              unariseExpr us2 rho''' e ty )
 
         mkAlt (DEFAULT, _, _, e) =
           ( DEFAULT, [], [], unariseExpr us2 rho' e ty )
