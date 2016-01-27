@@ -33,14 +33,15 @@ unboxedSumRepTypes alts =
       fields_unboxed = maximum (0 : map (length . fst) con_rep_tys_parts)
       fields_boxed   = maximum (0 : map (length . snd) con_rep_tys_parts)
 
+      go :: Type -> [Type]
       go ty
         | Just (tc, args) <- splitTyConApp_maybe ty
         , isUnboxedTupleTyCon tc
-        = drop (length args `div` 2) args
+        = concatMap go (drop (length args `div` 2) args)
 
         | Just (tc, args) <- splitTyConApp_maybe ty
         , isUnboxedSumTyCon tc
-        = unboxedSumRepTypes (drop (length args `div` 2) args)
+        = concatMap go (unboxedSumRepTypes (drop (length args `div` 2) args))
 
         | otherwise
         = [ty]
