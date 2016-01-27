@@ -520,7 +520,7 @@ isBuiltInOcc_maybe occ
 
     parse_sum_dc alt arity rest
       | ('|' : rest2) <- rest = parse_sum_dc alt (arity+1) rest2
-      | "#)" <- rest          = Just $ getName (sumDataCon arity alt)
+      | "#)" <- rest          = Just $ getName (sumDataCon alt arity)
       | otherwise             = Nothing
 
     tail_matches Boxed   ")" = True
