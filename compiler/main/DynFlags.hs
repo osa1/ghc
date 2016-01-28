@@ -413,6 +413,7 @@ data GeneralFlag
    | Opt_CaseMerge
    | Opt_UnboxStrictFields
    | Opt_UnboxSmallStrictFields
+   | Opt_UnboxStrictSums
    | Opt_DictsCheap
    | Opt_EnableRewriteRules             -- Apply rewrite rules during simplification
    | Opt_Vectorise
@@ -3066,6 +3067,7 @@ fFlags = [
   flagSpec "write-interface"                  Opt_WriteInterface,
   flagSpec "unbox-small-strict-fields"        Opt_UnboxSmallStrictFields,
   flagSpec "unbox-strict-fields"              Opt_UnboxStrictFields,
+  flagSpec "unbox-strict-sums"                Opt_UnboxStrictSums,
   flagSpec "vectorisation-avoidance"          Opt_VectorisationAvoidance,
   flagSpec "vectorise"                        Opt_Vectorise,
   flagSpec "worker-wrapper"                   Opt_WorkerWrapper,

@@ -870,6 +870,9 @@ isUnpackableType dflags fam_envs ty
   | Just (tc, _) <- splitTyConApp_maybe ty
   , -- guess how many constructors prim types have?
     cons@(_ : _) <- tyConDataCons tc
+  , -- If there's more than one constructor, we need the -funbox-strict-sums
+    -- flag in order to unpack it
+    length cons == 1 || gopt Opt_UnboxStrictSums dflags
   , all isVanillaDataCon cons
   = all (ok_con_args (unitNameSet (getName tc))) cons
 
