@@ -10,6 +10,10 @@
 # Full build with max optimisation and everything enabled (very slow build)
 #BuildFlavour = perf
 
+# Same as "perf", except doesn't build profiling libraries. Use this when
+# benchmarking anything (programs _or_ the compiler itself).
+#BuildFlavour = benchmark
+
 # As above but build GHC using the LLVM backend
 #BuildFlavour = perf-llvm
 
