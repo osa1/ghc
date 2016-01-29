@@ -677,9 +677,25 @@ dataConSrcToImplBang dflags fam_envs arg_ty
   , (rep_tys, _) <- dataConArgUnpack arg_ty'
   , case unpk_prag of
       NoSrcUnpack ->
-        gopt Opt_UnboxStrictFields dflags
-            || (gopt Opt_UnboxSmallStrictFields dflags
-                && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
+        let
+          -- It's either a product type, in which case we use the existing
+          -- -funbox-small-strict-fields check:
+          prod_ty_check =
+            gopt Opt_UnboxStrictFields dflags
+              || (gopt Opt_UnboxSmallStrictFields dflags
+                 && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
+
+          -- Or it's a sum type, in which case we use the new
+          -- -funbox-small-strict-sums.
+          sum_ty_check
+            | Just (tc, _) <- splitTyConApp_maybe arg_ty
+            , -- Make sure we have at least one DataCon
+              -- (prim types don't have any)
+              cons@(_ : _) <- tyConDataCons tc
+            = unboxSmallStrictSums dflags >= Just (length (typeUnboxedSumRep cons))
+        in
+          prod_ty_check || sum_ty_check
+
       srcUnpack -> isSrcUnpacked srcUnpack
   = case mb_co of
       Nothing     -> HsUnpack Nothing
@@ -871,11 +887,6 @@ isUnpackableType dflags fam_envs ty
   | Just (tc, _) <- splitTyConApp_maybe ty
   , -- guess how many constructors prim types have?
     cons@(_ : _) <- tyConDataCons tc
-  , -- If there's more than one constructor, we need the -funbox-strict-sums
-    -- flag in order to unpack it
-    length cons == 1
-        || unboxSmallStrictSums dflags
-             >= Just (length (typeUnboxedSumRep cons))
   , all isVanillaDataCon cons
   = all (ok_con_args (unitNameSet (getName tc))) cons
 
