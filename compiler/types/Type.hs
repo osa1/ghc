@@ -105,6 +105,7 @@ module Type (
         isAlgType, isClosedAlgType,
         isPrimitiveType, isStrictType,
         isLevityTy, isLevityVar, getLevity, getLevityFromKind,
+        dropLevityArgs,
 
         -- * Main data types representing Kinds
         Kind,
@@ -1892,6 +1893,9 @@ getLevityFromKind err = go
       = arg
     go k = pprPanic "getLevity" (text err $$
                                  ppr k <+> dcolon <+> ppr (typeKind k))
+
+dropLevityArgs :: [Type] -> [Type]
+dropLevityArgs = dropWhile (isLevityTy . typeKind)
 
 isUnboxedTupleType :: Type -> Bool
 isUnboxedTupleType ty = case tyConAppTyCon_maybe ty of
