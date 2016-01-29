@@ -74,6 +74,7 @@ import DynFlags
 import Outputable
 import FastString
 import ListSetOps
+import ElimUbxSums
 import qualified GHC.LanguageExtensions as LangExt
 
 import Data.List        ( zipWith4 )
@@ -677,8 +678,8 @@ dataConSrcToImplBang dflags fam_envs arg_ty
   , case unpk_prag of
       NoSrcUnpack ->
         gopt Opt_UnboxStrictFields dflags
-            || (gopt Opt_UnboxSmallStrictFields dflags
-                && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
+            || (unboxSmallStrictFields dflags
+                >= Just (length rep_tys)) -- See Note [Unpack small fields]
       srcUnpack -> isSrcUnpacked srcUnpack
   = case mb_co of
       Nothing     -> HsUnpack Nothing
@@ -872,7 +873,10 @@ isUnpackableType dflags fam_envs ty
     cons@(_ : _) <- tyConDataCons tc
   , -- If there's more than one constructor, we need the -funbox-strict-sums
     -- flag in order to unpack it
-    length cons == 1 || gopt Opt_UnboxStrictSums dflags
+    length cons == 1
+        || gopt Opt_UnboxStrictSums dflags
+        || unboxSmallStrictSums dflags
+             >= Just (length (unboxedSumRepTypes (map dataConUnboxedSum cons)))
   , all isVanillaDataCon cons
   = all (ok_con_args (unitNameSet (getName tc))) cons
 
@@ -909,11 +913,11 @@ isUnpackableType dflags fam_envs ty
     attempt_unpack _ = False
 
 {-
-Note [Unpack one-wide fields]
+Note [Unpack small fields]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The flag UnboxSmallStrictFields ensures that any field that can
-(safely) be unboxed to a word-sized unboxed field, should be so unboxed.
-For example:
+The flag -funbox-small-strict-fields=n ensures that any field that can
+(safely) be unboxed to a unboxed field of size n word or less, should be so
+unboxed. For example:
 
     data A = A Int#
     newtype B = B A
