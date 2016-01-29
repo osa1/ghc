@@ -105,8 +105,7 @@ module Type (
         isAlgType, isClosedAlgType,
         isPrimitiveType, isStrictType,
         isLevityTy, isLevityVar, isLevityKindedTy,
-        dropLevityArgs,
-        getLevity, getLevityFromKind,
+        dropLevityArgs, getLevity, getLevityFromKind,
 
         -- * Main data types representing Kinds
         Kind,
