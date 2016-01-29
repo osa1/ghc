@@ -413,6 +413,7 @@ data GeneralFlag
    | Opt_DoEtaReduction
    | Opt_CaseMerge
    | Opt_UnboxStrictFields
+   | Opt_UnboxSmallStrictFields
    | Opt_UnboxStrictSums
    | Opt_DictsCheap
    | Opt_EnableRewriteRules             -- Apply rewrite rules during simplification
@@ -879,9 +880,8 @@ data DynFlags = DynFlags {
   initialUnique         :: Int,
   uniqueIncrement       :: Int,
 
-  -- | Max size, in words, of fields that can be unpacked
-  unboxSmallStrictFields :: Maybe Int,
-  unboxSmallStrictSums   :: Maybe Int
+  -- | Max flattened size, in words, of sum types that can be unpacked
+  unboxSmallStrictSums :: Maybe Int
 }
 
 class HasDynFlags m where
@@ -1595,8 +1595,7 @@ defaultDynFlags mySettings =
 
         reverseErrors = False,
 
-        unboxSmallStrictFields = Nothing,
-        unboxSmallStrictSums   = Nothing
+        unboxSmallStrictSums = Nothing
       }
 
 defaultWays :: Settings -> [Way]
@@ -2049,17 +2048,14 @@ showOpt (Option s)  = s
 updOptLevel :: Int -> DynFlags -> DynFlags
 -- ^ Sets the 'DynFlags' to be appropriate to the optimisation level
 updOptLevel n dfs
-  = dfs3{ optLevel = final_n }
+  = dfs2{ optLevel = final_n }
   where
    final_n = max 0 (min 2 n)    -- Clamp to 0 <= n <= 2
    dfs1 = foldr (flip gopt_unset) dfs  remove_gopts
    dfs2 = foldr (flip gopt_set)   dfs1 extra_gopts
-   dfs3 = foldr ($)               dfs2 extra_dflags
 
    extra_gopts  = [ f | (ns,f) <- optLevelFlags, final_n `elem` ns ]
    remove_gopts = [ f | (ns,f) <- optLevelFlags, final_n `notElem` ns ]
-
-   extra_dflags = [ dd | (ns,dd) <- optLevelDynFlags, final_n `elem` ns ]
 
 {- **********************************************************************
 %*                                                                      *
@@ -2682,10 +2678,10 @@ dynamic_flags = [
   , defGhcFlag "dunique-increment"
       (intSuffix (\n d -> d{ uniqueIncrement = n }))
 
-  , defFlag "funbox-small-strict-fields"
-      (optIntSuffix setUnboxSmallStrictFields)
+    -- If the user specifies -funbox-small-strict-sums without an argument,
+    -- use a default size of two words
   , defFlag "funbox-small-strict-sums"
-      (optIntSuffix setUnboxSmallStrictSums)
+      (optIntSuffix (\mi d -> d { unboxSmallStrictSums = mi <|> Just 2 }))
 
         ------ Profiling ----------------------------------------------------
 
@@ -3080,6 +3076,7 @@ fFlags = [
   flagSpec "strictness"                       Opt_Strictness,
   flagSpec "use-rpaths"                       Opt_RPath,
   flagSpec "write-interface"                  Opt_WriteInterface,
+  flagSpec "unbox-small-strict-fields"        Opt_UnboxSmallStrictFields,
   flagSpec "unbox-strict-fields"              Opt_UnboxStrictFields,
   flagSpec "unbox-strict-sums"                Opt_UnboxStrictSums,
   flagSpec "vectorisation-avoidance"          Opt_VectorisationAvoidance,
@@ -3419,7 +3416,7 @@ impliedXFlags
 --  * utils/mkUserGuidePart/Options/
 --  * docs/users_guide/using.rst
 --
--- The first contains the Flag Reference section, which breifly lists all
+-- The first contains the Flag Refrence section, which breifly lists all
 -- available flags. The second contains a detailed description of the
 -- flags. Both places should contain information whether a flag is implied by
 -- -O0, -O or -O2.
@@ -3453,6 +3450,7 @@ optLevelFlags -- see Note [Documenting optimisation flags]
     , ([1,2],   Opt_Specialise)
     , ([1,2],   Opt_CrossModuleSpecialise)
     , ([1,2],   Opt_Strictness)
+    , ([1,2],   Opt_UnboxSmallStrictFields)
     , ([1,2],   Opt_CprAnal)
     , ([1,2],   Opt_WorkerWrapper)
 
@@ -3463,35 +3461,6 @@ optLevelFlags -- see Note [Documenting optimisation flags]
 --  , ([2],     Opt_StaticArgumentTransformation)
 --   Static Argument Transformation needs investigation. See #9374
     ]
-
--- These flags are tricky since (1) they are implied by various optimization
--- settings but (2) they take arguments. Therefore:
---
--- * If the user specifies the flag, use the argument (if no argument was
---   given, use the default value)
--- * If the user does not specify the flag, but the right optimisation level is
---   set, use the default value
-optLevelDynFlags :: [([Int], DynFlags -> DynFlags)]
-optLevelDynFlags -- see Note [Documenting optimisation flags]
-  = [ ([1,2], setUnboxSmallStrictFields Nothing)
-    , ([1,2], setUnboxSmallStrictSums   Nothing)
-    ]
-
--- Default to unboxing fields with a pointer-sized representation
--- (i.e., one word) if given Nothing
-setUnboxSmallStrictFields :: Maybe Int -> DynFlags -> DynFlags
-setUnboxSmallStrictFields mws d =
-    d { unboxSmallStrictFields = mws <|> Just smallFieldSize }
-
--- Default to unboxing sums with a flattened size of at most two words if
--- given Nothing
-setUnboxSmallStrictSums :: Maybe Int -> DynFlags -> DynFlags
-setUnboxSmallStrictSums mws d =
-    d { unboxSmallStrictSums = mws <|> Just smallSumSize }
-
-smallFieldSize, smallSumSize :: Int
-smallFieldSize = 1
-smallSumSize   = 2
 
 -- -----------------------------------------------------------------------------
 -- Standard sets of warning options
