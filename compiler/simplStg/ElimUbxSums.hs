@@ -1,16 +1,19 @@
 {-# LANGUAGE CPP, TupleSections #-}
 
 module ElimUbxSums
-  ( unboxedSumTyConFields
+  ( dataConUnboxedSum
+  , unboxedSumTyConFields
   , unboxedSumRepTypes
   ) where
 
 #include "HsVersions.h"
 
+import DataCon
 import Outputable
 import TyCon
 import Type
 import TysPrim
+import TysWiredIn
 import Util
 
 #if __GLASGOW_HASKELL__ < 709
@@ -20,6 +23,11 @@ import Control.Applicative
 import Data.List (partition)
 
 --------------------------------------------------------------------------------
+
+dataConUnboxedSum :: DataCon -> Type
+dataConUnboxedSum dc =
+    let dcrats = dataConRepArgTys dc
+    in mkTyConApp (sumTyCon (length dcrats)) dcrats
 
 -- INVARIANT: Returned list doesn't have unboxed tuples or sums.
 unboxedSumRepTypes :: [Type] -> [Type]
