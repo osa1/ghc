@@ -177,6 +177,7 @@ import {-# SOURCE #-} ErrUtils ( Severity(..), MsgDoc, mkLocMessage )
 
 import System.IO.Unsafe ( unsafePerformIO )
 import Data.IORef
+import Control.Applicative (Alternative(..))
 import Control.Arrow ((&&&))
 import Control.Monad
 import Control.Monad.Trans.Class
@@ -413,6 +414,7 @@ data GeneralFlag
    | Opt_CaseMerge
    | Opt_UnboxStrictFields
    | Opt_UnboxSmallStrictFields
+   | Opt_UnboxStrictSums
    | Opt_DictsCheap
    | Opt_EnableRewriteRules             -- Apply rewrite rules during simplification
    | Opt_Vectorise
@@ -876,7 +878,10 @@ data DynFlags = DynFlags {
 
   -- | Unique supply configuration for testing build determinism
   initialUnique         :: Int,
-  uniqueIncrement       :: Int
+  uniqueIncrement       :: Int,
+
+  -- | Max flattened size, in words, of sum types that can be unpacked
+  unboxSmallStrictSums :: Maybe Int
 }
 
 class HasDynFlags m where
@@ -1588,7 +1593,9 @@ defaultDynFlags mySettings =
         initialUnique = 0,
         uniqueIncrement = 1,
 
-        reverseErrors = False
+        reverseErrors = False,
+
+        unboxSmallStrictSums = Nothing
       }
 
 defaultWays :: Settings -> [Way]
@@ -2671,6 +2678,11 @@ dynamic_flags = [
   , defGhcFlag "dunique-increment"
       (intSuffix (\n d -> d{ uniqueIncrement = n }))
 
+    -- If the user specifies -funbox-small-strict-sums without an argument,
+    -- use a default size of two words
+  , defFlag "funbox-small-strict-sums"
+      (optIntSuffix (\mi d -> d { unboxSmallStrictSums = mi <|> Just 2 }))
+
         ------ Profiling ----------------------------------------------------
 
         -- OLD profiling flags
@@ -3066,6 +3078,7 @@ fFlags = [
   flagSpec "write-interface"                  Opt_WriteInterface,
   flagSpec "unbox-small-strict-fields"        Opt_UnboxSmallStrictFields,
   flagSpec "unbox-strict-fields"              Opt_UnboxStrictFields,
+  flagSpec "unbox-strict-sums"                Opt_UnboxStrictSums,
   flagSpec "vectorisation-avoidance"          Opt_VectorisationAvoidance,
   flagSpec "vectorise"                        Opt_Vectorise,
   flagSpec "worker-wrapper"                   Opt_WorkerWrapper,
@@ -3692,6 +3705,10 @@ intSuffixM fn = IntSuffix (\n -> updM (fn n))
 
 floatSuffix :: (Float -> DynFlags -> DynFlags) -> OptKind (CmdLineP DynFlags)
 floatSuffix fn = FloatSuffix (\n -> upd (fn n))
+
+optIntSuffix :: (Maybe Int -> DynFlags -> DynFlags)
+             -> OptKind (CmdLineP DynFlags)
+optIntSuffix fn = OptIntSuffix (\mi -> upd (fn mi))
 
 optIntSuffixM :: (Maybe Int -> DynFlags -> DynP DynFlags)
               -> OptKind (CmdLineP DynFlags)

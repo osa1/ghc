@@ -1,16 +1,19 @@
 {-# LANGUAGE CPP, TupleSections #-}
 
 module ElimUbxSums
-  ( unboxedSumTyConFields
+  ( typeUnboxedSumRep
+  , unboxedSumTyConFields
   , unboxedSumRepTypes
   ) where
 
 #include "HsVersions.h"
 
+import DataCon
 import Outputable
 import TyCon
 import Type
 import TysPrim
+import TysWiredIn
 import Util
 
 #if __GLASGOW_HASKELL__ < 709
@@ -21,7 +24,21 @@ import Data.List (partition)
 
 --------------------------------------------------------------------------------
 
+-- | Returns unboxed sum representation of a type. The list of cons must have
+-- all data cons of the type, and should have more than one DataCon. (otherwise
+-- it wouldn't be a sum type)
+typeUnboxedSumRep :: [DataCon] -> [Type]
+typeUnboxedSumRep cons =
+    unboxedSumRepTypes (map (mk_sum . dataConRepArgTys) cons)
+  where
+    mk_sum :: [Type] -> Type
+    mk_sum [] = unitTy -- FIXME: We have this problem in some other places as
+                       -- well, we should probably use Void#.
+    mk_sum [ty] = ty
+    mk_sum tys = mkSumTy tys
+
 -- INVARIANT: Returned list doesn't have unboxed tuples or sums.
+-- Includes the tag field.
 unboxedSumRepTypes :: [Type] -> [Type]
 unboxedSumRepTypes alts =
     let

@@ -74,6 +74,7 @@ import DynFlags
 import Outputable
 import FastString
 import ListSetOps
+import ElimUbxSums
 import qualified GHC.LanguageExtensions as LangExt
 
 import Data.List        ( zipWith4 )
@@ -870,6 +871,11 @@ isUnpackableType dflags fam_envs ty
   | Just (tc, _) <- splitTyConApp_maybe ty
   , -- guess how many constructors prim types have?
     cons@(_ : _) <- tyConDataCons tc
+  , -- If there's more than one constructor, we need the -funbox-strict-sums
+    -- flag in order to unpack it
+    length cons == 1
+        || unboxSmallStrictSums dflags
+             >= Just (length (typeUnboxedSumRep cons))
   , all isVanillaDataCon cons
   = all (ok_con_args (unitNameSet (getName tc))) cons
 
@@ -908,7 +914,7 @@ isUnpackableType dflags fam_envs ty
 {-
 Note [Unpack one-wide fields]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The flag UnboxSmallStrictFields ensures that any field that can
+The flag -funbox-small-strict-fields ensures that any field that can
 (safely) be unboxed to a word-sized unboxed field, should be so unboxed.
 For example:
 
