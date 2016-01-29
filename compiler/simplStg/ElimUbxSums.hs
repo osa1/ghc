@@ -37,11 +37,11 @@ unboxedSumRepTypes alts =
       go ty
         | Just (tc, args) <- splitTyConApp_maybe ty
         , isUnboxedTupleTyCon tc
-        = concatMap go (drop (length args `div` 2) args)
+        = concatMap go (dropLevityArgs args)
 
         | Just (tc, args) <- splitTyConApp_maybe ty
         , isUnboxedSumTyCon tc
-        = concatMap go (unboxedSumRepTypes (drop (length args `div` 2) args))
+        = concatMap go (unboxedSumRepTypes (dropLevityArgs args))
 
         | otherwise
         = [ty]

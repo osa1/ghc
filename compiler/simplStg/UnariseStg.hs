@@ -105,7 +105,7 @@ unariseExpr _ rho (StgApp f args) ty
   | null args
   , Just (tycon, ty_args) <- splitTyConApp_maybe ty
   , isUnboxedSumTyCon tycon
-  , (ubx_fields, bx_fields) <- unboxedSumTyConFields (drop (length ty_args `div` 2) ty_args)
+  , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropLevityArgs ty_args)
   , (ubx_args, bx_args) <- partition (isUnLiftedType . idType) (unariseId rho f)
   = StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
               (map StgVarArg ubx_args ++
@@ -129,7 +129,7 @@ unariseExpr _ rho e@(StgConApp dc args) ty
 
   | isUnboxedSumCon dc
   , (tycon, ty_args) <- splitTyConApp ty
-  , (ubx_fields, bx_fields) <- unboxedSumTyConFields (drop (length ty_args `div` 2) ty_args)
+  , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropLevityArgs ty_args)
   , (ubx_args, bx_args) <- partition (isUnLiftedType . stgArgType) args'
   , let tag = dataConTag dc
   = StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
