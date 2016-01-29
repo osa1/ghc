@@ -573,7 +573,7 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
 
     arg_ibangs =
       case mb_bangs of
-        Nothing    -> zipWith (dataConSrcToImplBang dflags fam_envs)
+        Nothing    -> zipWith (dataConSrcToImplBang dflags fam_envs data_con)
                               orig_arg_tys orig_bangs
         Just bangs -> bangs
 
@@ -650,22 +650,23 @@ newLocal ty = do { uniq <- getUniqueM
 dataConSrcToImplBang
    :: DynFlags
    -> FamInstEnvs
+   -> DataCon -- ^ TODO: This is added for debugging purposes.
    -> Type
    -> HsSrcBang
    -> HsImplBang
 
-dataConSrcToImplBang dflags fam_envs arg_ty
+dataConSrcToImplBang dflags fam_envs data_con arg_ty
               (HsSrcBang ann unpk NoSrcStrict)
   | xopt LangExt.StrictData dflags -- StrictData => strict field
-  = dataConSrcToImplBang dflags fam_envs arg_ty
+  = dataConSrcToImplBang dflags fam_envs data_con arg_ty
                   (HsSrcBang ann unpk SrcStrict)
   | otherwise -- no StrictData => lazy field
   = HsLazy
 
-dataConSrcToImplBang _ _ _ (HsSrcBang _ _ SrcLazy)
+dataConSrcToImplBang _ _ _ _ (HsSrcBang _ _ SrcLazy)
   = HsLazy
 
-dataConSrcToImplBang dflags fam_envs arg_ty
+dataConSrcToImplBang dflags fam_envs data_con arg_ty
     (HsSrcBang _ unpk_prag SrcStrict)
   | not (gopt Opt_OmitInterfacePragmas dflags) -- Don't unpack if -fomit-iface-pragmas
           -- Don't unpack if we aren't optimising; rather arbitrarily,
@@ -693,7 +694,14 @@ dataConSrcToImplBang dflags fam_envs arg_ty
               -- (prim types don't have any)
               cons@(_ : _) <- tyConDataCons tc
             = unboxSmallStrictSums dflags >= Just (length (typeUnboxedSumRep cons))
+
+            | otherwise
+            = False
         in
+          WARN ( sum_ty_check,
+                 text "Decided to unpack field with type" <+> ppr arg_ty $$
+                 text "in DataCon:" <+> ppr data_con <+>
+                 text "of type:" <+> ppr (dataConOrigResTy data_con) )
           prod_ty_check || sum_ty_check
 
       srcUnpack -> isSrcUnpacked srcUnpack
