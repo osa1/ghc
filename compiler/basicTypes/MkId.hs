@@ -876,7 +876,7 @@ isUnpackableType dflags fam_envs ty
     length cons == 1
         || gopt Opt_UnboxStrictSums dflags
         || unboxSmallStrictSums dflags
-             >= Just (length (unboxedSumRepTypes (map dataConUnboxedSum cons)))
+             >= Just (length (typeUnboxedSumRep cons))
   , all isVanillaDataCon cons
   = all (ok_con_args (unitNameSet (getName tc))) cons
 
