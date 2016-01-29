@@ -177,6 +177,7 @@ import {-# SOURCE #-} ErrUtils ( Severity(..), MsgDoc, mkLocMessage )
 
 import System.IO.Unsafe ( unsafePerformIO )
 import Data.IORef
+import Control.Applicative (Alternative(..))
 import Control.Arrow ((&&&))
 import Control.Monad
 import Control.Monad.Trans.Class
@@ -412,7 +413,6 @@ data GeneralFlag
    | Opt_DoEtaReduction
    | Opt_CaseMerge
    | Opt_UnboxStrictFields
-   | Opt_UnboxSmallStrictFields
    | Opt_UnboxStrictSums
    | Opt_DictsCheap
    | Opt_EnableRewriteRules             -- Apply rewrite rules during simplification
@@ -881,7 +881,11 @@ data DynFlags = DynFlags {
 
   -- | Unique supply configuration for testing build determinism
   initialUnique         :: Int,
-  uniqueIncrement       :: Int
+  uniqueIncrement       :: Int,
+
+  -- | Max size, in words, of fields that can be unpacked
+  unboxSmallStrictFields :: Maybe Int,
+  unboxSmallStrictSums   :: Maybe Int
 }
 
 class HasDynFlags m where
@@ -1590,7 +1594,10 @@ defaultDynFlags mySettings =
         initialUnique = 0,
         uniqueIncrement = 1,
 
-        reverseErrors = False
+        reverseErrors = False,
+
+        unboxSmallStrictFields = Nothing,
+        unboxSmallStrictSums   = Nothing
       }
 
 defaultWays :: Settings -> [Way]
@@ -2051,14 +2058,17 @@ showOpt (Option s)  = s
 updOptLevel :: Int -> DynFlags -> DynFlags
 -- ^ Sets the 'DynFlags' to be appropriate to the optimisation level
 updOptLevel n dfs
-  = dfs2{ optLevel = final_n }
+  = dfs3{ optLevel = final_n }
   where
    final_n = max 0 (min 2 n)    -- Clamp to 0 <= n <= 2
    dfs1 = foldr (flip gopt_unset) dfs  remove_gopts
    dfs2 = foldr (flip gopt_set)   dfs1 extra_gopts
+   dfs3 = foldr ($)               dfs2 extra_dflags
 
    extra_gopts  = [ f | (ns,f) <- optLevelFlags, final_n `elem` ns ]
    remove_gopts = [ f | (ns,f) <- optLevelFlags, final_n `notElem` ns ]
+
+   extra_dflags = [ dd | (ns,dd) <- optLevelDynFlags, final_n `elem` ns ]
 
 {- **********************************************************************
 %*                                                                      *
@@ -2860,6 +2870,11 @@ dynamic_flags_deps = [
   , make_ord_flag defGhcFlag "dunique-increment"
       (intSuffix (\n d -> d { uniqueIncrement = n }))
 
+  , defFlag "funbox-small-strict-fields"
+      (optIntSuffix setUnboxSmallStrictFields)
+  , defFlag "funbox-small-strict-sums"
+      (optIntSuffix setUnboxSmallStrictSums)
+
         ------ Profiling ----------------------------------------------------
 
         -- OLD profiling flags
@@ -3334,7 +3349,6 @@ fFlagsDeps = [
   flagSpec "strictness"                       Opt_Strictness,
   flagSpec "use-rpaths"                       Opt_RPath,
   flagSpec "write-interface"                  Opt_WriteInterface,
-  flagSpec "unbox-small-strict-fields"        Opt_UnboxSmallStrictFields,
   flagSpec "unbox-strict-fields"              Opt_UnboxStrictFields,
   flagSpec "unbox-strict-sums"                Opt_UnboxStrictSums,
   flagSpec "vectorisation-avoidance"          Opt_VectorisationAvoidance,
@@ -3680,7 +3694,7 @@ impliedXFlags
 --  * utils/mkUserGuidePart/Options/
 --  * docs/users_guide/using.rst
 --
--- The first contains the Flag Refrence section, which breifly lists all
+-- The first contains the Flag Reference section, which breifly lists all
 -- available flags. The second contains a detailed description of the
 -- flags. Both places should contain information whether a flag is implied by
 -- -O0, -O or -O2.
@@ -3714,7 +3728,6 @@ optLevelFlags -- see Note [Documenting optimisation flags]
     , ([1,2],   Opt_Specialise)
     , ([1,2],   Opt_CrossModuleSpecialise)
     , ([1,2],   Opt_Strictness)
-    , ([1,2],   Opt_UnboxSmallStrictFields)
     , ([1,2],   Opt_CprAnal)
     , ([1,2],   Opt_WorkerWrapper)
 
@@ -3739,7 +3752,6 @@ didn't.  Reason was:
 Simple solution: just let the simplifier do eta-reduction even in -O0.
 After all, CorePrep does it unconditionally!  Not a big deal, but
 removes an assertion failure. -}
-
 
 -- -----------------------------------------------------------------------------
 -- Standard sets of warning options
@@ -3988,6 +4000,10 @@ intSuffixM fn = IntSuffix (\n -> updM (fn n))
 
 floatSuffix :: (Float -> DynFlags -> DynFlags) -> OptKind (CmdLineP DynFlags)
 floatSuffix fn = FloatSuffix (\n -> upd (fn n))
+
+optIntSuffix :: (Maybe Int -> DynFlags -> DynFlags)
+             -> OptKind (CmdLineP DynFlags)
+optIntSuffix fn = OptIntSuffix (\mi -> upd (fn mi))
 
 optIntSuffixM :: (Maybe Int -> DynFlags -> DynP DynFlags)
               -> OptKind (CmdLineP DynFlags)
