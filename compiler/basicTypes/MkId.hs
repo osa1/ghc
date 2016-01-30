@@ -843,7 +843,8 @@ dataConArgUnpack arg_ty
 
           unbox_fn :: CoreExpr -> CoreExpr
           unbox_fn body =
-            Let (NonRec ubx_sum_bndr ubxSum) (App body (Var ubx_sum_bndr))
+            let rhs = App body (Var ubx_sum_bndr)
+             in Case ubxSum ubx_sum_bndr (exprType rhs) [ ( DEFAULT, [], rhs ) ]
 
         return unbox_fn
 
