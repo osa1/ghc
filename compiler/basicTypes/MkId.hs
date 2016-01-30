@@ -917,11 +917,11 @@ isUnpackableType dflags fam_envs ty
     ok_ty tcs ty
       | Just (tc, _) <- splitTyConApp_maybe ty
       , let tc_name = getName tc
-      =  not (tc_name `elemNameSet` tcs)
-      && case tyConSingleAlgDataCon_maybe tc of
-            Just con | isVanillaDataCon con
-                    -> ok_con_args (tcs `extendNameSet` getName tc) con
-            _ -> True
+      , cons@(_ : _) <- tyConDataCons tc
+      = not (tc_name `elemNameSet` tcs)
+        && all (\con -> isVanillaDataCon con &&
+                        ok_con_args (tcs `extendNameSet` getName tc) con) cons
+
       | otherwise
       = True
 
