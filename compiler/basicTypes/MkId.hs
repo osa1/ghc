@@ -901,9 +901,12 @@ isUnpackableType dflags fam_envs ty
   | otherwise
   = False
   where
+    ok_arg :: NameSet -> (Type, HsSrcBang) -> Bool
     ok_arg tcs (ty, bang) = not (attempt_unpack bang) || ok_ty tcs norm_ty
         where
           norm_ty = topNormaliseType fam_envs ty
+
+    ok_ty :: NameSet -> Type -> Bool
     ok_ty tcs ty
       | Just (tc, _) <- splitTyConApp_maybe ty
       , let tc_name = getName tc
@@ -915,11 +918,13 @@ isUnpackableType dflags fam_envs ty
       | otherwise
       = True
 
+    ok_con_args :: NameSet -> DataCon -> Bool
     ok_con_args tcs con
        = all (ok_arg tcs) (dataConOrigArgTys con `zip` dataConSrcBangs con)
          -- NB: dataConSrcBangs gives the *user* request;
          -- We'd get a black hole if we used dataConImplBangs
 
+    attempt_unpack :: HsSrcBang -> Bool
     attempt_unpack (HsSrcBang _ SrcUnpack NoSrcStrict)
       = xopt LangExt.StrictData dflags
     attempt_unpack (HsSrcBang _ SrcUnpack SrcStrict)
