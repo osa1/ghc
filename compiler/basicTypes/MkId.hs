@@ -822,22 +822,28 @@ dataConArgUnpack arg_ty
       unboxer :: Unboxer
       unboxer arg_id = do
         con_arg_binders <- mapM (mapM newLocal) rep_tys
+        ubx_sum_bndr <- newLocal sum_ty
 
         let
-          mkUbxSumAlt :: CoreExpr -> Int -> DataCon -> [Var] -> CoreAlt
-          mkUbxSumAlt body alt con [] =
-            ( DataAlt con, [], App body (mkCoreUbxSum sum_alt_tys alt (Var unitDataConId)) )
+          mkUbxSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
+          mkUbxSumAlt alt con [] =
+            ( DataAlt con, [], mkCoreUbxSum sum_alt_tys alt (Var unitDataConId) )
 
-          mkUbxSumAlt body alt con [bndr] =
-            ( DataAlt con, [bndr], App body (mkCoreUbxSum sum_alt_tys alt (Var bndr)) )
+          mkUbxSumAlt alt con [bndr] =
+            ( DataAlt con, [bndr], mkCoreUbxSum sum_alt_tys alt (Var bndr) )
 
-          mkUbxSumAlt body alt con bndrs =
+          mkUbxSumAlt alt con bndrs =
             let tuple = mkCoreUbxTup (map idType bndrs) (map Var bndrs)
-             in ( DataAlt con, bndrs, App body (mkCoreUbxSum sum_alt_tys alt tuple) )
+             in ( DataAlt con, bndrs, mkCoreUbxSum sum_alt_tys alt tuple )
 
-          unbox_fn body =
-            let alts = zipWith3 (mkUbxSumAlt body) [ 1 .. ] cons con_arg_binders
+          ubxSum :: CoreExpr
+          ubxSum =
+            let alts = zipWith3 mkUbxSumAlt [ 1 .. ] cons con_arg_binders
              in Case (Var arg_id) arg_id (coreAltsType alts) alts
+
+          unbox_fn :: CoreExpr -> CoreExpr
+          unbox_fn body =
+            Let (NonRec ubx_sum_bndr ubxSum) (App body (Var ubx_sum_bndr))
 
         return unbox_fn
 
