@@ -8,6 +8,7 @@ module ElimUbxSums
 
 #include "HsVersions.h"
 
+import BasicTypes
 import DataCon
 import Outputable
 import TyCon
@@ -29,13 +30,13 @@ import Data.List (partition)
 -- it wouldn't be a sum type)
 typeUnboxedSumRep :: [DataCon] -> [Type]
 typeUnboxedSumRep cons =
-    unboxedSumRepTypes (map (mk_sum . dataConRepArgTys) cons)
+    unboxedSumRepTypes (map (mk_tup . dataConRepArgTys) cons)
   where
-    mk_sum :: [Type] -> Type
-    mk_sum [] = unitTy -- FIXME: We have this problem in some other places as
+    mk_tup :: [Type] -> Type
+    mk_tup [] = unitTy -- FIXME: We have this problem in some other places as
                        -- well, we should probably use Void#.
-    mk_sum [ty] = ty
-    mk_sum tys = mkSumTy tys
+    mk_tup [ty] = ty
+    mk_tup tys = mkTupleTy Unboxed tys
 
 -- INVARIANT: Returned list doesn't have unboxed tuples or sums.
 -- Includes the tag field.
