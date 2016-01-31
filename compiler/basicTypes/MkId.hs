@@ -808,9 +808,6 @@ dataConArgUnpack arg_ty
       rep_tys :: [[Type]]
       rep_tys = map (\con -> dataConInstArgTys con tc_args) cons
 
-      sum_ty :: Type
-      sum_ty = mkSumTy (map mk_sum_alt_ty rep_tys)
-
       mk_sum_alt_ty :: [Type] -> Type
       mk_sum_alt_ty []   = unitTy
       mk_sum_alt_ty [ty] = ty
@@ -818,6 +815,9 @@ dataConArgUnpack arg_ty
 
       sum_alt_tys :: [Type]
       sum_alt_tys = map mk_sum_alt_ty rep_tys
+
+      sum_ty :: Type
+      sum_ty = mkSumTy sum_alt_tys
 
       unboxer :: Unboxer
       unboxer arg_id = do
