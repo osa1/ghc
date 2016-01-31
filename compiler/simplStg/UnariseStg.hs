@@ -128,11 +128,13 @@ unariseExpr _ (StgLit l) _
 
 unariseExpr rho e@(StgConApp dc args) ty
   | isUnboxedTupleCon dc
+  , let args' = unariseArgs rho args
   = return (StgConApp (tupleDataCon Unboxed (length args')) args')
 
   | isUnboxedSumCon dc
   , (tycon, ty_args) <- splitTyConApp ty
   , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropLevityArgs ty_args)
+  , let args' = unariseArgs rho (filter (not . isVoidTy . stgArgType) args)
   , (ubx_args, bx_args) <- partition (isUnLiftedType . stgArgType) args'
   , let tag = dataConTag dc
   = return (StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
@@ -141,9 +143,7 @@ unariseExpr rho e@(StgConApp dc args) ty
                        bx_args ++ replicate (bx_fields - length bx_args) bX_DUMMY_ARG))
 
   | otherwise
-  = return (StgConApp dc args')
-  where
-    args' = unariseArgs rho args
+  = return (StgConApp dc (unariseArgs rho args))
 
 unariseExpr rho (StgOpApp op args ty) _
   = return (StgOpApp op (unariseArgs rho args) ty)
