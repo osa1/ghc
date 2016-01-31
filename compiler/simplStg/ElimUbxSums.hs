@@ -22,6 +22,7 @@ import Control.Applicative
 #endif
 
 import Data.List (partition)
+import Data.Maybe (mapMaybe)
 
 --------------------------------------------------------------------------------
 
@@ -30,13 +31,12 @@ import Data.List (partition)
 -- it wouldn't be a sum type)
 typeUnboxedSumRep :: [DataCon] -> [Type]
 typeUnboxedSumRep cons =
-    unboxedSumRepTypes (map (mk_tup . dataConRepArgTys) cons)
+    unboxedSumRepTypes (mapMaybe (mk_tup . dataConRepArgTys) cons)
   where
-    mk_tup :: [Type] -> Type
-    mk_tup [] = unitTy -- FIXME: We have this problem in some other places as
-                       -- well, we should probably use Void#.
-    mk_tup [ty] = ty
-    mk_tup tys = mkTupleTy Unboxed tys
+    mk_tup :: [Type] -> Maybe Type
+    mk_tup []   = Nothing
+    mk_tup [ty] = Just ty
+    mk_tup tys  = Just (mkTupleTy Unboxed tys)
 
 -- INVARIANT: Returned list doesn't have unboxed tuples or sums.
 -- Includes the tag field.
@@ -60,6 +60,9 @@ unboxedSumRepTypes alts =
         | Just (tc, args) <- splitTyConApp_maybe ty
         , isUnboxedSumTyCon tc
         = concatMap go (unboxedSumRepTypes (dropLevityArgs args))
+
+        | isVoidTy ty
+        = []
 
         | otherwise
         = [ty]

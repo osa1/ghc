@@ -809,7 +809,7 @@ dataConArgUnpack arg_ty
       rep_tys = map (\con -> dataConInstArgTys con tc_args) cons
 
       mk_sum_alt_ty :: [Type] -> Type
-      mk_sum_alt_ty []   = unitTy
+      mk_sum_alt_ty []   = voidPrimTy
       mk_sum_alt_ty [ty] = ty
       mk_sum_alt_ty tys  = mkTupleTy Unboxed tys
 
@@ -827,7 +827,7 @@ dataConArgUnpack arg_ty
         let
           mkUbxSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
           mkUbxSumAlt alt con [] =
-            ( DataAlt con, [], mkCoreUbxSum sum_alt_tys alt (Var unitDataConId) )
+            ( DataAlt con, [], mkCoreUbxSum sum_alt_tys alt (Var voidPrimId) )
 
           mkUbxSumAlt alt con [bndr] =
             ( DataAlt con, [bndr], mkCoreUbxSum sum_alt_tys alt (Var bndr) )
