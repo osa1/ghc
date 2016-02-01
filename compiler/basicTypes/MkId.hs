@@ -681,18 +681,26 @@ dataConSrcToImplBang dflags fam_envs data_con arg_ty
         let
           -- It's either a product type, in which case we use the existing
           -- -funbox-small-strict-fields check:
-          prod_ty_check =
-            gopt Opt_UnboxStrictFields dflags
-              || (gopt Opt_UnboxSmallStrictFields dflags
-                 && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
+          prod_ty_check
+            | Just (tc, _) <- splitTyConApp_maybe arg_ty'
+            , length (tyConDataCons tc) == 1
+            = gopt Opt_UnboxStrictFields dflags
+                || (gopt Opt_UnboxSmallStrictFields dflags
+                    && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
+
+            | otherwise
+            = False
 
           -- Or it's a sum type, in which case we use the new
           -- -funbox-small-strict-sums.
           sum_ty_check
-            | Just (tc, _) <- splitTyConApp_maybe arg_ty
-            , -- Make sure we have at least one DataCon
-              -- (prim types don't have any)
-              cons@(_ : _) <- tyConDataCons tc
+            | Just (tc, _) <- splitTyConApp_maybe arg_ty'
+            , -- Make sure we have at least two DataCons
+              -- * Prim types don't have any
+              -- * We don't want to run our sum unpacking test on product types,
+              --   so we make sure there's at least two (not one)
+              cons <- tyConDataCons tc
+            , length cons >= 2
             = unboxSmallStrictSums dflags >= Just (length (typeUnboxedSumRep cons))
 
             | otherwise
