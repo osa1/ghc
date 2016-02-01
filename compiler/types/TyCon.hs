@@ -635,7 +635,7 @@ data AlgTyConRhs
                                    -- tuple?
     }
 
-  | SumTyCon {                  -- ^ An unboxed sum
+  | SumTyCon {
         data_cons :: [DataCon]
     }
 
