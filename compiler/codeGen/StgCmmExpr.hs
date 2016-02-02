@@ -79,7 +79,7 @@ cgExpr (StgLetNoEscape _ _ binds expr) =
      ; emitLabel join_id
      ; return r }
 
-cgExpr (StgCase expr _live_vars _save_vars bndr _srt alt_type alts) =
+cgExpr (StgCase expr bndr alt_type alts) =
   cgCase expr bndr alt_type alts
 
 cgExpr (StgLam {}) = panic "cgExpr: StgLam"

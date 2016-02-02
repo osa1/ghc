@@ -155,10 +155,10 @@ stgMassageForProfiling dflags mod_name _us stg_binds
         expr' <- do_expr expr
         return (StgTick ti expr')
 
-    do_expr (StgCase expr fv1 fv2 bndr srt alt_type alts) = do
+    do_expr (StgCase expr bndr alt_type alts) = do
         expr' <- do_expr expr
         alts' <- mapM do_alt alts
-        return (StgCase expr' fv1 fv2 bndr srt alt_type alts')
+        return (StgCase expr' bndr alt_type alts')
       where
         do_alt (id, bs, use_mask, e) = do
             e' <- do_expr e

@@ -184,7 +184,7 @@ lintStgExpr (StgLetNoEscape _ _ binds body) = do
 
 lintStgExpr (StgTick _ expr) = lintStgExpr expr
 
-lintStgExpr (StgCase scrut _ _ bndr _ alts_type alts) = runMaybeT $ do
+lintStgExpr (StgCase scrut bndr alts_type alts) = runMaybeT $ do
     _ <- MaybeT $ lintStgExpr scrut
 
     in_scope <- MaybeT $ liftM Just $

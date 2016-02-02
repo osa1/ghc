@@ -268,7 +268,7 @@ mkRhsClosure    dflags bndr _cc _bi
                 expr
   | let strip = snd . stripStgTicksTop (not . tickishIsCode)
   , StgCase (StgApp scrutinee [{-no args-}])
-         _ _ _ _   -- ignore uniq, etc.
+         _   -- ignore bndr
          (AlgAlt _)
          [(DataAlt _, params, _use_mask, sel_expr)] <- strip expr
   , StgApp selectee [{-no args-}] <- strip sel_expr

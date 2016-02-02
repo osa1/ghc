@@ -111,10 +111,8 @@ unariseExpr us rho (StgLam xs e)
   where
     (us', rho', xs') = unariseIdBinders us rho xs
 
-unariseExpr us rho (StgCase e case_lives alts_lives bndr srt alt_ty alts)
-  = StgCase (unariseExpr us1 rho e) (unariseLives rho case_lives)
-            (unariseLives rho alts_lives) bndr (unariseSRT rho srt)
-            alt_ty alts'
+unariseExpr us rho (StgCase e bndr alt_ty alts)
+  = StgCase (unariseExpr us1 rho e) bndr alt_ty alts'
  where
     (us1, us2) = splitUniqSupply us
     alts'      = unariseAlts us2 rho alt_ty bndr alts

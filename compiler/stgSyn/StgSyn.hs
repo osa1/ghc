@@ -237,22 +237,7 @@ This has the same boxed/unboxed business as Core case expressions.
         (GenStgExpr bndr occ)
                     -- the thing to examine
 
-        (GenStgLiveVars occ)
-                    -- Live vars of whole case expression,
-                    -- plus everything that happens after the case
-                    -- i.e., those which mustn't be overwritten
-
-        (GenStgLiveVars occ)
-                    -- Live vars of RHSs (plus what happens afterwards)
-                    -- i.e., those which must be saved before eval.
-                    --
-                    -- note that an alt's constructor's
-                    -- binder-variables are NOT counted in the
-                    -- free vars for the alt's RHS
-
         bndr        -- binds the result of evaluating the scrutinee
-
-        SRT         -- The SRT for the continuation
 
         AltType
 
@@ -737,17 +722,11 @@ pprStgExpr (StgTick tickish expr)
     else pprStgExpr expr
 
 
-pprStgExpr (StgCase expr lvs_whole lvs_rhss bndr srt alt_type alts)
+pprStgExpr (StgCase expr bndr alt_type alts)
   = sep [sep [text "case",
            nest 4 (hsep [pprStgExpr expr,
              ifPprDebug (dcolon <+> ppr alt_type)]),
            text "of", pprBndr CaseBind bndr, char '{'],
-           ifPprDebug (
-           nest 4 (
-             hcat [ptext  (sLit "-- lvs: ["), interppSP (uniqSetToList lvs_whole),
-                    text "]; rhs lvs: [", interppSP (uniqSetToList lvs_rhss),
-                    text "]; ",
-                    pprMaybeSRT srt])),
            nest 2 (vcat (map pprStgAlt alts)),
            char '}']
 

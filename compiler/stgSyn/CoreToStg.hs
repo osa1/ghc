@@ -418,19 +418,14 @@ coreToStgExpr (Case scrut bndr _ alts) = do
 
         -- We tell the scrutinee that everything
         -- live in the alts is live in it, too.
-    (scrut2, scrut_fvs, _scrut_escs, scrut_lv_info)
+    (scrut2, scrut_fvs, _scrut_escs, _scrut_lv_info)
        <- setVarsLiveInCont alts_lv_info $ do
             (scrut2, scrut_fvs, scrut_escs) <- coreToStgExpr scrut
             scrut_lv_info <- freeVarsToLiveVars scrut_fvs
             return (scrut2, scrut_fvs, scrut_escs, scrut_lv_info)
 
     return (
-      StgCase scrut2 (getLiveVars scrut_lv_info)
-                     (getLiveVars alts_lv_info)
-                     bndr'
-                     (mkSRT alts_lv_info)
-                     (mkStgAltType bndr alts)
-                     alts2,
+      StgCase scrut2 bndr' (mkStgAltType bndr alts) alts2,
       scrut_fvs `unionFVInfo` alts_fvs_wo_bndr,
       alts_escs_wo_bndr `unionVarSet` getFVSet scrut_fvs
                 -- You might think we should have scrut_escs, not
