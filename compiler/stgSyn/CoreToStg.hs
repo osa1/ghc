@@ -186,9 +186,9 @@ import Control.Monad (liftM, ap)
 -- Setting variable info: top-level, binds, RHSs
 -- --------------------------------------------------------------
 
-coreToStg :: DynFlags -> Module -> CoreProgram -> IO [StgBinding]
+coreToStg :: DynFlags -> Module -> CoreProgram -> [StgBinding]
 coreToStg dflags this_mod pgm
-  = return pgm'
+  = pgm'
   where (_, _, pgm') = coreTopBindsToStg dflags this_mod emptyVarEnv pgm
 
 coreExprToStg :: CoreExpr -> StgExpr
