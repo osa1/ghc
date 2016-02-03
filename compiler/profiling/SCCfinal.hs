@@ -168,9 +168,9 @@ stgMassageForProfiling dflags mod_name _us stg_binds
           (b,e) <- do_let b e
           return (StgLet b e)
 
-    do_expr (StgLetNoEscape lvs1 lvs2 b e) = do
+    do_expr (StgLetNoEscape b e) = do
           (b,e) <- do_let b e
-          return (StgLetNoEscape lvs1 lvs2 b e)
+          return (StgLetNoEscape b e)
 
     do_expr other = pprPanic "SCCfinal.do_expr" (ppr other)
 

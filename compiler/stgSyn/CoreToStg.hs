@@ -413,14 +413,9 @@ coreToStgExpr (Case scrut bndr _ alts) = do
         alts_fvs_wo_bndr  = bndr `minusFVBinder` alts_fvs
         alts_escs_wo_bndr = alts_escs `delVarSet` bndr
 
-    alts_lv_info <- freeVarsToLiveVars alts_fvs_wo_bndr
-
         -- We tell the scrutinee that everything
         -- live in the alts is live in it, too.
-    (scrut2, scrut_fvs, _scrut_escs)
-       <- setVarsLiveInCont alts_lv_info $ do
-            (scrut2, scrut_fvs, scrut_escs) <- coreToStgExpr scrut
-            return (scrut2, scrut_fvs, scrut_escs)
+    (scrut2, scrut_fvs, _scrut_escs) <- coreToStgExpr scrut
 
     return (
       StgCase scrut2 bndr' (mkStgAltType bndr alts) alts2,
@@ -675,38 +670,28 @@ coreToStgLet
                                 -- is among the escaping vars
 
 coreToStgLet let_no_escape bind body = do
-    (bind2, bind_fvs, bind_escs, bind_lvs,
-     body2, body_fvs, body_escs, body_lvs)
-       <- mfix $ \ ~(_, _, _, _, _, rec_body_fvs, _, _) -> do
+    (bind2, bind_fvs, bind_escs,
+     body2, body_fvs, body_escs)
+       <- mfix $ \ ~(_, _, _, _, rec_body_fvs, _) -> do
 
-          -- Do the bindings, setting live_in_cont to empty if
-          -- we ain't in a let-no-escape world
-          live_in_cont <- getVarsLiveInCont
           ( bind2, bind_fvs, bind_escs, bind_lv_info, env_ext)
-                <- setVarsLiveInCont (if let_no_escape
-                                          then live_in_cont
-                                          else emptyLiveInfo)
-                                     (vars_bind rec_body_fvs bind)
+                <- vars_bind rec_body_fvs bind
 
           -- Do the body
           extendVarEnvLne env_ext $ do
              (body2, body_fvs, body_escs) <- coreToStgExpr body
-             body_lv_info <- freeVarsToLiveVars body_fvs
 
-             return (bind2, bind_fvs, bind_escs, getLiveVars bind_lv_info,
-                     body2, body_fvs, body_escs, getLiveVars body_lv_info)
+             return (bind2, bind_fvs, bind_escs,
+                     body2, body_fvs, body_escs)
 
 
         -- Compute the new let-expression
     let
-        new_let | let_no_escape = StgLetNoEscape live_in_whole_let bind_lvs bind2 body2
+        new_let | let_no_escape = StgLetNoEscape bind2 body2
                 | otherwise     = StgLet bind2 body2
 
         free_in_whole_let
           = binders `minusFVBinders` (bind_fvs `unionFVInfo` body_fvs)
-
-        live_in_whole_let
-          = bind_lvs `unionVarSet` (body_lvs `delVarSetList` binders)
 
         real_bind_escs = if let_no_escape then
                             bind_escs
@@ -956,9 +941,6 @@ addLiveVar (lvs, cafs) id = (lvs `extendVarSet` id, cafs)
 unionLiveInfo :: LiveInfo -> LiveInfo -> LiveInfo
 unionLiveInfo (lv1,caf1) (lv2,caf2) = (lv1 `unionVarSet` lv2, caf1 `unionVarSet` caf2)
 
-getLiveVars :: LiveInfo -> StgLiveVars
-getLiveVars (lvs, _) = lvs
-
 -- The std monad functions:
 
 initLne :: IdEnv HowBound -> LneM a -> a
@@ -992,14 +974,6 @@ instance MonadFix LneM where
                        in  result
 
 -- Functions specific to this monad:
-
-getVarsLiveInCont :: LneM LiveInfo
-getVarsLiveInCont = LneM $ \_env lvs_cont -> lvs_cont
-
-setVarsLiveInCont :: LiveInfo -> LneM a -> LneM a
-setVarsLiveInCont new_lvs_cont expr
-   =    LneM $   \env _lvs_cont
-   -> unLneM expr env new_lvs_cont
 
 extendVarEnvLne :: [(Id, HowBound)] -> LneM a -> LneM a
 extendVarEnvLne ids_w_howbound expr

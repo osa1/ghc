@@ -339,16 +339,7 @@ And so the code for let(rec)-things:
         (GenStgBinding bndr occ)    -- right hand sides (see below)
         (GenStgExpr bndr occ)       -- body
 
-  | StgLetNoEscape                  -- remember: ``advanced stuff''
-        (GenStgLiveVars occ)        -- Live in the whole let-expression
-                                    -- Mustn't overwrite these stack slots
-                                    -- _Doesn't_ include binders of the let(rec).
-
-        (GenStgLiveVars occ)        -- Live in the right hand sides (only)
-                                    -- These are the ones which must be saved on
-                                    -- the stack if they aren't there already
-                                    -- _Does_ include binders of the let(rec) if recursive.
-
+  | StgLetNoEscape
         (GenStgBinding bndr occ)    -- right hand sides (see below)
         (GenStgExpr bndr occ)       -- body
 
@@ -446,7 +437,7 @@ exprHasCafRefs (StgCase scrt _ _ alts)
   = exprHasCafRefs scrt || any altHasCafRefs alts
 exprHasCafRefs (StgLet bind body)
   = stgBindHasCafRefs bind || exprHasCafRefs body
-exprHasCafRefs (StgLetNoEscape _ _ bind body)
+exprHasCafRefs (StgLetNoEscape bind body)
   = stgBindHasCafRefs bind || exprHasCafRefs body
 exprHasCafRefs (StgTick _ expr)
   = exprHasCafRefs expr
@@ -694,15 +685,10 @@ pprStgExpr (StgLet bind expr)
   = sep [hang (text "let {") 2 (pprGenStgBinding bind),
            hang (text "} in ") 2 (ppr expr)]
 
-pprStgExpr (StgLetNoEscape lvs_whole lvs_rhss bind expr)
+pprStgExpr (StgLetNoEscape bind expr)
   = sep [hang (text "let-no-escape {")
                 2 (pprGenStgBinding bind),
-           hang (text "} in " <>
-                   ifPprDebug (
-                    nest 4 (
-                      hcat [ptext  (sLit "-- lvs: ["), interppSP (uniqSetToList lvs_whole),
-                             text "]; rhs lvs: [", interppSP (uniqSetToList lvs_rhss),
-                             char ']'])))
+           hang (text "} in ")
                 2 (ppr expr)]
 
 pprStgExpr (StgTick tickish expr)

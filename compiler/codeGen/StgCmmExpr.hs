@@ -71,7 +71,7 @@ cgExpr (StgLit lit)       = do cmm_lit <- cgLit lit
                                emitReturn [CmmLit cmm_lit]
 
 cgExpr (StgLet binds expr)             = do { cgBind binds;     cgExpr expr }
-cgExpr (StgLetNoEscape _ _ binds expr) =
+cgExpr (StgLetNoEscape binds expr) =
   do { u <- newUnique
      ; let join_id = mkBlockId u
      ; cgLneBinds join_id binds

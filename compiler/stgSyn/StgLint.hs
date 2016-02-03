@@ -176,7 +176,7 @@ lintStgExpr (StgLet binds body) = do
       addInScopeVars binders $
         lintStgExpr body
 
-lintStgExpr (StgLetNoEscape _ _ binds body) = do
+lintStgExpr (StgLetNoEscape binds body) = do
     binders <- lintStgBinds binds
     addLoc (BodyOfLetRec binders) $
       addInScopeVars binders $

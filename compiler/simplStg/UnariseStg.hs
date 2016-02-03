@@ -42,7 +42,6 @@ import MkId (realWorldPrimId)
 import Type
 import TysWiredIn
 import DataCon
-import VarSet
 import OccName
 import Name
 import Util
@@ -122,9 +121,8 @@ unariseExpr us rho (StgLet bind e)
   where
     (us1, us2) = splitUniqSupply us
 
-unariseExpr us rho (StgLetNoEscape live_in_let live_in_bind bind e)
-  = StgLetNoEscape (unariseLives rho live_in_let) (unariseLives rho live_in_bind)
-                   (unariseBinding us1 rho bind) (unariseExpr us2 rho e)
+unariseExpr us rho (StgLetNoEscape bind e)
+  = StgLetNoEscape (unariseBinding us1 rho bind) (unariseExpr us2 rho e)
   where
     (us1, us2) = splitUniqSupply us
 
@@ -159,9 +157,6 @@ unariseAlt us rho (con, xs, uses, e)
     (us', rho', xs', uses') = unariseUsedIdBinders us rho xs uses
 
 ------------------------
-unariseLives :: UnariseEnv -> StgLiveVars -> StgLiveVars
-unariseLives rho ids = concatMapVarSet (unariseId rho) ids
-
 unariseArgs :: UnariseEnv -> [StgArg] -> [StgArg]
 unariseArgs rho = concatMap (unariseArg rho)
 
@@ -206,6 +201,3 @@ unariseIdBinder us rho x = case repType (idType x) of
 unboxedTupleBindersFrom :: UniqSupply -> Id -> [UnaryType] -> [Id]
 unboxedTupleBindersFrom us x tys = zipWith (mkSysLocalOrCoVar fs) (uniqsFromSupply us) tys
   where fs = occNameFS (getOccName x)
-
-concatMapVarSet :: (Var -> [Var]) -> VarSet -> VarSet
-concatMapVarSet f xs = mkVarSet [x' | x <- varSetElems xs, x' <- f x]
