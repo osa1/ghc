@@ -210,7 +210,7 @@ cgRhs id (StgRhsCon cc con args)
     buildDynCon id True cc con args
 
 {- See Note [GC recovery] in compiler/codeGen/StgCmmClosure.hs -}
-cgRhs name (StgRhsClosure cc bi fvs upd_flag _srt args body)
+cgRhs name (StgRhsClosure cc bi fvs upd_flag args body)
   = do dflags <- getDynFlags
        mkRhsClosure dflags name cc bi (nonVoidIds fvs) upd_flag args body
 

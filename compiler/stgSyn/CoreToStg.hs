@@ -285,9 +285,8 @@ coreToTopStgRhs
 
 coreToTopStgRhs dflags this_mod scope_fv_info (bndr, rhs)
   = do { (new_rhs, rhs_fvs, _) <- coreToStgExpr rhs
-       ; lv_info <- freeVarsToLiveVars rhs_fvs
 
-       ; let stg_rhs   = mkTopStgRhs dflags this_mod rhs_fvs (mkSRT lv_info) bndr bndr_info new_rhs
+       ; let stg_rhs   = mkTopStgRhs dflags this_mod rhs_fvs bndr bndr_info new_rhs
              stg_arity = stgRhsArity stg_rhs
        ; return (ASSERT2( arity_ok stg_arity, mk_arity_msg stg_arity) stg_rhs,
                  rhs_fvs) }
@@ -314,7 +313,7 @@ coreToTopStgRhs dflags this_mod scope_fv_info (bndr, rhs)
                 text "STG arity:" <+> ppr stg_arity]
 
 mkTopStgRhs :: DynFlags -> Module -> FreeVarsInfo
-            -> SRT -> Id -> StgBinderInfo -> StgExpr
+            -> Id -> StgBinderInfo -> StgExpr
             -> StgRhs
 
 mkTopStgRhs dflags this_mod = mkStgRhs' con_updateable
@@ -418,11 +417,10 @@ coreToStgExpr (Case scrut bndr _ alts) = do
 
         -- We tell the scrutinee that everything
         -- live in the alts is live in it, too.
-    (scrut2, scrut_fvs, _scrut_escs, _scrut_lv_info)
+    (scrut2, scrut_fvs, _scrut_escs)
        <- setVarsLiveInCont alts_lv_info $ do
             (scrut2, scrut_fvs, scrut_escs) <- coreToStgExpr scrut
-            scrut_lv_info <- freeVarsToLiveVars scrut_fvs
-            return (scrut2, scrut_fvs, scrut_escs, scrut_lv_info)
+            return (scrut2, scrut_fvs, scrut_escs)
 
     return (
       StgCase scrut2 bndr' (mkStgAltType bndr alts) alts2,
@@ -800,30 +798,30 @@ coreToStgRhs :: FreeVarsInfo      -- Free var info for the scope of the binding
 coreToStgRhs scope_fv_info binders (bndr, rhs) = do
     (new_rhs, rhs_fvs, rhs_escs) <- coreToStgExpr rhs
     lv_info <- freeVarsToLiveVars (binders `minusFVBinders` rhs_fvs)
-    return (mkStgRhs rhs_fvs (mkSRT lv_info) bndr bndr_info new_rhs,
+    return (mkStgRhs rhs_fvs bndr bndr_info new_rhs,
             rhs_fvs, lv_info, rhs_escs)
   where
     bndr_info = lookupFVInfo scope_fv_info bndr
 
-mkStgRhs :: FreeVarsInfo -> SRT -> Id -> StgBinderInfo -> StgExpr -> StgRhs
+mkStgRhs :: FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
 mkStgRhs = mkStgRhs' con_updateable
   where con_updateable _ _ = False
 
 mkStgRhs' :: (DataCon -> [StgArg] -> Bool)
-            -> FreeVarsInfo -> SRT -> Id -> StgBinderInfo -> StgExpr -> StgRhs
-mkStgRhs' con_updateable rhs_fvs srt bndr binder_info rhs
+            -> FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
+mkStgRhs' con_updateable rhs_fvs bndr binder_info rhs
   | StgLam bndrs body <- rhs
   = StgRhsClosure noCCS binder_info
                    (getFVs rhs_fvs)
                    ReEntrant
-                   srt bndrs body
+                   bndrs body
   | StgConApp con args <- unticked_rhs
   , not (con_updateable con args)
   = StgRhsCon noCCS con args
   | otherwise
   = StgRhsClosure noCCS binder_info
                    (getFVs rhs_fvs)
-                   upd_flag srt [] rhs
+                   upd_flag [] rhs
  where
 
     (_, unticked_rhs) = stripStgTicksTop (not . tickishIsCode) rhs
@@ -957,9 +955,6 @@ addLiveVar (lvs, cafs) id = (lvs `extendVarSet` id, cafs)
 
 unionLiveInfo :: LiveInfo -> LiveInfo -> LiveInfo
 unionLiveInfo (lv1,caf1) (lv2,caf2) = (lv1 `unionVarSet` lv2, caf1 `unionVarSet` caf2)
-
-mkSRT :: LiveInfo -> SRT
-mkSRT (_, cafs) = SRTEntries cafs
 
 getLiveVars :: LiveInfo -> StgLiveVars
 getLiveVars (lvs, _) = lvs
