@@ -674,7 +674,7 @@ coreToStgLet let_no_escape bind body = do
      body2, body_fvs, body_escs)
        <- mfix $ \ ~(_, _, _, _, rec_body_fvs, _) -> do
 
-          ( bind2, bind_fvs, bind_escs, bind_lv_info, env_ext)
+          ( bind2, bind_fvs, bind_escs, env_ext)
                 <- vars_bind rec_body_fvs bind
 
           -- Do the body
@@ -725,49 +725,43 @@ coreToStgLet let_no_escape bind body = do
     set_of_binders = mkVarSet binders
     binders        = bindersOf bind
 
-    mk_binding bind_lv_info binder rhs
-        = (binder, LetBound (NestedLet live_vars) (manifestArity rhs))
-        where
-           live_vars | let_no_escape = addLiveVar bind_lv_info binder
-                     | otherwise     = unitLiveVar binder
-                -- c.f. the invariant on NestedLet
+    mk_binding binder rhs
+        = (binder, LetBound NestedLet (manifestArity rhs))
 
     vars_bind :: FreeVarsInfo           -- Free var info for body of binding
               -> CoreBind
               -> LneM (StgBinding,
                        FreeVarsInfo,
                        EscVarsSet,        -- free vars; escapee vars
-                       LiveInfo,          -- Vars and CAFs live in binding
                        [(Id, HowBound)])  -- extension to environment
 
 
     vars_bind body_fvs (NonRec binder rhs) = do
-        (rhs2, bind_fvs, bind_lv_info, escs) <- coreToStgRhs body_fvs [] (binder,rhs)
+        (rhs2, bind_fvs, escs) <- coreToStgRhs body_fvs (binder,rhs)
         let
-            env_ext_item = mk_binding bind_lv_info binder rhs
+            env_ext_item = mk_binding binder rhs
 
         return (StgNonRec binder rhs2,
-                bind_fvs, escs, bind_lv_info, [env_ext_item])
+                bind_fvs, escs, [env_ext_item])
 
 
     vars_bind body_fvs (Rec pairs)
-      = mfix $ \ ~(_, rec_rhs_fvs, _, bind_lv_info, _) ->
+      = mfix $ \ ~(_, rec_rhs_fvs, _, _) ->
            let
                 rec_scope_fvs = unionFVInfo body_fvs rec_rhs_fvs
                 binders = map fst pairs
-                env_ext = [ mk_binding bind_lv_info b rhs
+                env_ext = [ mk_binding b rhs
                           | (b,rhs) <- pairs ]
            in
            extendVarEnvLne env_ext $ do
-              (rhss2, fvss, lv_infos, escss)
-                     <- mapAndUnzip4M (coreToStgRhs rec_scope_fvs binders) pairs
+              (rhss2, fvss, escss)
+                     <- mapAndUnzip3M (coreToStgRhs rec_scope_fvs) pairs
               let
                         bind_fvs = unionFVInfos fvss
-                        bind_lv_info = foldr unionLiveInfo emptyLiveInfo lv_infos
                         escs     = unionVarSets escss
 
               return (StgRec (binders `zip` rhss2),
-                      bind_fvs, escs, bind_lv_info, env_ext)
+                      bind_fvs, escs, env_ext)
 
 
 is_join_var :: Id -> Bool
@@ -776,15 +770,13 @@ is_join_var :: Id -> Bool
 is_join_var j = occNameString (getOccName j) == "$j"
 
 coreToStgRhs :: FreeVarsInfo      -- Free var info for the scope of the binding
-             -> [Id]
              -> (Id,CoreExpr)
-             -> LneM (StgRhs, FreeVarsInfo, LiveInfo, EscVarsSet)
+             -> LneM (StgRhs, FreeVarsInfo, EscVarsSet)
 
-coreToStgRhs scope_fv_info binders (bndr, rhs) = do
+coreToStgRhs scope_fv_info (bndr, rhs) = do
     (new_rhs, rhs_fvs, rhs_escs) <- coreToStgExpr rhs
-    lv_info <- freeVarsToLiveVars (binders `minusFVBinders` rhs_fvs)
     return (mkStgRhs rhs_fvs bndr bndr_info new_rhs,
-            rhs_fvs, lv_info, rhs_escs)
+            rhs_fvs, rhs_escs)
   where
     bndr_info = lookupFVInfo scope_fv_info bndr
 
@@ -874,17 +866,10 @@ isPAP env _               = False
 
 newtype LneM a = LneM
     { unLneM :: IdEnv HowBound
-             -> LiveInfo                -- Vars and CAFs live in continuation
              -> a
     }
 
-type LiveInfo = (StgLiveVars,   -- Dynamic live variables;
-                                -- i.e. ones with a nested (non-top-level) binding
-                 CafSet)        -- Static live variables;
-                                -- i.e. top-level variables that are CAFs or refer to them
-
 type EscVarsSet = IdSet
-type CafSet     = IdSet
 
 data HowBound
   = ImportBound         -- Used only as a response to lookupBinding; never
@@ -898,10 +883,7 @@ data HowBound
 
 data LetInfo
   = TopLet              -- top level things
-  | NestedLet LiveInfo  -- For nested things, what is live if this
-                        -- thing is live?  Invariant: the binder
-                        -- itself is always a member of
-                        -- the dynamic set of its own LiveInfo
+  | NestedLet
 
 isLetBound :: HowBound -> Bool
 isLetBound (LetBound _ _) = True
@@ -926,25 +908,10 @@ topLevelBound _                   = False
 -- The set of dynamic live variables is guaranteed ot have no further
 -- let-no-escaped variables in it.
 
-emptyLiveInfo :: LiveInfo
-emptyLiveInfo = (emptyVarSet,emptyVarSet)
-
-unitLiveVar :: Id -> LiveInfo
-unitLiveVar lv = (unitVarSet lv, emptyVarSet)
-
-unitLiveCaf :: Id -> LiveInfo
-unitLiveCaf caf = (emptyVarSet, unitVarSet caf)
-
-addLiveVar :: LiveInfo -> Id -> LiveInfo
-addLiveVar (lvs, cafs) id = (lvs `extendVarSet` id, cafs)
-
-unionLiveInfo :: LiveInfo -> LiveInfo -> LiveInfo
-unionLiveInfo (lv1,caf1) (lv2,caf2) = (lv1 `unionVarSet` lv2, caf1 `unionVarSet` caf2)
-
 -- The std monad functions:
 
 initLne :: IdEnv HowBound -> LneM a -> a
-initLne env m = unLneM m env emptyLiveInfo
+initLne env m = unLneM m env
 
 
 
@@ -952,11 +919,11 @@ initLne env m = unLneM m env emptyLiveInfo
 {-# INLINE returnLne #-}
 
 returnLne :: a -> LneM a
-returnLne e = LneM $ \_ _ -> e
+returnLne e = LneM $ \_ -> e
 
 thenLne :: LneM a -> (a -> LneM b) -> LneM b
-thenLne m k = LneM $ \env lvs_cont
-  -> unLneM (k (unLneM m env lvs_cont)) env lvs_cont
+thenLne m k = LneM $ \env
+  -> unLneM (k (unLneM m env)) env
 
 instance Functor LneM where
     fmap = liftM
@@ -969,50 +936,24 @@ instance Monad LneM where
     (>>=)  = thenLne
 
 instance MonadFix LneM where
-    mfix expr = LneM $ \env lvs_cont ->
-                       let result = unLneM (expr result) env lvs_cont
+    mfix expr = LneM $ \env ->
+                       let result = unLneM (expr result) env
                        in  result
 
 -- Functions specific to this monad:
 
 extendVarEnvLne :: [(Id, HowBound)] -> LneM a -> LneM a
 extendVarEnvLne ids_w_howbound expr
-   =    LneM $   \env lvs_cont
-   -> unLneM expr (extendVarEnvList env ids_w_howbound) lvs_cont
+   =    LneM $   \env
+   -> unLneM expr (extendVarEnvList env ids_w_howbound)
 
 lookupVarLne :: Id -> LneM HowBound
-lookupVarLne v = LneM $ \env _lvs_cont -> lookupBinding env v
+lookupVarLne v = LneM $ \env -> lookupBinding env v
 
 lookupBinding :: IdEnv HowBound -> Id -> HowBound
 lookupBinding env v = case lookupVarEnv env v of
                         Just xx -> xx
                         Nothing -> ASSERT2( isGlobalId v, ppr v ) ImportBound
-
-
--- The result of lookupLiveVarsForSet, a set of live variables, is
--- only ever tacked onto a decorated expression. It is never used as
--- the basis of a control decision, which might give a black hole.
-
-freeVarsToLiveVars :: FreeVarsInfo -> LneM LiveInfo
-freeVarsToLiveVars fvs = LneM freeVarsToLiveVars'
- where
-  freeVarsToLiveVars' _env live_in_cont = live_info
-   where
-    live_info    = foldr unionLiveInfo live_in_cont lvs_from_fvs
-    lvs_from_fvs = map do_one (allFreeIds fvs)
-
-    do_one (v, how_bound)
-      = case how_bound of
-          ImportBound                     -> unitLiveCaf v      -- Only CAF imports are
-                                                                -- recorded in fvs
-          LetBound TopLet _
-                | mayHaveCafRefs (idCafInfo v) -> unitLiveCaf v
-                | otherwise                    -> emptyLiveInfo
-
-          LetBound (NestedLet lvs) _      -> lvs        -- lvs already contains v
-                                                        -- (see the invariant on NestedLet)
-
-          _lambda_or_case_binding         -> unitLiveVar v      -- Bound by lambda or case
 
 
 -- ---------------------------------------------------------------------------
@@ -1081,11 +1022,6 @@ lookupFVInfo fvs id
                         Nothing         -> noBinderInfo
                         Just (_,_,info) -> info
 
-allFreeIds :: FreeVarsInfo -> [(Id,HowBound)]   -- Both top level and non-top-level Ids
-allFreeIds fvs = ASSERT( all (isId . fst) ids ) ids
-      where
-        ids = [(id,how_bound) | (id,how_bound,_) <- varEnvElts fvs]
-
 -- Non-top-level things only, both type variables and ids
 getFVs :: FreeVarsInfo -> [Var]
 getFVs fvs = [id | (id, how_bound, _) <- varEnvElts fvs,
@@ -1109,9 +1045,9 @@ check_eq_how_bound (LetBound li1 ar1) (LetBound li2 ar2) = ar1 == ar2 && check_e
 check_eq_how_bound _                  _                  = False
 
 check_eq_li :: LetInfo -> LetInfo -> Bool
-check_eq_li (NestedLet _) (NestedLet _) = True
-check_eq_li TopLet        TopLet        = True
-check_eq_li _             _             = False
+check_eq_li NestedLet NestedLet = True
+check_eq_li TopLet    TopLet    = True
+check_eq_li _         _         = False
 
 -- Misc.
 
