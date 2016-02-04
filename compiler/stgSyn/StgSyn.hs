@@ -410,6 +410,8 @@ stgRhsArity (StgRhsClosure _ _ _ _ bndrs _)
   -- The arity never includes type parameters, but they should have gone by now
 stgRhsArity (StgRhsCon _ _ _) = 0
 
+-- | This is only used by an assert ('consistentCafInfo' in 'CoreToStg') to make
+-- sure CAF-ness predicted by 'TidyPgm' is consistent with reality.
 stgBindHasCafRefs :: GenStgBinding bndr Id -> Bool
 stgBindHasCafRefs (StgNonRec _ rhs) = rhsHasCafRefs rhs
 stgBindHasCafRefs (StgRec binds)    = any rhsHasCafRefs (map snd binds)
