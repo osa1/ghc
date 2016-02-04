@@ -50,11 +50,10 @@ import Control.Monad (liftM, ap)
 -- Note [Live vs free]
 -- ~~~~~~~~~~~~~~~~~~~
 --
--- The actual Stg datatype is decorated with live variable information, as well
--- as free variable information. The two are not the same. Liveness is an
--- operational property rather than a semantic one. A variable is live at a
--- particular execution point if it can be referred to directly again. In
--- particular, a dead variable's stack slot (if it has one):
+-- The two are not the same. Liveness is an operational property rather
+-- than a semantic one. A variable is live at a particular execution
+-- point if it can be referred to directly again. In particular, a dead
+-- variable's stack slot (if it has one):
 --
 --           - should be stubbed to avoid space leaks, and
 --           - may be reused for something else.
@@ -88,8 +87,7 @@ import Control.Monad (liftM, ap)
 -- Note [Collecting live CAF info]
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 --
--- In this pass we also collect information on which CAFs are live for
--- constructing SRTs (see SRT.hs).
+-- In this pass we also collect information on which CAFs are live.
 --
 -- A top-level Id has CafInfo, which is
 --
@@ -107,24 +105,6 @@ import Control.Monad (liftM, ap)
 -- The later SRT pass takes these lists of Ids and uses them to construct
 -- the actual nested SRTs, and replaces the lists of Ids with (offset,length)
 -- pairs.
-
-
--- Note [Interaction of let-no-escape with SRTs]
--- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
--- Consider
---
---         let-no-escape x = ...caf1...caf2...
---         in
---         ...x...x...x...
---
--- where caf1,caf2 are CAFs.  Since x doesn't have a closure, we
--- build SRTs just as if x's defn was inlined at each call site, and
--- that means that x's CAF refs get duplicated in the overall SRT.
---
--- This is unlike ordinary lets, in which the CAF refs are not duplicated.
---
--- We could fix this loss of (static) sharing by making a sort of pseudo-closure
--- for x, solely to put in the SRTs lower down.
 
 -- Note [What is a non-escaping let]
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
