@@ -78,8 +78,6 @@ As usual, expressions are interesting; other things are boring. Here
 are the boring things [except note the @GenStgRhs@], parameterised
 with respect to binder and occurrence information (just as in
 @CoreSyn@):
-
-There is one SRT for each group of bindings.
 -}
 
 data GenStgBinding bndr occ
