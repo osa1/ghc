@@ -706,11 +706,13 @@ dataConSrcToImplBang dflags fam_envs data_con arg_ty
             | otherwise
             = False
         in
-          WARN ( sum_ty_check,
-                 text "Decided to unpack field with type" <+> ppr arg_ty $$
-                 text "in DataCon:" <+> ppr data_con <+>
-                 text "of type:" <+> ppr (dataConOrigResTy data_con) )
-          prod_ty_check || sum_ty_check
+          if sum_ty_check
+            then pprTrace ""
+                   ( text "Decided to unpack field with type" <+> ppr arg_ty $$
+                     text "in DataCon:" <+> ppr data_con <+>
+                     text "of type:" <+> ppr (dataConOrigResTy data_con) ) $
+                   prod_ty_check || sum_ty_check
+            else prod_ty_check || sum_ty_check
 
       srcUnpack -> isSrcUnpacked srcUnpack
   = case mb_co of
