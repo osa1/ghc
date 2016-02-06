@@ -666,7 +666,7 @@ dataConSrcToImplBang dflags fam_envs data_con arg_ty
 dataConSrcToImplBang _ _ _ _ (HsSrcBang _ _ SrcLazy)
   = HsLazy
 
-dataConSrcToImplBang dflags fam_envs data_con arg_ty
+dataConSrcToImplBang dflags fam_envs _data_con arg_ty
     (HsSrcBang _ unpk_prag SrcStrict)
   | not (gopt Opt_OmitInterfacePragmas dflags) -- Don't unpack if -fomit-iface-pragmas
           -- Don't unpack if we aren't optimising; rather arbitrarily,
@@ -675,42 +675,13 @@ dataConSrcToImplBang dflags fam_envs data_con arg_ty
                      -- Unwrap type families and newtypes
         arg_ty' = case mb_co of { Just (_,ty) -> ty; Nothing -> arg_ty }
   , isUnpackableType dflags fam_envs arg_ty'
-  , (rep_tys, _) <- dataConArgUnpack arg_ty'
   , case unpk_prag of
       NoSrcUnpack ->
-        let
-          -- It's either a product type, in which case we use the existing
-          -- -funbox-small-strict-fields check:
-          prod_ty_check
-            | Just (tc, _) <- splitTyConApp_maybe arg_ty'
-            , length (tyConDataCons tc) == 1
-            = gopt Opt_UnboxStrictFields dflags
-                || (gopt Opt_UnboxSmallStrictFields dflags
-                    && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
-
-            | otherwise
-            = False
-
-          -- Or it's a sum type, in which case we use the new
-          -- -funbox-small-strict-sums.
-          sum_ty_check
-            | Just (tc, _) <- splitTyConApp_maybe arg_ty'
-            , -- Make sure we have at least two DataCons
-              -- * Prim types don't have any
-              -- * We don't want to run our sum unpacking test on product types,
-              --   so we make sure there's at least two (not one)
-              cons <- tyConDataCons tc
-            , length cons >= 2
-            = unboxSmallStrictSums dflags >= Just (length (typeUnboxedSumRep cons))
-
-            | otherwise
-            = False
-        in
-          WARN ( sum_ty_check,
-                 text "Decided to unpack field with type" <+> ppr arg_ty $$
-                 text "in DataCon:" <+> ppr data_con <+>
-                 text "of type:" <+> ppr (dataConOrigResTy data_con) )
-          prod_ty_check || sum_ty_check
+        -- WARN ( sum_ty_check,
+        --        text "Decided to unpack field with type" <+> ppr arg_ty $$
+        --        text "in DataCon:" <+> ppr data_con <+>
+        --        text "of type:" <+> ppr (dataConOrigResTy data_con) )
+        prod_unpack_check dflags arg_ty' || sum_unpack_check dflags arg_ty'
 
       srcUnpack -> isSrcUnpacked srcUnpack
   = case mb_co of
@@ -720,6 +691,30 @@ dataConSrcToImplBang dflags fam_envs data_con arg_ty
   | otherwise -- Record the strict-but-no-unpack decision
   = HsStrict
 
+prod_unpack_check :: DynFlags -> Type -> Bool
+prod_unpack_check dflags arg_ty
+  | Just (tc, _) <- splitTyConApp_maybe arg_ty
+  , Just _ <- tyConSingleAlgDataCon_maybe tc
+  = gopt Opt_UnboxStrictFields dflags
+      || (gopt Opt_UnboxSmallStrictFields dflags
+          && length (fst (dataConArgUnpack arg_ty)) <= 1) -- See Note [Unpack one-wide fields]
+
+  | otherwise
+  = False
+
+sum_unpack_check :: DynFlags -> Type -> Bool
+sum_unpack_check dflags arg_ty
+  | Just (tc, _) <- splitTyConApp_maybe arg_ty
+  , -- Make sure we have at least two DataCons
+    -- * Prim types don't have any
+    -- * We don't want to run our sum unpacking test on product types,
+    --   so we make sure there's at least two (not one)
+    cons <- tyConDataCons tc
+  , length cons >= 2
+  = unboxSmallStrictSums dflags >= Just (length (typeUnboxedSumRep cons))
+
+  | otherwise
+  = False
 
 -- | Wrappers/Workers and representation following Unpack/Strictness
 -- decisions
@@ -917,7 +912,7 @@ isUnpackableType dflags fam_envs ty
   = False
   where
     ok_arg :: NameSet -> (Type, HsSrcBang) -> Bool
-    ok_arg tcs (ty, bang) = not (attempt_unpack bang) || ok_ty tcs norm_ty
+    ok_arg tcs (ty, bang) = not (attempt_unpack ty bang) || ok_ty tcs norm_ty
         where
           norm_ty = topNormaliseType fam_envs ty
 
@@ -939,16 +934,17 @@ isUnpackableType dflags fam_envs ty
          -- NB: dataConSrcBangs gives the *user* request;
          -- We'd get a black hole if we used dataConImplBangs
 
-    attempt_unpack :: HsSrcBang -> Bool
-    attempt_unpack (HsSrcBang _ SrcUnpack NoSrcStrict)
+    attempt_unpack :: Type -> HsSrcBang -> Bool
+    attempt_unpack _ (HsSrcBang _ SrcUnpack NoSrcStrict)
       = xopt LangExt.StrictData dflags
-    attempt_unpack (HsSrcBang _ SrcUnpack SrcStrict)
+    attempt_unpack _ (HsSrcBang _ SrcUnpack SrcStrict)
       = True
-    attempt_unpack (HsSrcBang _  NoSrcUnpack SrcStrict)
-      = True  -- Be conservative
-    attempt_unpack (HsSrcBang _  NoSrcUnpack NoSrcStrict)
-      = xopt LangExt.StrictData dflags -- Be conservative
-    attempt_unpack _ = False
+    attempt_unpack ty' (HsSrcBang _  NoSrcUnpack SrcStrict)
+      =  prod_unpack_check dflags ty' || sum_unpack_check dflags ty'
+    attempt_unpack ty' (HsSrcBang _  NoSrcUnpack NoSrcStrict)
+      =  xopt LangExt.StrictData dflags
+      && (  prod_unpack_check dflags ty' || sum_unpack_check dflags ty' )
+    attempt_unpack _ _ = False
 
 {-
 Note [Unpack one-wide fields]
