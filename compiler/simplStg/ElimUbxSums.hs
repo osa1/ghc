@@ -71,7 +71,7 @@ unboxedSumRepTypes alts =
             replicate fields_unboxed intPrimTy ++
             replicate fields_boxed liftedAny
     in
-      ASSERT (not (any isUnboxedSumType ret) && not (any isUnboxedTupleType ret))
+      ASSERT(not (any isUnboxedSumType ret) && not (any isUnboxedTupleType ret))
       -- pprTrace "unboxedSumRetTypes"
       --   (text "input:" <+> ppr alts $$
       --    text "con_rep_tys_parts:" <+> ppr con_rep_tys_parts $$
