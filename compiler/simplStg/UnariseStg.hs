@@ -188,7 +188,7 @@ unariseAlts _ (UbxTupAlt _) _ alts _
 
 unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
   = do (rho_sum_bndrs, ys) <- unariseIdBinder rho bndr
-       ASSERT (length ys == ubx_fields + bx_fields) (return ())
+       ASSERT(length ys == ubx_fields + bx_fields) (return ())
        let
          uses = replicate (length ys) (not (isDeadBinder bndr))
          (tag_bndr : ubx_ys, bx_ys) = splitAt ubx_fields ys

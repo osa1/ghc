@@ -434,7 +434,7 @@ getSymtabName _ncu _dict symtab bh = do
                        -- next 13 bits
                        fromIntegral ((i `shiftR` 14) .&. 0b1111111111111)
                    in
-                     ASSERT ( arity >= alt )
+                     ASSERT( arity >= alt )
                      dataConName (sumDataCon alt arity)
               2 -> let
                      alt =
@@ -444,7 +444,7 @@ getSymtabName _ncu _dict symtab bh = do
                        -- next 13 bits
                        fromIntegral ((i `shiftR` 14) .&. 0b1111111111111)
                    in
-                     ASSERT ( arity >= alt )
+                     ASSERT( arity >= alt )
                      idName (dataConWorkId (sumDataCon alt arity))
 
               _ -> pprPanic "getSymtabName:unknown sum sort" (ppr i)
