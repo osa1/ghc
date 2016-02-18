@@ -32,7 +32,7 @@ module Demand (
 
         DmdResult, CPRResult,
         isBotRes, isTopRes,
-        topRes, botRes, exnRes, cprProdRes,
+        topRes, botRes, exnRes,
         vanillaCprProdRes, cprSumRes,
         appIsBottom, isBottomingSig, pprIfaceStrictSig,
         trimCPRInfo, returnsCPR_maybe,
@@ -72,6 +72,8 @@ import Maybes           ( orElse )
 import Type            ( Type, isUnliftedType )
 import TyCon           ( isNewTyCon, isClassTyCon )
 import DataCon         ( splitDataProductType_maybe )
+
+import qualified Data.IntSet as IM
 
 {-
 ************************************************************************
@@ -909,12 +911,11 @@ type DmdResult = Termination CPRResult
 
 data CPRResult = NoCPR          -- Top of the lattice
                | RetProd        -- Returns a constructor from a product type
-               | RetSum ConTag  -- Returns a constructor from a data type
+               | RetSum IM.IntSet  -- Returns a constructor from a data type
                deriving( Eq, Show )
 
 lubCPR :: CPRResult -> CPRResult -> CPRResult
-lubCPR (RetSum t1) (RetSum t2)
-  | t1 == t2                       = RetSum t1
+lubCPR (RetSum t1) (RetSum t2) = RetSum (IM.union t1 t2)
 lubCPR RetProd     RetProd     = RetProd
 lubCPR _ _                     = NoCPR
 
@@ -945,7 +946,7 @@ instance Outputable r => Outputable (Termination r) where
 
 instance Outputable CPRResult where
   ppr NoCPR        = empty
-  ppr (RetSum n)   = char 'm' <> int n
+  ppr (RetSum n)   = char 's' <> parens (ppr (IM.toList n))
   ppr RetProd      = char 'm'
 
 seqDmdResult :: DmdResult -> ()
@@ -971,10 +972,7 @@ exnRes = ThrowsExn
 botRes = Diverges
 
 cprSumRes :: ConTag -> DmdResult
-cprSumRes tag = Dunno $ RetSum tag
-
-cprProdRes :: [DmdType] -> DmdResult
-cprProdRes _arg_tys = Dunno $ RetProd
+cprSumRes tag = Dunno $ RetSum (IM.singleton tag)
 
 vanillaCprProdRes :: Arity -> DmdResult
 vanillaCprProdRes _arity = Dunno $ RetProd
@@ -1002,13 +1000,13 @@ trimCPRInfo trim_all trim_sums res
                        | otherwise = RetProd
     trimC NoCPR = NoCPR
 
-returnsCPR_maybe :: DmdResult -> Maybe ConTag
+returnsCPR_maybe :: DmdResult -> Maybe IM.IntSet
 returnsCPR_maybe (Dunno c) = retCPR_maybe c
 returnsCPR_maybe _         = Nothing
 
-retCPR_maybe :: CPRResult -> Maybe ConTag
+retCPR_maybe :: CPRResult -> Maybe IM.IntSet
 retCPR_maybe (RetSum t)  = Just t
-retCPR_maybe RetProd     = Just fIRST_TAG
+retCPR_maybe RetProd     = Just (IM.singleton fIRST_TAG)
 retCPR_maybe NoCPR       = Nothing
 
 -- See Notes [Default demand on free variables]
@@ -2064,13 +2062,13 @@ instance Binary DmdResult where
                   _ -> return Diverges }
 
 instance Binary CPRResult where
-    put_ bh (RetSum n)   = do { putByte bh 0; put_ bh n }
+    put_ bh (RetSum n)   = do { putByte bh 0; put_ bh (IM.toList n) }
     put_ bh RetProd      = putByte bh 1
     put_ bh NoCPR        = putByte bh 2
 
     get  bh = do
             h <- getByte bh
             case h of
-              0 -> do { n <- get bh; return (RetSum n) }
+              0 -> do { n <- get bh; return (RetSum (IM.fromList n)) }
               1 -> return RetProd
               _ -> return NoCPR
