@@ -4,7 +4,7 @@
 \section[WwLib]{A library for the ``worker\/wrapper'' back-end to the strictness analyser}
 -}
 
-{-# LANGUAGE BangPatterns, CPP #-}
+{-# LANGUAGE BangPatterns, CPP, MultiWayIf #-}
 
 module WwLib ( mkWwBodies, mkWWstr, mkWorkerArgs
              , deepSplitProductType_maybe, findTypeShape
@@ -38,7 +38,7 @@ import FastString
 import ListSetOps
 
 import qualified Data.IntSet as IS
-import Data.List (sortOn)
+import Data.List (sortOn, uncons)
 
 {-
 ************************************************************************
@@ -663,22 +663,43 @@ mkWWcpr_sum_help data_cons inst_tys co body_ty = do
 
     sum_bndr_uniq           <- getUniqueM
     worker_body_bndr_uniq   <- getUniqueM
+    tup_uniques             <- getUniquesM
     ubx_sum_arg_uniqs       <- getUniquesM
     data_con_arg_uniqs      <- getUniquesM
 
     let sum_bndr = mk_ww_local sum_bndr_uniq ubx_sum_ty
 
+    -- TODO: Make these functions UniqSM and get rid of Unique passing.
+
     let
-      mkUbxSumAlts :: [DataCon] -> ConTag -> [Unique] -> [CoreAlt]
-      mkUbxSumAlts [] _ _ = []
-      mkUbxSumAlts (con : cons) !ubx_sum_tag us =
+      mkUbxSumAlts :: [DataCon] -> ConTag -> [Unique] -> [Unique] -> [CoreAlt]
+      mkUbxSumAlts [] _ _ _ = []
+      mkUbxSumAlts (con : cons) !ubx_sum_tag tup_us us =
         let
           (con_args_us, us') = splitAt (dataConRepArity con) us
           con_args = zipWith mk_ww_local con_args_us (dataConInstArgTys con inst_tys)
           con_app = mkConApp2 con inst_tys con_args `mkCast` mkSymCo co
+          sum_con = sumDataCon ubx_sum_tag (length data_cons_sorted)
         in
-          (DataAlt (sumDataCon ubx_sum_tag (length data_cons_sorted)),
-           con_args, con_app) : mkUbxSumAlts cons (ubx_sum_tag + 1) us'
+          if | null con_args ->
+                 pprPanic "WwLib.mkUbxSumAlts"
+                   (text $ "One of our invariants should have been invalidated! " ++
+                           "Found a nullary sum con!")
+             | length con_args == 1 ->
+                 (DataAlt sum_con, con_args, con_app)
+                   : mkUbxSumAlts cons (ubx_sum_tag + 1) tup_us us'
+             | otherwise ->
+                 let
+                   (tup_us', tup_us_rest) = fromJust (uncons tup_us)
+                   arg_tys  = dataConInstArgTys con inst_tys
+                   tup_ty   = mkTupleTy Unboxed arg_tys
+                   tup_con  = tupleDataCon Unboxed (length con_args)
+                   tup_bndr = mk_ww_local tup_us' tup_ty
+                 in
+                   (DataAlt sum_con, [tup_bndr],
+                      Case (Var tup_bndr) tup_bndr body_ty
+                        [ (DataAlt tup_con, con_args, con_app) ])
+                      : mkUbxSumAlts cons (ubx_sum_tag + 1) tup_us_rest us'
 
       mkDataConAlts :: [DataCon] -> ConTag -> [Unique] -> [CoreAlt]
       mkDataConAlts [] _ _ = []
@@ -695,7 +716,7 @@ mkWWcpr_sum_help data_cons inst_tys co body_ty = do
           (DataAlt con, con_args, ubx_sum_con_app) : mkDataConAlts cons (con_tag + 1) us'
 
       wrapper wkr_call =
-        Case wkr_call sum_bndr body_ty (mkUbxSumAlts data_cons_sorted 1 ubx_sum_arg_uniqs)
+        Case wkr_call sum_bndr body_ty (mkUbxSumAlts data_cons_sorted 1 tup_uniques ubx_sum_arg_uniqs)
 
       worker body =
         -- FIXME: something something about Note [Profiling and unpacking]
