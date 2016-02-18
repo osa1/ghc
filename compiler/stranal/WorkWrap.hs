@@ -25,6 +25,8 @@ import Outputable
 import FamInstEnv
 import MonadUtils
 
+import Data.Maybe (isJust)
+
 #include "HsVersions.h"
 
 {-

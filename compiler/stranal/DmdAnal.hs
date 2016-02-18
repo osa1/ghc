@@ -326,7 +326,7 @@ setOneShotness :: Count -> Id -> Id
 setOneShotness One  bndr = setOneShotLambda bndr
 setOneShotness Many bndr = bndr
 
-dmdAnalAlt :: AnalEnv -> CleanDemand -> Id -> Alt Var -> (DmdType, Alt Var)
+dmdAnalAlt :: AnalEnv -> CleanDemand -> Id -> Alt Var -> (DmdType, CoreAlt)
 dmdAnalAlt env dmd case_bndr (con,bndrs,rhs)
   | null bndrs    -- Literals, DEFAULT, and nullary constructors
   , (rhs_ty, rhs') <- dmdAnal env dmd rhs
@@ -609,9 +609,9 @@ dmdAnalRhs top_lvl rec_flag env id rhs
 
     (lazy_fv, sig_fv) = splitFVs is_thunk rhs_fv1
 
-    rhs_res'  = trimCPRInfo trim_all trim_sums rhs_res
+    rhs_res'  = trimCPRInfo trim_all False rhs_res
     trim_all  = is_thunk && not_strict
-    trim_sums = not (isTopLevel top_lvl) -- See Note [CPR for sum types]
+    -- trim_sums = not (isTopLevel top_lvl) -- See Note [CPR for sum types]
 
     -- See Note [CPR for thunks]
     is_thunk = not (exprIsHNF rhs)
