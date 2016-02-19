@@ -107,7 +107,7 @@ unariseExpr rho (StgApp f args) ty
   , Just (tycon, ty_args) <- splitTyConApp_maybe ty
   , isUnboxedSumTyCon tycon
   , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropLevityArgs ty_args)
-  , (ubx_args, bx_args) <- partition (isUnLiftedType . idType) (unariseId rho f)
+  , (ubx_args, bx_args) <- partition (isUnliftedType . idType) (unariseId rho f)
   = return (StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
                       (map StgVarArg ubx_args ++
                        replicate (ubx_fields - length ubx_args) uBX_DUMMY_ARG ++
@@ -126,12 +126,14 @@ unariseExpr _ (StgLit l) _
 
 unariseExpr rho e@(StgConApp dc args) ty
   | isUnboxedTupleCon dc
+  , let args' = unariseArgs rho args
   = return (StgConApp (tupleDataCon Unboxed (length args')) args')
 
   | isUnboxedSumCon dc
   , (tycon, ty_args) <- splitTyConApp ty
   , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropLevityArgs ty_args)
-  , (ubx_args, bx_args) <- partition (isUnLiftedType . stgArgType) args'
+  , let args' = unariseArgs rho (filter (not . isVoidTy . stgArgType) args)
+  , (ubx_args, bx_args) <- partition (isUnliftedType . stgArgType) args'
   , let tag = dataConTag dc
   = return (StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
                       (mkTagArg tag :
@@ -139,9 +141,7 @@ unariseExpr rho e@(StgConApp dc args) ty
                        bx_args ++ replicate (bx_fields - length bx_args) bX_DUMMY_ARG))
 
   | otherwise
-  = return (StgConApp dc args')
-  where
-    args' = unariseArgs rho args
+  = return (StgConApp dc (unariseArgs rho args))
 
 unariseExpr rho (StgOpApp op args ty) _
   = return (StgOpApp op (unariseArgs rho args) ty)
@@ -188,7 +188,7 @@ unariseAlts _ (UbxTupAlt _) _ alts _
 
 unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
   = do (rho_sum_bndrs, ys) <- unariseIdBinder rho bndr
-       ASSERT (length ys == ubx_fields + bx_fields) (return ())
+       ASSERT(length ys == ubx_fields + bx_fields) (return ())
        let
          uses = replicate (length ys) (not (isDeadBinder bndr))
          (tag_bndr : ubx_ys, bx_ys) = splitAt ubx_fields ys
@@ -201,7 +201,7 @@ unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
            -- TODO: We should probably use `uses` here.
            (rho_alt_bndrs, bs') <- unariseIdBinders rho_sum_bndrs bs
            let
-             (ubx_bs, bx_bs) = partition (isUnLiftedType . idType) bs'
+             (ubx_bs, bx_bs) = partition (isUnliftedType . idType) bs'
              rns = zip ubx_bs ubx_ys ++ zip bx_bs bx_ys
 
              rho_alt_bndrs_renamed =
@@ -316,7 +316,8 @@ dummyDefaultAlt = (DEFAULT, [], [], StgApp rUNTIME_ERROR_ID [])
 
 dropFunArgs :: Int -> Type -> Type
 dropFunArgs n ty =
-    let (bs, ty') = splitPiTys ty in mkForAllTys (drop n bs) ty'
+    let (bs, ty') = splitPiTys (dropForAlls ty)
+     in mkForAllTys (drop n bs) ty'
 
 mkTagArg :: Int -> StgArg
 mkTagArg = StgLitArg . MachInt . fromIntegral

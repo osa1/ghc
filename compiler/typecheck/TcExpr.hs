@@ -473,6 +473,7 @@ tcExpr expr@(ExplicitTuple tup_args boxity) res_ty
 
 tcExpr (HsSum alt arity expr _) res_ty
   = do { let sum_tc = sumTyCon arity
+       ; res_ty <- expTypeToType res_ty
        ; (coi, arg_tys) <- matchExpectedTyConApp sum_tc res_ty
        ; -- Drop levity vars, we don't care about them here
          let arg_tys' = drop arity arg_tys

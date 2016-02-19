@@ -380,7 +380,7 @@ translatePat fam_insts pat = case pat of
     return [vanillaConPattern tuple_con tys (concat tidy_ps)]
 
   SumPat p alt arity ty -> do
-    tidy_p <- translatePat (unLoc p)
+    tidy_p <- translatePat fam_insts (unLoc p)
     let sum_con = sumDataCon alt arity
     return [vanillaConPattern sum_con ty tidy_p]
 

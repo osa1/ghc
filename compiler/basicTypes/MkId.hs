@@ -681,28 +681,38 @@ dataConSrcToImplBang dflags fam_envs data_con arg_ty
         let
           -- It's either a product type, in which case we use the existing
           -- -funbox-small-strict-fields check:
-          prod_ty_check =
-            gopt Opt_UnboxStrictFields dflags
-              || (gopt Opt_UnboxSmallStrictFields dflags
-                 && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
+          prod_ty_check
+            | Just (tc, _) <- splitTyConApp_maybe arg_ty'
+            , length (tyConDataCons tc) == 1
+            = gopt Opt_UnboxStrictFields dflags
+                || (gopt Opt_UnboxSmallStrictFields dflags
+                    && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
+
+            | otherwise
+            = False
 
           -- Or it's a sum type, in which case we use the new
           -- -funbox-small-strict-sums.
           sum_ty_check
-            | Just (tc, _) <- splitTyConApp_maybe arg_ty
-            , -- Make sure we have at least one DataCon
-              -- (prim types don't have any)
-              cons@(_ : _) <- tyConDataCons tc
+            | Just (tc, _) <- splitTyConApp_maybe arg_ty'
+            , -- Make sure we have at least two DataCons
+              -- * Prim types don't have any
+              -- * We don't want to run our sum unpacking test on product types,
+              --   so we make sure there's at least two (not one)
+              cons <- tyConDataCons tc
+            , length cons >= 2
             = unboxSmallStrictSums dflags >= Just (length (typeUnboxedSumRep cons))
 
             | otherwise
             = False
         in
-          WARN ( sum_ty_check,
-                 text "Decided to unpack field with type" <+> ppr arg_ty $$
-                 text "in DataCon:" <+> ppr data_con <+>
-                 text "of type:" <+> ppr (dataConOrigResTy data_con) )
-          prod_ty_check || sum_ty_check
+          if sum_ty_check
+            then pprTrace ""
+                   ( text "Decided to unpack field with type" <+> ppr arg_ty $$
+                     text "in DataCon:" <+> ppr data_con <+>
+                     text "of type:" <+> ppr (dataConOrigResTy data_con) ) $
+                   prod_ty_check || sum_ty_check
+            else prod_ty_check || sum_ty_check
 
       srcUnpack -> isSrcUnpacked srcUnpack
   = case mb_co of
@@ -808,16 +818,16 @@ dataConArgUnpack arg_ty
       rep_tys :: [[Type]]
       rep_tys = map (\con -> dataConInstArgTys con tc_args) cons
 
-      sum_ty :: Type
-      sum_ty = mkSumTy (map mk_sum_alt_ty rep_tys)
-
       mk_sum_alt_ty :: [Type] -> Type
-      mk_sum_alt_ty []   = unitTy
+      mk_sum_alt_ty []   = voidPrimTy
       mk_sum_alt_ty [ty] = ty
       mk_sum_alt_ty tys  = mkTupleTy Unboxed tys
 
       sum_alt_tys :: [Type]
       sum_alt_tys = map mk_sum_alt_ty rep_tys
+
+      sum_ty :: Type
+      sum_ty = mkSumTy sum_alt_tys
 
       unboxer :: Unboxer
       unboxer arg_id = do
@@ -827,7 +837,7 @@ dataConArgUnpack arg_ty
         let
           mkUbxSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
           mkUbxSumAlt alt con [] =
-            ( DataAlt con, [], mkCoreUbxSum sum_alt_tys alt (Var unitDataConId) )
+            ( DataAlt con, [], mkCoreUbxSum sum_alt_tys alt (Var voidPrimId) )
 
           mkUbxSumAlt alt con [bndr] =
             ( DataAlt con, [bndr], mkCoreUbxSum sum_alt_tys alt (Var bndr) )
@@ -843,7 +853,8 @@ dataConArgUnpack arg_ty
 
           unbox_fn :: CoreExpr -> CoreExpr
           unbox_fn body =
-            Let (NonRec ubx_sum_bndr ubxSum) (App body (Var ubx_sum_bndr))
+            let rhs = App body (Var ubx_sum_bndr)
+             in Case ubxSum ubx_sum_bndr (exprType rhs) [ ( DEFAULT, [], rhs ) ]
 
         return unbox_fn
 
@@ -916,11 +927,11 @@ isUnpackableType dflags fam_envs ty
     ok_ty tcs ty
       | Just (tc, _) <- splitTyConApp_maybe ty
       , let tc_name = getName tc
-      =  not (tc_name `elemNameSet` tcs)
-      && case tyConSingleAlgDataCon_maybe tc of
-            Just con | isVanillaDataCon con
-                    -> ok_con_args (tcs `extendNameSet` getName tc) con
-            _ -> True
+      , cons@(_ : _) <- tyConDataCons tc
+      = not (tc_name `elemNameSet` tcs)
+        && all (\con -> isVanillaDataCon con &&
+                        ok_con_args (tcs `extendNameSet` getName tc) con) cons
+
       | otherwise
       = True
 

@@ -8,6 +8,7 @@ module ElimUbxSums
 
 #include "HsVersions.h"
 
+import BasicTypes
 import DataCon
 import Outputable
 import TyCon
@@ -21,6 +22,7 @@ import Control.Applicative
 #endif
 
 import Data.List (partition)
+import Data.Maybe (mapMaybe)
 
 --------------------------------------------------------------------------------
 
@@ -29,13 +31,12 @@ import Data.List (partition)
 -- it wouldn't be a sum type)
 typeUnboxedSumRep :: [DataCon] -> [Type]
 typeUnboxedSumRep cons =
-    unboxedSumRepTypes (map (mk_sum . dataConRepArgTys) cons)
+    unboxedSumRepTypes (mapMaybe (mk_tup . dataConRepArgTys) cons)
   where
-    mk_sum :: [Type] -> Type
-    mk_sum [] = unitTy -- FIXME: We have this problem in some other places as
-                       -- well, we should probably use Void#.
-    mk_sum [ty] = ty
-    mk_sum tys = mkSumTy tys
+    mk_tup :: [Type] -> Maybe Type
+    mk_tup []   = Nothing
+    mk_tup [ty] = Just ty
+    mk_tup tys  = Just (mkTupleTy Unboxed tys)
 
 -- INVARIANT: Returned list doesn't have unboxed tuples or sums.
 -- Includes the tag field.
@@ -60,6 +61,9 @@ unboxedSumRepTypes alts =
         , isUnboxedSumTyCon tc
         = concatMap go (unboxedSumRepTypes (dropLevityArgs args))
 
+        | isVoidTy ty
+        = []
+
         | otherwise
         = [ty]
 
@@ -67,7 +71,7 @@ unboxedSumRepTypes alts =
             replicate fields_unboxed intPrimTy ++
             replicate fields_boxed liftedAny
     in
-      ASSERT (not (any isUnboxedSumType ret) && not (any isUnboxedTupleType ret))
+      ASSERT(not (any isUnboxedSumType ret) && not (any isUnboxedTupleType ret))
       -- pprTrace "unboxedSumRetTypes"
       --   (text "input:" <+> ppr alts $$
       --    text "con_rep_tys_parts:" <+> ppr con_rep_tys_parts $$
