@@ -4,7 +4,7 @@
 \section[WwLib]{A library for the ``worker\/wrapper'' back-end to the strictness analyser}
 -}
 
-{-# LANGUAGE BangPatterns, CPP, MultiWayIf #-}
+{-# LANGUAGE BangPatterns, CPP, MultiWayIf, NondecreasingIndentation #-}
 
 module WwLib ( mkWwBodies, mkWWstr, mkWorkerArgs
              , deepSplitProductType_maybe, findTypeShape
@@ -20,7 +20,7 @@ import DataCon
 import Demand
 import MkCore           ( mkRuntimeErrorApp, aBSENT_ERROR_ID, mkCoreUbxTup, mkCoreUbxSum )
 import MkId             ( voidArgId, voidPrimId )
-import TysPrim          ( voidPrimTy )
+import TysPrim          ( voidPrimTy, floatPrimTy, doublePrimTy )
 import TysWiredIn       ( tupleDataCon, mkSumTy, sumDataCon, mkTupleTy )
 import Type
 import Coercion
@@ -38,7 +38,7 @@ import FastString
 import ListSetOps
 
 import qualified Data.IntSet as IS
-import Data.List (sortOn, uncons)
+import Data.List (sortOn)
 
 {-
 ************************************************************************
@@ -659,7 +659,20 @@ mkWWcpr_sum_help data_cons inst_tys co body_ty = do
 
       --------------------------------------------------------------------------
 
+      -- FIXME(osa): HACK alert. It seems like the prim floats are still not
+      -- handled correctly. I'm using this to disable worker/wrapper when
+      -- Float# is involved. (I'm also printing a warning so we can keep track)
+      has_float_hash :: Bool
+      has_float_hash = any (any (\ty -> eqType floatPrimTy ty || eqType doublePrimTy ty)) rep_tys
+
+      --------------------------------------------------------------------------
+
       ubx_sum_ty = mkSumTy sum_alt_tys
+
+    if has_float_hash
+      then pprTrace "mkWWcpr_sum_help" (text "Not doing WW.") $
+             return (False, id, id, body_ty)
+      else do
 
     sum_bndr <- mkWwLocalM ubx_sum_ty
 
@@ -710,7 +723,7 @@ mkWWcpr_sum_help data_cons inst_tys co body_ty = do
     ubxSumAlts <- mkUbxSumAlts data_cons_sorted 1
     bxSumAlts <- mkDataConAlts data_cons_sorted 1
 
-    worker_body_bndr_uniq   <- getUniqueM
+    worker_body_bndr_uniq <- getUniqueM
 
     let
       wrapper wkr_call = Case wkr_call sum_bndr body_ty ubxSumAlts
