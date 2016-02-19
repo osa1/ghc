@@ -316,7 +316,8 @@ dummyDefaultAlt = (DEFAULT, [], [], StgApp rUNTIME_ERROR_ID [])
 
 dropFunArgs :: Int -> Type -> Type
 dropFunArgs n ty =
-    let (bs, ty') = splitPiTys ty in mkForAllTys (drop n bs) ty'
+    let (bs, ty') = splitPiTys (dropForAlls ty)
+     in mkForAllTys (drop n bs) ty'
 
 mkTagArg :: Int -> StgArg
 mkTagArg = StgLitArg . MachInt . fromIntegral
