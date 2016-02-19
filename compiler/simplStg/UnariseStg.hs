@@ -109,7 +109,7 @@ unariseExpr rho (StgApp f args) ty
   , Just (tycon, ty_args) <- splitTyConApp_maybe ty
   , isUnboxedSumTyCon tycon
   , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropLevityArgs ty_args)
-  , (ubx_args, bx_args) <- partition (isUnLiftedType . idType) (unariseId rho f)
+  , (ubx_args, bx_args) <- partition (isUnliftedType . idType) (unariseId rho f)
   = return (StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
                       (map StgVarArg ubx_args ++
                        replicate (ubx_fields - length ubx_args) uBX_DUMMY_ARG ++
@@ -135,7 +135,7 @@ unariseExpr rho e@(StgConApp dc args) ty
   , (tycon, ty_args) <- splitTyConApp ty
   , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropLevityArgs ty_args)
   , let args' = unariseArgs rho (filter (not . isVoidTy . stgArgType) args)
-  , (ubx_args, bx_args) <- partition (isUnLiftedType . stgArgType) args'
+  , (ubx_args, bx_args) <- partition (isUnliftedType . stgArgType) args'
   , let tag = dataConTag dc
   = return (StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
                       (mkTagArg tag :
@@ -201,7 +201,7 @@ unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
            -- TODO: We should probably use `uses` here.
            (rho_alt_bndrs, bs') <- unariseIdBinders rho_sum_bndrs bs
            let
-             (ubx_bs, bx_bs) = partition (isUnLiftedType . idType) bs'
+             (ubx_bs, bx_bs) = partition (isUnliftedType . idType) bs'
              rns = zip ubx_bs ubx_ys ++ zip bx_bs bx_ys
 
              rho_alt_bndrs_renamed =
@@ -216,7 +216,7 @@ unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
            return ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], [], ret )
 
        inner_case <-
-         StgCase (StgApp tag_bndr []) undefined undefined tag_bndr undefined
+         StgCase (StgApp tag_bndr []) tag_bndr
                  (PrimAlt intPrimTyCon) . mkDefaultAlt <$> (mapM mkAlt alts)
 
        return [(DataAlt (tupleDataCon Unboxed (ubx_fields + bx_fields)), ys, uses, inner_case)]

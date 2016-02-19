@@ -2868,7 +2868,7 @@ dynamic_flags_deps = [
 
     -- If the user specifies -funbox-small-strict-sums without an argument,
     -- use a default size of two words
-  , defFlag "funbox-small-strict-sums"
+  , make_ord_flag defFlag "funbox-small-strict-sums"
       (optIntSuffix (\mi d -> d { unboxSmallStrictSums = mi <|> Just 2 }))
 
         ------ Profiling ----------------------------------------------------

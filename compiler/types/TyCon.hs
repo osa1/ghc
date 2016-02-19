@@ -1381,7 +1381,7 @@ isUnliftedTyCon (AlgTyCon { algTcRhs = rhs } )
 isUnliftedTyCon (AlgTyCon { algTcRhs = rhs } )
   | SumTyCon {} <- rhs
   = True
-isUnLiftedTyCon _ = False
+isUnliftedTyCon _ = False
 
 -- | Returns @True@ if the supplied 'TyCon' resulted from either a
 -- @data@ or @newtype@ declaration
