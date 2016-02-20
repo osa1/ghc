@@ -14,7 +14,7 @@ module DmdAnal ( dmdAnalProgram ) where
 #include "HsVersions.h"
 
 import DynFlags
-import WwLib            ( findTypeShape, deepSplitProductType_maybe )
+import WwLib            ( findTypeShape, deepSplitProductType_maybe, deepSplitSumType_maybe )
 import Demand   -- All of it
 import CoreSyn
 import Outputable
@@ -325,7 +325,7 @@ setOneShotness :: Count -> Id -> Id
 setOneShotness One  bndr = setOneShotLambda bndr
 setOneShotness Many bndr = bndr
 
-dmdAnalAlt :: AnalEnv -> CleanDemand -> Id -> Alt Var -> (DmdType, CoreAlt)
+dmdAnalAlt :: AnalEnv -> CleanDemand -> Id -> CoreAlt -> (DmdType, CoreAlt)
 dmdAnalAlt env dmd case_bndr (con,bndrs,rhs)
   | null bndrs    -- Literals, DEFAULT, and nullary constructors
   , (rhs_ty, rhs') <- dmdAnal env dmd rhs
@@ -1065,6 +1065,11 @@ extendSigsWithLam env id
        -- See Note [Initial CPR for strict binders]
   , Just (dc,_,_,_) <- deepSplitProductType_maybe (ae_fam_envs env) $ idType id
   = extendAnalEnv NotTopLevel env id (cprProdSig (dataConRepArity dc))
+
+  | isId id
+  , isStrictDmd (idDemandInfo id) || ae_virgin env
+  , Just (cons, _, _) <- deepSplitSumType_maybe (ae_fam_envs env) $ idType id
+    extendAnalEnv NotTopLevel env id cprSumSig
 
   | otherwise
   = env

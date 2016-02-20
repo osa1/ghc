@@ -7,7 +7,8 @@
 {-# LANGUAGE BangPatterns, CPP, MultiWayIf, NondecreasingIndentation #-}
 
 module WwLib ( mkWwBodies, mkWWstr, mkWorkerArgs
-             , deepSplitProductType_maybe, findTypeShape
+             , deepSplitProductType_maybe, deepSplitSumType_maybe
+             , findTypeShape
  ) where
 
 #include "HsVersions.h"
@@ -549,6 +550,15 @@ deepSplitProductType_maybe fam_envs ty
   , not (isClassTyCon tc)  -- See Note [Do not unpack class dictionaries]
   = Just (con, tc_args, dataConInstArgTys con tc_args, co)
 deepSplitProductType_maybe _ _ = Nothing
+
+deepSplitSumType_maybe :: FamInstEnvs -> Type -> Maybe ([DataCon], [Type], Coercion)
+deepSplitSumType_maybe fam_envs ty
+  | let (co, ty1) = topNormaliseType_maybe fam_envs ty
+                    `orElse` (mkRepReflCo ty, ty)
+  , Just (tc, tc_args) <- splitTyConApp_maybe ty1
+  , Just cons <- isDataSumTyCon_maybe tc
+  = Just (cons, tc_args, co)
+deepSplitSumType_maybe _ _ = Nothing
 
 deepSplitCprType_maybe :: FamInstEnvs -> [ConTag] -> Type
                        -> Maybe ([DataCon], [Type], Coercion)
