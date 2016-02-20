@@ -82,57 +82,17 @@ unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
 
 unariseBinding :: UnariseEnv -> StgBinding -> UniqSM StgBinding
 unariseBinding rho (StgNonRec x rhs) =
-    StgNonRec x <$> unariseRhs rho rhs (idType x)
+    StgNonRec x <$> unariseRhs rho rhs
 unariseBinding rho (StgRec xrhss)    =
-    StgRec <$> mapM (\(x, rhs) -> (x,) <$> unariseRhs rho rhs (idType x)) xrhss
+    StgRec <$> mapM (\(x, rhs) -> (x,) <$> unariseRhs rho rhs) xrhss
 
-unariseRhs :: UnariseEnv -> StgRhs -> Type -> UniqSM StgRhs
-unariseRhs rho rhs@(StgRhsClosure ccs b_info fvs update_flag args expr) ty
+unariseRhs :: UnariseEnv -> StgRhs -> UniqSM StgRhs
+unariseRhs rho rhs@(StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
   = do (rho', args') <- unariseIdBinders rho args
+       expr' <- unariseExpr rho' expr body_ty
+       return (StgRhsClosure ccs b_info (unariseIds rho fvs) update_flag args' expr' body_ty)
 
-       -- FIXME: This is not working as expected. I found some weird code like
-       -- this:
-       --
-       --   sat_s6Zb [Occ=Once] :: Data.Dynamic.Obj
-       --   [LclId, Str=DmdType] =
-       --       \r [s1_s6Z2]
-       --           case deRefWeak# [ipv3_s6YQ s1_s6Z2] of _ [Occ=Dead] {
-       --             ...
-       --           };
-       --
-       -- This is a function with a non-function type. I think there's no
-       -- non-hacky solution to this in STG level, we just don't have enough
-       -- type information.
-       --
-       -- UPDATE: I'm convinced that this is not going to work in STG level.
-       -- The problem is that without expression-level types and coercions we
-       -- can't rebuild types starting from expressions. Types attached to
-       -- identifiers are not enough, as those can lie. (e.g. an Id with type
-       -- Any could be bound to a function that returns an unboxed sum)
-       --
-       -- Q: Why do you need types?
-       -- A: Say we have this expression:
-       --
-       --      (# x | #)
-       --
-       --    What's the unboxed tuple for this? We don't know, without its type!
-       --    Because type is what tells us the memory layout. Without memory
-       --    layout, we can't initialize the memory properly! These two have
-       --    different memory layouts:
-       --
-       --      (# x | #) :: (# Int | String #) -- tag + a pointer
-       --      (# x | #) :: (# Int | Int# #)   -- tag + Int# + a pointer
-       --
-
-       -- pprTrace "dropFunArgs" (text "before:" <+> ppr ty $$
-       --                         text "rhs:" <+> ppr rhs) (return ())
-       let ty' = dropFunArgs (length args) ty
-       -- pprTrace "dropFunArgs - after" (ppr ty') (return ())
-
-       StgRhsClosure ccs b_info (unariseIds rho fvs) update_flag args'
-                     <$> unariseExpr rho' expr ty'
-
-unariseRhs rho (StgRhsCon ccs con args) ty
+unariseRhs rho (StgRhsCon ccs con args)
   = return (StgRhsCon ccs con (unariseArgs rho args))
 
 ------------------------
@@ -172,7 +132,9 @@ unariseExpr rho e@(StgConApp dc args) ty
   = return (StgConApp (tupleDataCon Unboxed (length args')) args')
 
   | isUnboxedSumCon dc
+  , ASSERT2(isUnboxedSumType ty, ppr ty $$ ppr dc) True
   , (tycon, ty_args) <- splitTyConApp ty
+  , ASSERT2(isUnboxedSumTyCon tycon, ppr ty $$ ppr tycon $$ ppr dc) True
   , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropLevityArgs ty_args)
   , let args' = unariseArgs rho args
   , (ubx_args, bx_args) <- partition (isUnliftedType . stgArgType) args'
@@ -346,15 +308,6 @@ mkDefaultAlt alts = dummyDefaultAlt : alts
 
 dummyDefaultAlt :: StgAlt
 dummyDefaultAlt = (DEFAULT, [], [], StgApp rUNTIME_ERROR_ID [])
-
-dropFunArgs :: Int -> Type -> Type
-dropFunArgs 0 ty = ty
-dropFunArgs n ty
-  | [ty'] <- flattenRepType (repType ty)
-  , (_, ty'') <- splitFunTy (dropForAlls ty')
-  = dropFunArgs (n - 1) ty''
--- see comments in 'unariseRhs'
--- dropFunArgs n ty = pprPanic "dropFunArgs" (ppr n $$ ppr ty)
 
 mkTagArg :: Int -> StgArg
 mkTagArg = StgLitArg . MachInt . fromIntegral

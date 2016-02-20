@@ -11,7 +11,7 @@
 -- And, as we have the info in hand, we may convert some lets to
 -- let-no-escapes.
 
-module CoreToStg ( coreToStg, coreExprToStg ) where
+module CoreToStg ( coreToStg ) where
 
 #include "HsVersions.h"
 
@@ -171,10 +171,6 @@ coreToStg dflags this_mod pgm
   = pgm'
   where (_, _, pgm') = coreTopBindsToStg dflags this_mod emptyVarEnv pgm
 
-coreExprToStg :: CoreExpr -> StgExpr
-coreExprToStg expr
-  = new_expr where (new_expr,_,_) = initLne emptyVarEnv (coreToStgExpr expr)
-
 
 coreTopBindsToStg
     :: DynFlags
@@ -266,7 +262,7 @@ coreToTopStgRhs
 coreToTopStgRhs dflags this_mod scope_fv_info (bndr, rhs)
   = do { (new_rhs, rhs_fvs, _) <- coreToStgExpr rhs
 
-       ; let stg_rhs   = mkTopStgRhs dflags this_mod rhs_fvs bndr bndr_info new_rhs
+       ; let stg_rhs   = mkTopStgRhs dflags this_mod rhs_fvs bndr bndr_info new_rhs (exprType rhs)
              stg_arity = stgRhsArity stg_rhs
        ; return (ASSERT2( arity_ok stg_arity, mk_arity_msg stg_arity) stg_rhs,
                  rhs_fvs) }
@@ -293,7 +289,7 @@ coreToTopStgRhs dflags this_mod scope_fv_info (bndr, rhs)
                 text "STG arity:" <+> ppr stg_arity]
 
 mkTopStgRhs :: DynFlags -> Module -> FreeVarsInfo
-            -> Id -> StgBinderInfo -> StgExpr
+            -> Id -> StgBinderInfo -> StgExpr -> Type
             -> StgRhs
 
 mkTopStgRhs dflags this_mod = mkStgRhs' con_updateable
@@ -336,6 +332,7 @@ coreToStgExpr expr@(Lam _ _)
   = let
         (args, body) = myCollectBinders expr
         args'        = filterStgBinders args
+        body_ty      = exprType body
     in
     extendVarEnvLne [ (a, LambdaBound) | a <- args' ] $ do
     (body, body_fvs, body_escs) <- coreToStgExpr body
@@ -343,7 +340,7 @@ coreToStgExpr expr@(Lam _ _)
         fvs             = args' `minusFVBinders` body_fvs
         escs            = body_escs `delVarSetList` args'
         result_expr | null args' = body
-                    | otherwise  = StgLam args' body
+                    | otherwise  = StgLam args' body body_ty
 
     return (result_expr, fvs, escs)
 
@@ -756,30 +753,30 @@ coreToStgRhs :: FreeVarsInfo      -- Free var info for the scope of the binding
 
 coreToStgRhs scope_fv_info (bndr, rhs) = do
     (new_rhs, rhs_fvs, rhs_escs) <- coreToStgExpr rhs
-    return (mkStgRhs rhs_fvs bndr bndr_info new_rhs,
+    return (mkStgRhs rhs_fvs bndr bndr_info new_rhs (exprType rhs),
             rhs_fvs, rhs_escs)
   where
     bndr_info = lookupFVInfo scope_fv_info bndr
 
-mkStgRhs :: FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
+mkStgRhs :: FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> Type -> StgRhs
 mkStgRhs = mkStgRhs' con_updateable
   where con_updateable _ _ = False
 
 mkStgRhs' :: (DataCon -> [StgArg] -> Bool)
-            -> FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
-mkStgRhs' con_updateable rhs_fvs bndr binder_info rhs
-  | StgLam bndrs body <- rhs
+            -> FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> Type -> StgRhs
+mkStgRhs' con_updateable rhs_fvs bndr binder_info rhs rhs_ty
+  | StgLam bndrs body body_ty <- rhs
   = StgRhsClosure noCCS binder_info
                    (getFVs rhs_fvs)
                    ReEntrant
-                   bndrs body
+                   bndrs body body_ty
   | StgConApp con args <- unticked_rhs
   , not (con_updateable con args)
   = StgRhsCon noCCS con args
   | otherwise
   = StgRhsClosure noCCS binder_info
                    (getFVs rhs_fvs)
-                   upd_flag [] rhs
+                   upd_flag [] rhs rhs_ty
  where
 
     (_, unticked_rhs) = stripStgTicksTop (not . tickishIsCode) rhs

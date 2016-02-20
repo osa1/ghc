@@ -216,6 +216,7 @@ finished it encodes (\x -> e) as (let f = \x -> e in f)
   | StgLam
         [bndr]
         StgExpr    -- Body of lambda
+        Type       -- Type of body
 
 {-
 ************************************************************************
@@ -378,6 +379,7 @@ data GenStgRhs bndr occ
         [bndr]                  -- arguments; if empty, then not a function;
                                 -- as above, order is important.
         (GenStgExpr bndr occ)   -- body
+        Type                    -- type of body
 
 {-
 An example may be in order.  Consider:
@@ -405,7 +407,7 @@ The second flavour of right-hand-side is for constructors (simple but important)
         [GenStgArg occ]  -- args
 
 stgRhsArity :: StgRhs -> Int
-stgRhsArity (StgRhsClosure _ _ _ _ bndrs _)
+stgRhsArity (StgRhsClosure _ _ _ _ bndrs _ _)
   = ASSERT( all isId bndrs ) length bndrs
   -- The arity never includes type parameters, but they should have gone by now
 stgRhsArity (StgRhsCon _ _ _) = 0
@@ -430,7 +432,7 @@ topStgBindHasCafRefs (StgRec binds)
   = any topRhsHasCafRefs (map snd binds)
 
 topRhsHasCafRefs :: GenStgRhs bndr Id -> Bool
-topRhsHasCafRefs (StgRhsClosure _ _ _ upd _ body)
+topRhsHasCafRefs (StgRhsClosure _ _ _ upd _ body _)
   = -- See Note [CAF consistency]
     isUpdatable upd || exprHasCafRefs body
 topRhsHasCafRefs (StgRhsCon _ _ args)
@@ -445,7 +447,7 @@ exprHasCafRefs (StgConApp _ args)
   = any stgArgHasCafRefs args
 exprHasCafRefs (StgOpApp _ args _)
   = any stgArgHasCafRefs args
-exprHasCafRefs (StgLam _ body)
+exprHasCafRefs (StgLam _ body _)
   = exprHasCafRefs body
 exprHasCafRefs (StgCase scrt _ _ alts)
   = exprHasCafRefs scrt || any altHasCafRefs alts
@@ -463,7 +465,7 @@ bindHasCafRefs (StgRec binds)
   = any rhsHasCafRefs (map snd binds)
 
 rhsHasCafRefs :: GenStgRhs bndr Id -> Bool
-rhsHasCafRefs (StgRhsClosure _ _ _ _ _ body)
+rhsHasCafRefs (StgRhsClosure _ _ _ _ _ body _)
   = exprHasCafRefs body
 rhsHasCafRefs (StgRhsCon _ _ args)
   = any stgArgHasCafRefs args
@@ -682,10 +684,11 @@ pprStgExpr (StgConApp con args)
 pprStgExpr (StgOpApp op args _)
   = hsep [ pprStgOp op, brackets (interppSP args)]
 
-pprStgExpr (StgLam bndrs body)
+pprStgExpr (StgLam bndrs body ret_ty)
   = sep [ char '\\' <+> ppr_list (map (pprBndr LambdaBind) bndrs)
             <+> text "->",
-         pprStgExpr body ]
+         pprStgExpr body,
+         parens (text "::" <+> ppr ret_ty) ]
   where ppr_list = brackets . fsep . punctuate comma
 
 -- special case: let v = <very specific thing>
@@ -774,19 +777,21 @@ pprStgRhs :: (OutputableBndr bndr, Outputable bdee, Ord bdee)
           => GenStgRhs bndr bdee -> SDoc
 
 -- special case
-pprStgRhs (StgRhsClosure cc bi [free_var] upd_flag [{-no args-}] (StgApp func []))
-  = hcat [ ppr cc,
+pprStgRhs (StgRhsClosure cc bi [free_var] upd_flag [{-no args-}] (StgApp func []) ret_ty)
+  = hsep [ ppr cc,
            pp_binder_info bi,
            brackets (ifPprDebug (ppr free_var)),
-           text " \\", ppr upd_flag, ptext (sLit " [] "), ppr func ]
+           text "\\", ppr upd_flag, text "[]",
+           parens (text "->" <+> ppr ret_ty), ppr func ]
 
 -- general case
-pprStgRhs (StgRhsClosure cc bi free_vars upd_flag args body)
+pprStgRhs (StgRhsClosure cc bi free_vars upd_flag args body ret_ty)
   = sdocWithDynFlags $ \dflags ->
     hang (hsep [if gopt Opt_SccProfilingOn dflags then ppr cc else empty,
                 pp_binder_info bi,
                 ifPprDebug (brackets (interppSP free_vars)),
-                char '\\' <> ppr upd_flag, brackets (interppSP args)])
+                char '\\' <> ppr upd_flag, brackets (interppSP args),
+                parens (text "->" <+> ppr ret_ty)])
          4 (ppr body)
 
 pprStgRhs (StgRhsCon cc con args)

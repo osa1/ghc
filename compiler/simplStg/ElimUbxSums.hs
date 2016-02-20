@@ -46,7 +46,7 @@ unboxedSumRepTypes alts =
       alt_tys = map go alts
 
       con_rep_tys_parts :: [([Type], [Type])]
-      con_rep_tys_parts = map (partition isPrimitiveType) alt_tys
+      con_rep_tys_parts = map (partition isUnliftedType) alt_tys
 
       fields_unboxed = maximum (0 : map (length . fst) con_rep_tys_parts)
       fields_boxed   = maximum (0 : map (length . snd) con_rep_tys_parts)
@@ -84,7 +84,7 @@ unboxedSumTyConFields :: [Type] -> (Int, Int)
 unboxedSumTyConFields alts =
     let
       rep_tys = unboxedSumRepTypes alts
-      (ubx_tys, bx_tys) = partition isPrimitiveType rep_tys
+      (ubx_tys, bx_tys) = partition isUnliftedType rep_tys
     in
       (length ubx_tys, length bx_tys)
 
