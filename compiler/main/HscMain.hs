@@ -1674,39 +1674,6 @@ hscParseThingWithLocation source linenumber parser str
             liftIO $ dumpIfSet_dyn dflags Opt_D_dump_parsed "Parser" (ppr thing)
             return thing
 
--- Makes a "vanilla" ModGuts.
-mkModGuts :: Module -> SafeHaskellMode -> CoreProgram -> ModGuts
-mkModGuts mod safe binds =
-    ModGuts {
-        mg_module       = mod,
-        mg_hsc_src      = HsSrcFile,
-        mg_loc          = mkGeneralSrcSpan (moduleNameFS (moduleName mod)),
-                                  -- A bit crude
-        mg_exports      = [],
-        mg_usages       = [],
-        mg_deps         = noDependencies,
-        mg_used_th      = False,
-        mg_rdr_env      = emptyGlobalRdrEnv,
-        mg_fix_env      = emptyFixityEnv,
-        mg_tcs          = [],
-        mg_insts        = [],
-        mg_fam_insts    = [],
-        mg_patsyns      = [],
-        mg_rules        = [],
-        mg_vect_decls   = [],
-        mg_binds        = binds,
-        mg_foreign      = NoStubs,
-        mg_warns        = NoWarnings,
-        mg_anns         = [],
-        mg_hpc_info     = emptyHpcInfo False,
-        mg_modBreaks    = Nothing,
-        mg_vect_info    = noVectInfo,
-        mg_inst_env     = emptyInstEnv,
-        mg_fam_inst_env = emptyFamInstEnv,
-        mg_safe_haskell = safe,
-        mg_trust_pkg    = False
-    }
-
 
 {- **********************************************************************
 %*                                                                      *
