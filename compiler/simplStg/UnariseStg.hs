@@ -306,9 +306,13 @@ dummyDefaultAlt :: StgAlt
 dummyDefaultAlt = (DEFAULT, [], [], StgApp rUNTIME_ERROR_ID [])
 
 dropFunArgs :: Int -> Type -> Type
-dropFunArgs n ty =
-    let (bs, ty') = splitPiTys (dropForAlls ty)
-     in mkForAllTys (drop n bs) ty'
+dropFunArgs 0 ty = ty
+dropFunArgs n ty
+  | [ty'] <- flattenRepType (repType ty)
+  , (bs, ty'') <- splitPiTys (dropForAlls ty')
+  = ASSERT2(not (null bs), text "fun ty:" <+> ppr ty <+> text "trying to drop:" <+> ppr n)
+    dropFunArgs (n - 1) (mkForAllTys (tail bs) ty'')
+dropFunArgs n ty = pprPanic "dropFunArgs" (ppr n $$ ppr ty)
 
 mkTagArg :: Int -> StgArg
 mkTagArg = StgLitArg . MachInt . fromIntegral
