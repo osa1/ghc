@@ -190,15 +190,13 @@ unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
   = do (rho_sum_bndrs, ys) <- unariseIdBinder rho bndr
        ASSERT(length ys == ubx_fields + bx_fields) (return ())
        let
-         uses = replicate (length ys) (not (isDeadBinder bndr))
          (tag_bndr : ubx_ys, bx_ys) = splitAt ubx_fields ys
 
          mkAlt :: StgAlt -> UniqSM StgAlt
          mkAlt (DEFAULT, _, _, e) =
            ( DEFAULT, [], [], ) <$> unariseExpr rho_sum_bndrs e ty
 
-         mkAlt (DataAlt sumCon, bs, uses, e) = do
-           -- TODO: We should probably use `uses` here.
+         mkAlt (DataAlt sumCon, bs, _, e) = do
            (rho_alt_bndrs, bs') <- unariseIdBinders rho_sum_bndrs bs
            let
              (ubx_bs, bx_bs) = partition (isUnliftedType . idType) bs'
@@ -213,13 +211,13 @@ unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
 
            ret <- unariseExpr rho_alt_bndrs_orig_bndr_added e ty
 
-           return ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], [], ret )
+           return ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], undefined, ret )
 
        inner_case <-
          StgCase (StgApp tag_bndr []) tag_bndr
                  (PrimAlt intPrimTyCon) . mkDefaultAlt <$> (mapM mkAlt alts)
 
-       return [(DataAlt (tupleDataCon Unboxed (ubx_fields + bx_fields)), ys, uses, inner_case)]
+       return [(DataAlt (tupleDataCon Unboxed (ubx_fields + bx_fields)), ys, undefined, inner_case)]
 
 unariseAlts rho _ _ alts ty
   = mapM (\alt -> unariseAlt rho alt ty) alts
