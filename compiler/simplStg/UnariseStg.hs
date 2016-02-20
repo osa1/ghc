@@ -87,10 +87,36 @@ unariseBinding rho (StgRec xrhss)    =
     StgRec <$> mapM (\(x, rhs) -> (x,) <$> unariseRhs rho rhs (idType x)) xrhss
 
 unariseRhs :: UnariseEnv -> StgRhs -> Type -> UniqSM StgRhs
-unariseRhs rho (StgRhsClosure ccs b_info fvs update_flag args expr) ty
+unariseRhs rho rhs@(StgRhsClosure ccs b_info fvs update_flag args expr) ty
   = do (rho', args') <- unariseIdBinders rho args
+
+       -- FIXME: This is not working as expected. I found some weird code like
+       -- this:
+       --
+       --   sat_s6Zb [Occ=Once] :: Data.Dynamic.Obj
+       --   [LclId, Str=DmdType] =
+       --       \r [s1_s6Z2]
+       --           case deRefWeak# [ipv3_s6YQ s1_s6Z2] of _ [Occ=Dead] {
+       --             ...
+       --           };
+       --
+       -- This is a function with a non-function type. I think there's no
+       -- non-hacky solution to this in STG level, we just don't have enough
+       -- type information.
+       --
+       -- UPDATE: I'm convinced that this is not going to work in STG level.
+       -- The problem is that without expression-level types and coercions we
+       -- can't rebuild types starting from expressions. Types attached to
+       -- identifiers are not enough, as those can lie. (e.g. an Id with type
+       -- Any could be bound to a function that returns an unboxed sum)
+
+       -- pprTrace "dropFunArgs" (text "before:" <+> ppr ty $$
+       --                         text "rhs:" <+> ppr rhs) (return ())
+       let ty' = dropFunArgs (length args) ty
+       -- pprTrace "dropFunArgs - after" (ppr ty') (return ())
+
        StgRhsClosure ccs b_info (unariseIds rho fvs) update_flag args'
-                     <$> unariseExpr rho' expr (dropFunArgs (length args) ty)
+                     <$> unariseExpr rho' expr ty'
 
 unariseRhs rho (StgRhsCon ccs con args) ty
   = return (StgRhsCon ccs con (unariseArgs rho args))
@@ -311,10 +337,10 @@ dropFunArgs :: Int -> Type -> Type
 dropFunArgs 0 ty = ty
 dropFunArgs n ty
   | [ty'] <- flattenRepType (repType ty)
-  , (bs, ty'') <- splitPiTys (dropForAlls ty')
-  = ASSERT2(not (null bs), text "fun ty:" <+> ppr ty <+> text "trying to drop:" <+> ppr n)
-    dropFunArgs (n - 1) (mkForAllTys (tail bs) ty'')
-dropFunArgs n ty = pprPanic "dropFunArgs" (ppr n $$ ppr ty)
+  , (_, ty'') <- splitFunTy (dropForAlls ty')
+  = dropFunArgs (n - 1) ty''
+-- see comments in 'unariseRhs'
+-- dropFunArgs n ty = pprPanic "dropFunArgs" (ppr n $$ ppr ty)
 
 mkTagArg :: Int -> StgArg
 mkTagArg = StgLitArg . MachInt . fromIntegral
