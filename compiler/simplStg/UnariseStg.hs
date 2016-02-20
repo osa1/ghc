@@ -134,7 +134,7 @@ unariseExpr rho e@(StgConApp dc args) ty
   | isUnboxedSumCon dc
   , (tycon, ty_args) <- splitTyConApp ty
   , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropLevityArgs ty_args)
-  , let args' = unariseArgs rho (filter (not . isVoidTy . stgArgType) args)
+  , let args' = unariseArgs rho args
   , (ubx_args, bx_args) <- partition (isUnliftedType . stgArgType) args'
   , let tag = dataConTag dc
   = return (StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
