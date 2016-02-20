@@ -273,9 +273,11 @@ unariseIdBinder rho x =
       let rho' = extendVarEnv rho x ys
       return (rho', ys)
     UbxSumRep ubx_fields bx_fields -> do
-      ys1 <- mkIds (mkFastString "ubx") (replicate (length ubx_fields) intPrimTy)
+      ASSERT(length ubx_fields > 0) (return ())
+      tag <- mkSysLocalOrCoVarM (mkFastString "tag") intPrimTy
+      ys1 <- mkIds (mkFastString "ubx") (replicate (length ubx_fields - 1) intPrimTy)
       ys2 <- mkIds (mkFastString "bx")  (replicate (length bx_fields) liftedAny)
-      let ys = ys1 ++ ys2
+      let ys = tag : ys1 ++ ys2
           rho' = extendVarEnv rho x ys
       return (rho', ys)
 
