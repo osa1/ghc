@@ -529,8 +529,9 @@ chooseReturnBndrs :: Id -> AltType -> [StgAlt] -> [NonVoid Id]
 chooseReturnBndrs bndr (PrimAlt _) _alts
   = nonVoidIds [bndr]
 
-chooseReturnBndrs _bndr (UbxTupAlt _) [(_, ids, _, _)]
-  = nonVoidIds ids      -- 'bndr' is not assigned!
+chooseReturnBndrs _bndr (UbxTupAlt n) [(_, ids, _, _)]
+  = ASSERT2(n == length ids, ppr n $$ ppr ids $$ ppr _bndr)
+    nonVoidIds ids      -- 'bndr' is not assigned!
 
 chooseReturnBndrs bndr (AlgAlt _) _alts
   = nonVoidIds [bndr]   -- Only 'bndr' is assigned
