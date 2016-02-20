@@ -37,6 +37,7 @@ module Demand (
         appIsBottom, isBottomingSig, pprIfaceStrictSig,
         trimCPRInfo, returnsCPR_maybe,
         StrictSig(..), mkStrictSig, mkClosedStrictSig, nopSig, botSig, cprProdSig,
+        cprSumSig,
         isNopSig, splitStrictSig, increaseStrictSigArity,
 
         seqDemand, seqDemandList, seqDmdType, seqStrictSig,
@@ -74,7 +75,9 @@ import TyCon           ( isNewTyCon, isClassTyCon )
 import DataCon         ( splitDataProductType_maybe )
 import FastString
 
-import qualified Data.IntSet as IM
+import Data.List (sortOn)
+import qualified Data.IntSet as IS
+import qualified Data.IntMap.Strict as IM
 
 {-
 ************************************************************************
@@ -180,6 +183,9 @@ data StrDmd
                          -- Invariant: not all components are HyperStr (use HyperStr)
                          --            not all components are Lazy     (use HeadStr)
 
+  | SSum (IM.IntMap [ArgStr])
+                       -- Sum (map keys are ConTags)
+
   | HeadStr              -- Head-Strict
                          -- A polymorphic demand: used for values of all types,
                          --                       including a type variable
@@ -229,6 +235,8 @@ instance Outputable StrDmd where
   ppr (SCall s)     = char 'C' <> parens (ppr s)
   ppr HeadStr       = char 'S'
   ppr (SProd sx)    = char 'S' <> parens (hcat (map ppr sx))
+  ppr (SSum strs)   =
+    text "Sum" <> parens (pprWithBars ppr (map snd (sortOn fst (IM.toList strs))))
 
 instance Outputable ArgStr where
   ppr (Str x s)     = (case x of VanStr -> empty; ExnStr -> char 'x')
@@ -252,10 +260,14 @@ lubStr (SCall s1) (SCall s2)   = SCall (s1 `lubStr` s2)
 lubStr (SCall _)  (SProd _)    = HeadStr
 lubStr (SProd sx) HyperStr     = SProd sx
 lubStr (SProd _)  HeadStr      = HeadStr
-lubStr (SProd s1) (SProd s2)
+lubStr (SProd s1) (SProd s2) -- NOTE(osa): Why is this case not an error?
+                             -- Related with function types?
     | length s1 == length s2   = mkSProd (zipWith lubArgStr s1 s2)
     | otherwise                = HeadStr
 lubStr (SProd _) (SCall _)     = HeadStr
+
+lubStr (SSum s1) (SSum s2)     = SSum (IM.unionWith (zipWith lubArgStr) s1 s2)
+
 lubStr HeadStr   _             = HeadStr
 
 bothArgStr :: ArgStr -> ArgStr -> ArgStr
@@ -280,12 +292,16 @@ bothStr (SProd s1) HeadStr     = SProd s1
 bothStr (SProd s1) (SProd s2)
     | length s1 == length s2   = mkSProd (zipWith bothArgStr s1 s2)
     | otherwise                = HyperStr  -- Weird
+
+bothStr (SSum s1) (SSum s2)    = SSum (IM.unionWith (zipWith bothArgStr) s1 s2)
+
 bothStr (SProd _) (SCall _)    = HyperStr
 
 -- utility functions to deal with memory leaks
 seqStrDmd :: StrDmd -> ()
 seqStrDmd (SProd ds)   = seqStrDmdList ds
-seqStrDmd (SCall s)     = s `seq` ()
+seqStrDmd (SSum s)     = s `seq` ()
+seqStrDmd (SCall s)    = s `seq` ()
 seqStrDmd _            = ()
 
 seqStrDmdList :: [ArgStr] -> ()
@@ -305,6 +321,7 @@ splitStrProdDmd :: Int -> StrDmd -> Maybe [ArgStr]
 splitStrProdDmd n HyperStr   = Just (replicate n strBot)
 splitStrProdDmd n HeadStr    = Just (replicate n strTop)
 splitStrProdDmd n (SProd ds) = ASSERT( ds `lengthIs` n) Just ds
+splitStrProdDmd _ SSum{}     = Nothing
 splitStrProdDmd _ (SCall {}) = Nothing
       -- This can happen when the programmer uses unsafeCoerce,
       -- and we don't then want to crash the compiler (Trac #9208)
@@ -912,11 +929,11 @@ type DmdResult = Termination CPRResult
 
 data CPRResult = NoCPR          -- Top of the lattice
                | RetProd        -- Returns a constructor from a product type
-               | RetSum IM.IntSet  -- Returns a constructor from a data type
+               | RetSum IS.IntSet  -- Returns a constructor from a data type
                deriving( Eq, Show )
 
 lubCPR :: CPRResult -> CPRResult -> CPRResult
-lubCPR (RetSum t1) (RetSum t2) = RetSum (IM.union t1 t2)
+lubCPR (RetSum t1) (RetSum t2) = RetSum (IS.union t1 t2)
 lubCPR RetProd     RetProd     = RetProd
 lubCPR _ _                     = NoCPR
 
@@ -947,7 +964,7 @@ instance Outputable r => Outputable (Termination r) where
 
 instance Outputable CPRResult where
   ppr NoCPR        = empty
-  ppr (RetSum n)   = char 's' <> parens (ppr (IM.toList n))
+  ppr (RetSum n)   = char 's' <> parens (ppr (IS.toList n))
   ppr RetProd      = char 'm'
 
 seqDmdResult :: DmdResult -> ()
@@ -973,10 +990,13 @@ exnRes = ThrowsExn
 botRes = Diverges
 
 cprSumRes :: ConTag -> DmdResult
-cprSumRes tag = Dunno $ RetSum (IM.singleton tag)
+cprSumRes tag = Dunno $ RetSum (IS.singleton tag)
 
 vanillaCprProdRes :: Arity -> DmdResult
 vanillaCprProdRes _arity = Dunno $ RetProd
+
+vanillaCprSumRes :: DmdResult
+vanillaCprSumRes = Dunno (RetSum IS.empty)
 
 isTopRes :: DmdResult -> Bool
 isTopRes (Dunno NoCPR) = True
@@ -1001,13 +1021,13 @@ trimCPRInfo trim_all trim_sums res
                        | otherwise = RetProd
     trimC NoCPR = NoCPR
 
-returnsCPR_maybe :: DmdResult -> Maybe IM.IntSet
+returnsCPR_maybe :: DmdResult -> Maybe IS.IntSet
 returnsCPR_maybe (Dunno c) = retCPR_maybe c
 returnsCPR_maybe _         = Nothing
 
-retCPR_maybe :: CPRResult -> Maybe IM.IntSet
+retCPR_maybe :: CPRResult -> Maybe IS.IntSet
 retCPR_maybe (RetSum t)  = Just t
-retCPR_maybe RetProd     = Just (IM.singleton fIRST_TAG)
+retCPR_maybe RetProd     = Just (IS.singleton fIRST_TAG)
 retCPR_maybe NoCPR       = Nothing
 
 -- See Notes [Default demand on free variables]
@@ -1260,6 +1280,10 @@ botDmdType = DmdType emptyDmdEnv [] botRes
 cprProdDmdType :: Arity -> DmdType
 cprProdDmdType arity
   = DmdType emptyDmdEnv [] (vanillaCprProdRes arity)
+
+cprSumDmdType :: DmdType
+cprSumDmdType
+  = DmdType emptyDmdEnv [] vanillaCprSumRes
 
 isNopDmdType :: DmdType -> Bool
 isNopDmdType (DmdType env [] res)
@@ -1682,6 +1706,9 @@ botSig = StrictSig botDmdType
 cprProdSig :: Arity -> StrictSig
 cprProdSig arity = StrictSig (cprProdDmdType arity)
 
+cprSumSig :: StrictSig
+cprSumSig = StrictSig cprSumDmdType
+
 seqStrictSig :: StrictSig -> ()
 seqStrictSig (StrictSig ty) = seqDmdType ty
 
@@ -2063,13 +2090,13 @@ instance Binary DmdResult where
                   _ -> return Diverges }
 
 instance Binary CPRResult where
-    put_ bh (RetSum n)   = do { putByte bh 0; put_ bh (IM.toList n) }
+    put_ bh (RetSum n)   = do { putByte bh 0; put_ bh (IS.toList n) }
     put_ bh RetProd      = putByte bh 1
     put_ bh NoCPR        = putByte bh 2
 
     get  bh = do
             h <- getByte bh
             case h of
-              0 -> do { n <- get bh; return (RetSum (IM.fromList n)) }
+              0 -> do { n <- get bh; return (RetSum (IS.fromList n)) }
               1 -> return RetProd
               _ -> return NoCPR

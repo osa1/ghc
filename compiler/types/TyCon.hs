@@ -46,6 +46,7 @@ module TyCon(
         isKindTyCon, isLiftedTypeKindTyConName,
 
         isDataTyCon, isProductTyCon, isDataProductTyCon_maybe,
+        isDataSumTyCon_maybe,
         isEnumerationTyCon,
         isNewTyCon, isAbstractTyCon,
         isFamilyTyCon, isOpenFamilyTyCon,
@@ -1468,6 +1469,17 @@ isDataProductTyCon_maybe (AlgTyCon { algTcRhs = rhs })
          -> Just con
        _ -> Nothing
 isDataProductTyCon_maybe _ = Nothing
+
+isDataSumTyCon_maybe (AlgTyCon { algTcRhs = rhs })
+  = case rhs of
+      DataTyCon { data_cons = cons }
+        | length cons > 1
+        , all (null . dataConExTyVars) cons -- FIXME(osa): Why do we need this?
+        -> Just cons
+      SumTyCon { data_cons = cons }
+        -> Just cons
+      _ -> Nothing
+isDataSumTyCon_maybe _ = Nothing
 
 {- Note [Product types]
 ~~~~~~~~~~~~~~~~~~~~~~~

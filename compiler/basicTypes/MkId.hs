@@ -530,7 +530,7 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
              wrap_sig = mkClosedStrictSig wrap_arg_dmds (dataConCPR data_con)
              wrap_arg_dmds = map mk_dmd arg_ibangs
              mk_dmd str | isBanged str = evalDmd
-                        | otherwise           = topDmd
+                        | otherwise    = topDmd
                  -- The Cpr info can be important inside INLINE rhss, where the
                  -- wrapper constructor isn't inlined.
                  -- And the argument strictness can be important too; we
