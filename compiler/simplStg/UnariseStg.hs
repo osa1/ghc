@@ -109,6 +109,20 @@ unariseRhs rho rhs@(StgRhsClosure ccs b_info fvs update_flag args expr) ty
        -- can't rebuild types starting from expressions. Types attached to
        -- identifiers are not enough, as those can lie. (e.g. an Id with type
        -- Any could be bound to a function that returns an unboxed sum)
+       --
+       -- Q: Why do you need types?
+       -- A: Say we have this expression:
+       --
+       --      (# x | #)
+       --
+       --    What's the unboxed tuple for this? We don't know, without its type!
+       --    Because type is what tells us the memory layout. Without memory
+       --    layout, we can't initialize the memory properly! These two have
+       --    different memory layouts:
+       --
+       --      (# x | #) :: (# Int | String #) -- tag + a pointer
+       --      (# x | #) :: (# Int | Int# #)   -- tag + Int# + a pointer
+       --
 
        -- pprTrace "dropFunArgs" (text "before:" <+> ppr ty $$
        --                         text "rhs:" <+> ppr rhs) (return ())
