@@ -341,7 +341,7 @@ bX_DUMMY_ARG = StgVarArg rUNTIME_ERROR_ID
 mkDefaultAlt :: [StgAlt] -> [StgAlt]
 mkDefaultAlt [] = pprPanic "elimUbxSumExpr.mkDefaultAlt" (text "Empty alts")
 mkDefaultAlt alts@((DEFAULT, _, _, _) : _) = alts
--- mkDefaultAlt ((LitAlt{}, [], [], rhs) : alts) = (DEFAULT, [], [], rhs) : alts
+mkDefaultAlt ((LitAlt{}, [], _, rhs) : alts) = (DEFAULT, [], [], rhs) : alts
 mkDefaultAlt alts = dummyDefaultAlt : alts
 
 dummyDefaultAlt :: StgAlt
