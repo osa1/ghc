@@ -110,6 +110,7 @@ the unusable strictness-info into the interfaces.
 -}
 
 mkWwBodies :: DynFlags
+           -> Id
            -> FamInstEnvs
            -> Type                                  -- Type of original function
            -> [Demand]                              -- Strictness of original function
@@ -130,7 +131,7 @@ mkWwBodies :: DynFlags
 --                        let x = (a,b) in
 --                        E
 
-mkWwBodies dflags fam_envs fun_ty demands res_info one_shots
+mkWwBodies dflags fn_id fam_envs fun_ty demands res_info one_shots
   = do  { let arg_info = demands `zip` (one_shots ++ repeat NoOneShotInfo)
               all_one_shots = foldr (worstOneShot . snd) OneShotLam arg_info
         ; (wrap_args, wrap_fn_args, work_fn_args, res_ty) <- mkWWargs emptyTCvSubst fun_ty arg_info
@@ -138,7 +139,7 @@ mkWwBodies dflags fam_envs fun_ty demands res_info one_shots
 
         -- Do CPR w/w.  See Note [Always do CPR w/w]
         ; (useful2, wrap_fn_cpr, work_fn_cpr, cpr_res_ty)
-              <- mkWWcpr (gopt Opt_CprAnal dflags) fam_envs res_ty res_info
+              <- mkWWcpr fn_id (gopt Opt_CprAnal dflags) fam_envs res_ty res_info
 
         ; let (work_lam_args, work_call_args) = mkWorkerArgs dflags work_args all_one_shots cpr_res_ty
               worker_args_dmds = [idDemandInfo v | v <- work_call_args, isId v]
@@ -605,7 +606,8 @@ The non-CPR results appear ordered in the unboxed tuple as if by a
 left-to-right traversal of the result structure.
 -}
 
-mkWWcpr :: Bool
+mkWWcpr :: Id
+        -> Bool
         -> FamInstEnvs
         -> Type                              -- function body type
         -> DmdResult                         -- CPR analysis results
@@ -614,7 +616,7 @@ mkWWcpr :: Bool
                    CoreExpr -> CoreExpr,     -- New worker
                    Type)                     -- Type of worker's body
 
-mkWWcpr opt_CprAnal fam_envs body_ty res
+mkWWcpr fn_id opt_CprAnal fam_envs body_ty res
     -- CPR explicitly turned off (or in -O0)
   | not opt_CprAnal = return (False, id, id, body_ty)
     -- CPR is turned on by default for -O and O2
@@ -627,7 +629,10 @@ mkWWcpr opt_CprAnal fam_envs body_ty res
                           [used_con] ->
                             mkWWcpr_help used_con tc_args (dataConInstArgTys used_con tc_args) co
                           _ ->
-                            mkWWcpr_sum_help used_cons tc_args co body_ty
+                            -- mkWWcpr_sum_help used_cons tc_args co body_ty
+                            pprTrace "====mkWWcpr===="
+                              (text "CPR on sum type in function:" <+> ppr fn_id) $
+                            return (False, id, id, body_ty)
 
                      |  otherwise
                         -- See Note [non-algebraic or open body type warning]

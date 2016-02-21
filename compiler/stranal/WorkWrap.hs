@@ -332,7 +332,7 @@ splitFun :: DynFlags -> FamInstEnvs -> Id -> IdInfo -> [Demand] -> DmdResult -> 
 splitFun dflags fam_envs fn_id fn_info wrap_dmds res_info rhs
   = WARN( not (wrap_dmds `lengthIs` arity), ppr fn_id <+> (ppr arity $$ ppr wrap_dmds $$ ppr res_info) ) do
     -- The arity should match the signature
-    stuff <- mkWwBodies dflags fam_envs fun_ty wrap_dmds res_info one_shots
+    stuff <- mkWwBodies dflags fn_id fam_envs fun_ty wrap_dmds res_info one_shots
     case stuff of
       Just (work_demands, wrap_fn, work_fn) -> do
         work_uniq <- getUniqueM
