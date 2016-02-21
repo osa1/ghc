@@ -1929,24 +1929,7 @@ checkValidSubst ::
 #endif
     TCvSubst -> [Type] -> [Coercion] -> a -> a
 checkValidSubst subst@(TCvSubst in_scope tenv cenv) tys cos a
-  = ASSERT2( isValidTCvSubst subst,
-             text "in_scope" <+> ppr in_scope $$
-             text "tenv" <+> ppr tenv $$
-             text "tenvFVs"
-               <+> ppr (tyCoVarsOfTypes $ varEnvElts tenv) $$
-             text "cenv" <+> ppr cenv $$
-             text "cenvFVs"
-               <+> ppr (tyCoVarsOfCos $ varEnvElts cenv) $$
-             text "tys" <+> ppr tys $$
-             text "cos" <+> ppr cos )
-    ASSERT2( tysCosFVsInScope,
-             text "in_scope" <+> ppr in_scope $$
-             text "tenv" <+> ppr tenv $$
-             text "cenv" <+> ppr cenv $$
-             text "tys" <+> ppr tys $$
-             text "cos" <+> ppr cos $$
-             text "needInScope" <+> ppr needInScope )
-    a
+  = a
   where
   substDomain = varEnvKeys tenv ++ varEnvKeys cenv
   needInScope = (tyCoVarsOfTypes tys `unionVarSet` tyCoVarsOfCos cos)
