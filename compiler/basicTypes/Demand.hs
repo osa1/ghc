@@ -275,8 +275,8 @@ lubStr (SSum s1) (SSum s2)     =
 
 lubStr HeadStr   _             = HeadStr
 
-orAlts :: [DataCon] -> [(CoreAlt, DmdType)] -> StrDmd
-orAlts all_cons rhs_dmds =
+orAlts :: Var -> [DataCon] -> [(CoreAlt, DmdType)] -> DmdType
+orAlts case_bndr all_cons rhs_dmds =
     let
       all_tags :: IS.IntSet
       all_tags = IS.fromList (map dataConTag all_cons)
@@ -299,13 +299,17 @@ orAlts all_cons rhs_dmds =
         = pprPanic "mkAltsStrDmd" (text "DEFAULT should come last") -- can't print Core..
 
       flattenAltDmds :: [([ConTag], StrDmd)] -> [(ConTag, StrDmd)]
+      flattenAltDmds [] = []
       flattenAltDmds ((ts, dmd) : rest)
         = map (,dmd) ts ++ flattenAltDmds rest
 
       sum_str_map :: IM.IntMap StrDmd
       sum_str_map =  IM.fromList (flattenAltDmds (mkAltsStrDmds rhs_dmds IS.empty))
+
+      sum_joint_dmd :: Demand
+      sum_joint_dmd = JD (Str VanStr (SSum sum_str_map)) Abs -- CARE
     in
-      SSum sum_str_map
+      DmdType (mkVarEnv [(case_bndr, sum_joint_dmd)]) [] Diverges -- CARE
 
 bothArgStr :: ArgStr -> ArgStr -> ArgStr
 bothArgStr Lazy        s           = s

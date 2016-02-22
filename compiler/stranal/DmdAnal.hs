@@ -241,9 +241,18 @@ dmdAnal' env dmd (Case scrut case_bndr ty [(DataAlt dc, bndrs, rhs)])
 --                                   , text "res_ty" <+> ppr res_ty ]) $
     (res_ty, Case scrut' case_bndr' ty [(DataAlt dc, bndrs', rhs')])
 
-dmdAnal' env dmd (Case scrut case_bndr ty alts)
+dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
   = let      -- Case expression with multiple alternatives
         (alt_tys, alts')     = mapAndUnzip (dmdAnalAlt env dmd case_bndr) alts
+
+        case_bndr_alt_ty :: DmdType
+        case_bndr_alt_ty
+          | Just (tycon, _) <- splitTyConApp_maybe (idType case_bndr)
+          , all_cons        <- tyConDataCons tycon
+          = orAlts case_bndr all_cons (zip alts alt_tys)
+          | otherwise
+          = botDmdType
+
         (scrut_ty, scrut')   = dmdAnal env cleanEvalDmd scrut
         (alt_ty, case_bndr') = annotateBndr env (foldr lubDmdType botDmdType alt_tys) case_bndr
                                -- NB: Base case is botDmdType, for empty case alternatives
