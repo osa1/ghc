@@ -23,6 +23,7 @@ module Demand (
         addCaseBndrDmd,
 
         DmdType(..), dmdTypeDepth, lubDmdType, bothDmdType,
+        orAlts,
         nopDmdType, botDmdType, mkDmdType,
         addDemand, removeDmdTyArgs,
         BothDmdArg, mkBothDmdArg, toBothDmdArg,
@@ -72,9 +73,10 @@ import Maybes           ( orElse )
 
 import Type            ( Type, isUnliftedType )
 import TyCon           ( isNewTyCon, isClassTyCon )
-import DataCon         ( splitDataProductType_maybe )
+import DataCon         ( splitDataProductType_maybe, dataConTag )
 
-import Data.List (sortOn)
+import CoreSyn
+
 import qualified Data.IntSet as IS
 import qualified Data.IntMap.Strict as IM
 
@@ -182,7 +184,7 @@ data StrDmd
                          -- Invariant: not all components are HyperStr (use HyperStr)
                          --            not all components are Lazy     (use HeadStr)
 
-  | SSum (IM.IntMap [ArgStr])
+  | SSum (IM.IntMap StrDmd)
                        -- Sum (map keys are ConTags)
 
   | HeadStr              -- Head-Strict
@@ -235,7 +237,7 @@ instance Outputable StrDmd where
   ppr HeadStr       = char 'S'
   ppr (SProd sx)    = char 'S' <> parens (hcat (map ppr sx))
   ppr (SSum strs)   =
-    text "Sum" <> parens (pprWithBars ppr (map snd (sortOn fst (IM.toList strs))))
+    text "Sum" <> parens (pprWithBars ppr (IM.toList strs))
 
 instance Outputable ArgStr where
   ppr (Str x s)     = (case x of VanStr -> empty; ExnStr -> char 'x')
@@ -265,9 +267,64 @@ lubStr (SProd s1) (SProd s2) -- NOTE(osa): Why is this case not an error?
     | otherwise                = HeadStr
 lubStr (SProd _) (SCall _)     = HeadStr
 
-lubStr (SSum s1) (SSum s2)     = SSum (IM.unionWith (zipWith lubArgStr) s1 s2)
+lubStr (SSum s1) (SSum s2)     =
+  -- TODO: split this into orStr and lubStr
+  -- (lubStr should be on equaivalent sums, orStr should be this (make sure the
+  -- key setes are disjoint though))
+  SSum (IM.unionWith lubStr s1 s2)
 
 lubStr HeadStr   _             = HeadStr
+
+orDmdType :: DmdType -> DmdType -> DmdType
+orDmdType d1 d2
+  = DmdType or_fv lub_ds lub_res
+  where
+    n = max (dmdTypeDepth d1) (dmdTypeDepth d2)
+    (DmdType fv1 ds1 r1) = ensureArgs n d1
+    (DmdType fv2 ds2 r2) = ensureArgs n d2
+
+    -- case blah of v
+    --    Left  l -> { v : ... , blah : ... , l : ... }
+    --    Right r -> { v : ... , blah : ... , r : ... }
+
+    -- foldl orDmdType init [{blah : ..., l : ... }, { blah : ..., r : ... }]
+    -- { blah : useless (depends on orDmd),
+    --   v    : useless (depends on orDmd),
+    --   l    : ...,
+    --   r    : ...
+    -- }
+
+    or_fv   = plusVarEnv_C lubDmd fv1 fv2
+    lub_ds  = zipWithEqual "lubDmdType" lubDmd ds1 ds2
+    lub_res = lubDmdResult r1 r2
+
+-- orCaseBndr :: ConTag -> JointDmd -> (Maybe StrDmd -> Maybe JointDmd)
+-- orCaseBndr _   s        Nothing                = Just s
+-- orCaseBndr _   s        (Just (JD HeadStr _))  = Just s
+-- orCaseBndr tag (JD s _) (Just (JD (SSum m) _)) = Just (JD (SSum (IM.insert tag s m)) undefined)
+
+-- TODO: Complete me
+orAlts :: Var -> [(CoreAlt, DmdType)] -> DmdType
+orAlts case_bndr rhs_dmds =
+    let
+      all_dmds :: DmdType
+      all_dmds = foldl orDmdType botDmdType (map snd rhs_dmds)
+
+      sum_str_map :: IM.IntMap StrDmd
+      sum_str_map = IM.fromList $
+                    map (\(DataAlt con, bndrs, _) ->
+                            ( dataConTag con
+                            , mkSProd (map (getStrDmd . findIdDemand all_dmds) bndrs )))
+                        (map fst rhs_dmds)
+
+      sum_joint_dmd = JD (Str VanStr (SSum sum_str_map)) useBot
+
+      env_w_sum = mkVarEnv [ (case_bndr, sum_joint_dmd) ]
+
+      -- TODO: Take care of case_bndr
+      env = undefined
+    in
+      DmdType env [] undefined
 
 bothArgStr :: ArgStr -> ArgStr -> ArgStr
 bothArgStr Lazy        s           = s
@@ -292,7 +349,7 @@ bothStr (SProd s1) (SProd s2)
     | length s1 == length s2   = mkSProd (zipWith bothArgStr s1 s2)
     | otherwise                = HyperStr  -- Weird
 
-bothStr (SSum s1) (SSum s2)    = SSum (IM.unionWith (zipWith bothArgStr) s1 s2)
+bothStr (SSum s1) (SSum s2)    = SSum (IM.unionWith bothStr s1 s2)
 
 bothStr (SProd _) (SCall _)    = HyperStr
 
@@ -1258,7 +1315,7 @@ bothDmdType (DmdType fv1 ds1 r1) (fv2, t2)
 instance Outputable DmdType where
   ppr (DmdType fv ds res)
     = hsep [text "DmdType",
-            hcat (map ppr ds) <> ppr res,
+            parens (text "args:" <+> hcat (map ppr ds)) <+> parens (text "res:" <+> ppr res),
             if null fv_elts then empty
             else braces (fsep (map pp_elt fv_elts))]
     where
