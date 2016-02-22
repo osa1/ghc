@@ -245,13 +245,26 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
   = let      -- Case expression with multiple alternatives
         (alt_tys, alts')     = mapAndUnzip (dmdAnalAlt env dmd case_bndr) alts
 
-        case_bndr_alt_ty :: DmdType
+        -- So... Only the case_bndr part of the environment of the DmdType
+        -- returned by `orAlts` is useful.
+        --
+        -- The problem is, argument part of the DmdType here will always be
+        -- empty. And `orAlts` doesn't care about CPR parts. I guess a better
+        -- implementation would either move CPR parts out of this type (which
+        -- means some refactoring and I don't understand how to do that without
+        -- breaking things) or generate CPR parts is `orAlts`. The latter would
+        -- mean potentially introducing new bugs to existing code, so I want to
+        -- avoid that for now.
+        --
+        -- Or, we could make `orType` return a Demand.
+        --
+        case_bndr_alt_ty :: Demand
         case_bndr_alt_ty
           | Just (tycon, _) <- splitTyConApp_maybe (idType case_bndr)
           , all_cons        <- tyConDataCons tycon
-          = orAlts case_bndr all_cons (zip alts alt_tys)
+          = findIdDemand (orAlts case_bndr all_cons (zip alts alt_tys)) case_bndr
           | otherwise
-          = botDmdType
+          = findIdDemand botDmdType case_bndr
 
         (scrut_ty, scrut')   = dmdAnal env cleanEvalDmd scrut
         (alt_ty, case_bndr') = annotateBndr env (foldr lubDmdType botDmdType alt_tys) case_bndr
