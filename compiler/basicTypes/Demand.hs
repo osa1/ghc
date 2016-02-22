@@ -5,7 +5,7 @@
 \section[Demand]{@Demand@: A decoupled implementation of a demand domain}
 -}
 
-{-# LANGUAGE CPP, FlexibleInstances, TypeSynonymInstances #-}
+{-# LANGUAGE CPP, FlexibleInstances, TypeSynonymInstances, TupleSections #-}
 
 module Demand (
         StrDmd, UseDmd(..), Count(..),
@@ -73,7 +73,7 @@ import Maybes           ( orElse )
 
 import Type            ( Type, isUnliftedType )
 import TyCon           ( isNewTyCon, isClassTyCon )
-import DataCon         ( splitDataProductType_maybe, dataConTag )
+import DataCon         ( splitDataProductType_maybe, dataConTag, DataCon )
 
 import CoreSyn
 
@@ -275,56 +275,37 @@ lubStr (SSum s1) (SSum s2)     =
 
 lubStr HeadStr   _             = HeadStr
 
-orDmdType :: DmdType -> DmdType -> DmdType
-orDmdType d1 d2
-  = DmdType or_fv lub_ds lub_res
-  where
-    n = max (dmdTypeDepth d1) (dmdTypeDepth d2)
-    (DmdType fv1 ds1 r1) = ensureArgs n d1
-    (DmdType fv2 ds2 r2) = ensureArgs n d2
-
-    -- case blah of v
-    --    Left  l -> { v : ... , blah : ... , l : ... }
-    --    Right r -> { v : ... , blah : ... , r : ... }
-
-    -- foldl orDmdType init [{blah : ..., l : ... }, { blah : ..., r : ... }]
-    -- { blah : useless (depends on orDmd),
-    --   v    : useless (depends on orDmd),
-    --   l    : ...,
-    --   r    : ...
-    -- }
-
-    or_fv   = plusVarEnv_C lubDmd fv1 fv2
-    lub_ds  = zipWithEqual "lubDmdType" lubDmd ds1 ds2
-    lub_res = lubDmdResult r1 r2
-
--- orCaseBndr :: ConTag -> JointDmd -> (Maybe StrDmd -> Maybe JointDmd)
--- orCaseBndr _   s        Nothing                = Just s
--- orCaseBndr _   s        (Just (JD HeadStr _))  = Just s
--- orCaseBndr tag (JD s _) (Just (JD (SSum m) _)) = Just (JD (SSum (IM.insert tag s m)) undefined)
-
--- TODO: Complete me
-orAlts :: Var -> [(CoreAlt, DmdType)] -> DmdType
-orAlts case_bndr rhs_dmds =
+orAlts :: [DataCon] -> [(CoreAlt, DmdType)] -> StrDmd
+orAlts all_cons rhs_dmds =
     let
-      all_dmds :: DmdType
-      all_dmds = foldl orDmdType botDmdType (map snd rhs_dmds)
+      all_tags :: IS.IntSet
+      all_tags = IS.fromList (map dataConTag all_cons)
+
+      mkAltsStrDmds :: [(CoreAlt, DmdType)] -> IS.IntSet -> [([ConTag], StrDmd)]
+      mkAltsStrDmds [] _
+        = []
+
+      mkAltsStrDmds [((DEFAULT, _, _), _)] used_tags
+        = [ (IS.toList (all_tags `IS.difference` used_tags), HeadStr) ]
+
+      mkAltsStrDmds (((DataAlt con, bndrs, _), rhs_dmd) : rest) used_tags
+        = ( [ dataConTag con ], SProd (map (getStrDmd . findIdDemand rhs_dmd) bndrs) )
+            : mkAltsStrDmds rest (IS.insert (dataConTag con) used_tags)
+
+      mkAltsStrDmds (((LitAlt{}, _, _), _) : _) _
+        = pprPanic "mkAltsStrDmd" (text "Found LitAlt") -- can't print Core from here, cyclic import
+
+      mkAltsStrDmds (((DEFAULT, _, _), _) : _) _
+        = pprPanic "mkAltsStrDmd" (text "DEFAULT should come last") -- can't print Core..
+
+      flattenAltDmds :: [([ConTag], StrDmd)] -> [(ConTag, StrDmd)]
+      flattenAltDmds ((ts, dmd) : rest)
+        = map (,dmd) ts ++ flattenAltDmds rest
 
       sum_str_map :: IM.IntMap StrDmd
-      sum_str_map = IM.fromList $
-                    map (\(DataAlt con, bndrs, _) ->
-                            ( dataConTag con
-                            , mkSProd (map (getStrDmd . findIdDemand all_dmds) bndrs )))
-                        (map fst rhs_dmds)
-
-      sum_joint_dmd = JD (Str VanStr (SSum sum_str_map)) useBot
-
-      env_w_sum = mkVarEnv [ (case_bndr, sum_joint_dmd) ]
-
-      -- TODO: Take care of case_bndr
-      env = undefined
+      sum_str_map =  IM.fromList (flattenAltDmds (mkAltsStrDmds rhs_dmds IS.empty))
     in
-      DmdType env [] undefined
+      SSum sum_str_map
 
 bothArgStr :: ArgStr -> ArgStr -> ArgStr
 bothArgStr Lazy        s           = s
