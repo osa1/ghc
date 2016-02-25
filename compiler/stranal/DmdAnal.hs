@@ -263,6 +263,10 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
         alt_tys :: [DmdType]
         (alt_tys, alts_dmd)     = mapAndUnzip (dmdAnalSumAlt env dmd case_bndr all_tags) alts
         alt_tys_lubd            = foldr lubDmdType botDmdType alt_tys
+
+
+
+            -- | PROBLEM IS HERE: Our scrutinee demand is getting lost!!!
         (alt_ty, case_bndr_dmd) = findBndrDmd env False alt_tys_lubd case_bndr
                                -- NB: Base case is botDmdType, for empty case alternatives
                                --     This is a unit for lubDmdType, and the right result
@@ -1297,6 +1301,8 @@ findBndrDmd env arg_of_dfun dmd_ty id
   where
     dmd' = killUsageDemand (ae_dflags env) $
            strictify $
+            -- FIXME: I think findTypeShape is somehow returning a HeadStr from
+            -- our Sum demands. Investigate further.
            trimToType starting_dmd (findTypeShape fam_envs id_ty)
 
     (dmd_ty', starting_dmd) = peelFV dmd_ty id
