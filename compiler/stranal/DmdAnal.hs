@@ -277,21 +277,6 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty [(DataAlt dc, bndrs, rhs)])
     --                     text "res_ty:" <+> ppr res_ty) $
     (res_ty, Case scrut' case_bndr' ty [(DataAlt dc, bndrs', rhs')])
 
-{-
-dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
-  -- Demand analysis on sums
-  | Just (tycon, _) <- splitTyConApp_maybe (idType case_bndr)
-  , Just cons       <- isDataSumTyCon_maybe tycon
-  , Just rec_tc'    <- checkRecTc (ae_rec_tc env) tycon
-  = let
-        env_w_tc = env { ae_rec_tc = rec_tc' }
-        -- We may need to implement this part later to give scrutinee CPR
-        -- property (I don't 100% understand why we want this though)
-        -- alt_envs = reverse (extendEnvForSumAlts env scrut case_bndr (reverse alts))
-     in
-        undefined
-  -}
-
 dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
   -- Demand analysis on sums
   | Just (tycon, _) <- splitTyConApp_maybe (idType case_bndr)
@@ -299,8 +284,10 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
   , not (isRecursiveTyCon tycon)
   , not (isEnumerationTyCon tycon)
   = let      -- Case expression with multiple alternatives
+        all_tags = map dataConTag cons
+
         alt_tys :: [DmdType]
-        (alt_tys, alts')     = mapAndUnzip (dmdAnalAlt env dmd case_bndr) alts
+        (alt_tys, alts')     = mapAndUnzip (dmdAnalSumAlt env dmd case_bndr all_tags) alts
 
         (alt_ty, case_bndr') = annotateBndr env (foldr lubDmdType botDmdType alt_tys) case_bndr
                                -- NB: Base case is botDmdType, for empty case alternatives
@@ -443,14 +430,14 @@ dmdAnalAlt env dmd case_bndr alt@(con,bndrs,rhs)
     --                        text "id_dmds:" <+> ppr id_dmds)
     (alt_ty, (con, setBndrsDemandInfo bndrs id_dmds, rhs'))
 
-dmdAnalSumAlt :: AnalEnv -> CleanDemand -> Id -> CoreAlt -> (DmdType, CoreAlt)
-dmdAnalSumAlt _ _ _ alt@(LitAlt{},_,_)
+dmdAnalSumAlt :: AnalEnv -> CleanDemand -> Id -> [ConTag] -> CoreAlt -> (DmdType, CoreAlt)
+dmdAnalSumAlt _ _ _ _ alt@(LitAlt{},_,_)
   = pprPanic "dmdAnalSumAlt" (text "Found a literal:" <+> ppr alt)
 
-dmdAnalSumAlt env dmd case_bndr alt@(DEFAULT, bndrs, rhs)
+dmdAnalSumAlt env dmd case_bndr _ alt@(DEFAULT, bndrs, rhs)
   = dmdAnalAlt env dmd case_bndr alt
 
-dmdAnalSumAlt env dmd case_bndr alt@(DataAlt con, bndrs, rhs)
+dmdAnalSumAlt env dmd case_bndr con_tags alt@(DataAlt con, bndrs, rhs)
   = let
       (rhs_ty, rhs') = dmdAnal env dmd rhs
 
@@ -466,15 +453,15 @@ dmdAnalSumAlt env dmd case_bndr alt@(DataAlt con, bndrs, rhs)
         | all isLazyDmd dmds
         = findIdDemand alt_ty case_bndr
         | otherwise
-        = insertSumDemands (dataConTag con) undefined bndrs_prod_ty
+        = insertSumDemands (dataConTag con) (delete (dataConTag con) con_tags) bndrs_prod_ty
           `bothDmd` findIdDemand alt_ty case_bndr
 
-      ---- <-- we where here
+      ---- <-- we were here
 
       id_dmds :: [Demand]
       id_dmds       = addCaseBndrDmd case_bndr_dmd dmds
    in
-    (alt_ty, (con, setBndrsDemandInfo bndrs id_dmds, rhs'))
+    (alt_ty, (DataAlt con, setBndrsDemandInfo bndrs id_dmds, rhs'))
    {-
   = -- pprTrace "dmdAnalAlt" (text "bndrs:"   <+> ppr bndrs $$
     --                        text "rhs:"     <+> ppr rhs $$
