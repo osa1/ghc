@@ -587,6 +587,15 @@ findTypeShape fam_envs ty
   , Just con <- isDataProductTyCon_maybe tc
   = TsProd (map (findTypeShape fam_envs) $ dataConInstArgTys con tc_args)
 
+  | Just (tc, tc_args) <- splitTyConApp_maybe ty
+  , Just cons <- isDataSumTyCon_maybe tc
+  , isRecursiveTyCon tc
+  = TsSum (map (\con -> (dataConTag con,
+                         case dataConInstArgTys con tc_args of
+                           []   -> TsUnk
+                           args -> TsProd (map (findTypeShape fam_envs) args)))
+               cons)
+
   | Just (_, res) <- splitFunTy_maybe ty
   = TsFun (findTypeShape fam_envs res)
 

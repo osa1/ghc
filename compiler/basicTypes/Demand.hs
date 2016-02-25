@@ -24,7 +24,6 @@ module Demand (
         addCaseBndrDmd,
 
         DmdType(..), dmdTypeDepth, lubDmdType, bothDmdType,
-        orAlts,
         nopDmdType, botDmdType, mkDmdType,
         addDemand, removeDmdTyArgs,
         BothDmdArg, mkBothDmdArg, toBothDmdArg,
@@ -279,43 +278,14 @@ lubStr (SSum s1) (SSum s2)     =
   -- key setes are disjoint though))
   SSum (IM.unionWith lubStr s1 s2)
 
-lubStr HeadStr   _             = HeadStr
+lubStr (SSum _) HeadStr       = HeadStr
+lubStr s@SSum{} HyperStr      = s
 
-orAlts :: Var -> [DataCon] -> [(CoreAlt, DmdType)] -> DmdType
-orAlts case_bndr all_cons rhs_dmds =
-    let
-      all_tags :: IS.IntSet
-      all_tags = IS.fromList (map dataConTag all_cons)
+lubStr s1@SSum{} s2@SProd{}   = pprPanic "lubStr" (ppr s1 $$ ppr s2)
 
-      mkAltsStrDmds :: [(CoreAlt, DmdType)] -> IS.IntSet -> [([ConTag], StrDmd)]
-      mkAltsStrDmds [] _
-        = []
+lubStr HeadStr   _            = HeadStr
 
-      mkAltsStrDmds [((DEFAULT, _, _), _)] used_tags
-        = [ (IS.toList (all_tags `IS.difference` used_tags), HeadStr) ]
-
-      mkAltsStrDmds (((DataAlt con, bndrs, _), rhs_dmd) : rest) used_tags
-        = ( [ dataConTag con ], SProd (map (getStrDmd . findIdDemand rhs_dmd) bndrs) )
-            : mkAltsStrDmds rest (IS.insert (dataConTag con) used_tags)
-
-      mkAltsStrDmds (((LitAlt{}, _, _), _) : _) _
-        = pprPanic "mkAltsStrDmd" (text "Found LitAlt") -- can't print Core from here, cyclic import
-
-      mkAltsStrDmds (((DEFAULT, _, _), _) : _) _
-        = pprPanic "mkAltsStrDmd" (text "DEFAULT should come last") -- can't print Core..
-
-      flattenAltDmds :: [([ConTag], StrDmd)] -> [(ConTag, StrDmd)]
-      flattenAltDmds [] = []
-      flattenAltDmds ((ts, dmd) : rest)
-        = map (,dmd) ts ++ flattenAltDmds rest
-
-      sum_str_map :: IM.IntMap StrDmd
-      sum_str_map =  IM.fromList (flattenAltDmds (mkAltsStrDmds rhs_dmds IS.empty))
-
-      sum_joint_dmd :: Demand
-      sum_joint_dmd = JD (Str VanStr (SSum sum_str_map)) Abs -- CARE
-    in
-      DmdType (mkVarEnv [(case_bndr, sum_joint_dmd)]) [] Diverges -- CARE
+lubStr s1        s2           = pprPanic "lubStr" (ppr s1 $$ ppr s2)
 
 bothArgStr :: ArgStr -> ArgStr -> ArgStr
 bothArgStr Lazy        s           = s
@@ -341,8 +311,13 @@ bothStr (SProd s1) (SProd s2)
     | otherwise                = HyperStr  -- Weird
 
 bothStr (SSum s1) (SSum s2)    = SSum (IM.unionWith bothStr s1 s2)
+bothStr _         HyperStr     = HyperStr
+bothStr s1@SSum{} s2@SProd{}   = pprPanic "bothStr" (ppr s1 $$ ppr s2)
+bothStr s1@SSum{} HeadStr      = s1
 
 bothStr (SProd _) (SCall _)    = HyperStr
+
+bothStr s1        s2           = pprPanic "bothStr" (ppr s1 $$ ppr s2)
 
 -- utility functions to deal with memory leaks
 seqStrDmd :: StrDmd -> ()
@@ -368,7 +343,7 @@ splitStrProdDmd :: Int -> StrDmd -> Maybe [ArgStr]
 splitStrProdDmd n HyperStr   = Just (replicate n strBot)
 splitStrProdDmd n HeadStr    = Just (replicate n strTop)
 splitStrProdDmd n (SProd ds) = ASSERT( ds `lengthIs` n) Just ds
-splitStrProdDmd _ SSum{}     = Nothing
+splitStrProdDmd _ SSum{}     = error "found sum"
 splitStrProdDmd _ (SCall {}) = Nothing
       -- This can happen when the programmer uses unsafeCoerce,
       -- and we don't then want to crash the compiler (Trac #9208)
@@ -860,6 +835,7 @@ splitFVs is_thunk rhs_fvs
 
 data TypeShape = TsFun TypeShape
                | TsProd [TypeShape]
+               | TsSum [(ConTag, TypeShape)]
                | TsUnk
 
 instance Outputable TypeShape where
@@ -881,6 +857,8 @@ trimToType (JD { sd = ms, ud = mu }) ts
     go_s (SCall s)   (TsFun ts)   = SCall (go_s s ts)
     go_s (SProd mss) (TsProd tss)
       | equalLength mss tss       = SProd (zipWith go_ms mss tss)
+    go_s (SSum m)    (TsSum m')   =
+      SSum (IM.intersectionWith (\strDmd tyS -> go_s strDmd tyS) m (IM.fromList m'))
     go_s _           _            = HeadStr
 
     go_mu :: ArgUse -> TypeShape -> ArgUse
