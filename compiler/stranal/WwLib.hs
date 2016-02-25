@@ -589,7 +589,7 @@ findTypeShape fam_envs ty
 
   | Just (tc, tc_args) <- splitTyConApp_maybe ty
   , Just cons <- isDataSumTyCon_maybe tc
-  , isRecursiveTyCon tc
+  , not (isRecursiveTyCon tc)
   = TsSum (map (\con -> (dataConTag con,
                          case dataConInstArgTys con tc_args of
                            []   -> TsUnk

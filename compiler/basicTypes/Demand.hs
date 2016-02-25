@@ -841,6 +841,7 @@ data TypeShape = TsFun TypeShape
 instance Outputable TypeShape where
   ppr TsUnk        = text "TsUnk"
   ppr (TsFun ts)   = text "TsFun" <> parens (ppr ts)
+  ppr (TsSum alts) = text "TsSum" <> braces (hsep (map ppr alts))
   ppr (TsProd tss) = parens (hsep $ punctuate comma $ map ppr tss)
 
 trimToType :: Demand -> TypeShape -> Demand
@@ -2005,6 +2006,9 @@ instance Binary StrDmd where
                             put_ bh s
   put_ bh (SProd sx)   = do putByte bh 3
                             put_ bh sx
+  put_ bh (SSum ts)    = do putByte bh 4
+                            put_ bh (IM.toList ts)
+
   get bh = do
          h <- getByte bh
          case h of
@@ -2012,8 +2016,10 @@ instance Binary StrDmd where
            1 -> do return HeadStr
            2 -> do s  <- get bh
                    return (SCall s)
-           _ -> do sx <- get bh
+           3 -> do sx <- get bh
                    return (SProd sx)
+           4 -> SSum . IM.fromList <$> get bh
+           _ -> pprPanic "Binary instance of StrDmd" (text "unexpected tag byte:" <+> text (show h))
 
 instance Binary ExnStr where
   put_ bh VanStr = putByte bh 0
