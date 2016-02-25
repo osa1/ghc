@@ -1505,6 +1505,7 @@ isDataProductTyCon_maybe (AlgTyCon { algTcRhs = rhs })
        _ -> Nothing
 isDataProductTyCon_maybe _ = Nothing
 
+isDataSumTyCon_maybe :: TyCon -> Maybe [DataCon]
 isDataSumTyCon_maybe (AlgTyCon { algTcRhs = rhs })
   = case rhs of
       DataTyCon { data_cons = cons }

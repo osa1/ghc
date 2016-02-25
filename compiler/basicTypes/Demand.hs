@@ -18,8 +18,9 @@ module Demand (
         lubDmd, bothDmd,
         lazyApply1Dmd, lazyApply2Dmd, strictApply1Dmd,
         catchArgDmd,
-        isTopDmd, isAbsDmd, isSeqDmd,
+        isTopDmd, isAbsDmd, isSeqDmd, isLazyDmd,
         peelUseCall, cleanUseDmd_maybe, strictenDmd, bothCleanDmd,
+        insertSumDemands,
         addCaseBndrDmd,
 
         DmdType(..), dmdTypeDepth, lubDmdType, bothDmdType,
@@ -55,7 +56,9 @@ module Demand (
 
         useCount, isUsedOnce, reuseEnv,
         killUsageDemand, killUsageSig, zapUsageDemand,
-        strictifyDictDmd
+        strictifyDictDmd,
+
+        mkSProd
 
      ) where
 
@@ -186,6 +189,9 @@ data StrDmd
 
   | SSum (IM.IntMap StrDmd)
                        -- Sum (map keys are ConTags)
+                       -- INVARIANT: Values of this int map always need to be
+                       -- either HyperStr, HeadStr <- in the case of nullary constructors
+                       --        or SProd          <- otherwise
 
   | HeadStr              -- Head-Strict
                          -- A polymorphic demand: used for values of all types,
@@ -521,12 +527,12 @@ addCaseBndrDmd :: Demand    -- On the case binder
 -- See Note [Demand on case-alternative binders]
 addCaseBndrDmd (JD { sd = ms, ud = mu }) alt_dmds
   = case mu of
-     Abs     -> alt_dmds
+     Abs     -> zipWith bothDmd alt_dmds (mkJointDmds ss (replicate arity Abs)) -- alt_dmds
      Use _ u -> zipWith bothDmd alt_dmds (mkJointDmds ss us)
              where
-                Just ss = splitArgStrProdDmd arity ms  -- Guaranteed not to be a call
-                Just us = splitUseProdDmd      arity u   -- Ditto
+               Just us = splitUseProdDmd    arity u   -- Ditto
   where
+    Just ss = splitArgStrProdDmd arity ms  -- Guaranteed not to be a call
     arity = length alt_dmds
 
 {- Note [Demand on case-alternative binders]
@@ -797,6 +803,10 @@ isTopDmd :: Demand -> Bool
 isTopDmd (JD {sd = Lazy, ud = Use Many Used}) = True
 isTopDmd _                                    = False
 
+isLazyDmd :: Demand -> Bool
+isLazyDmd (JD {sd = Lazy}) = True
+isLazyDmd _                = False
+
 isAbsDmd :: Demand -> Bool
 isAbsDmd (JD {ud = Abs}) = True   -- The strictness part can be HyperStr
 isAbsDmd _               = False  -- for a bottom demand
@@ -830,6 +840,12 @@ isWeakDmd (JD {sd = s, ud = a}) = isLazy s && isUsedMU a
 cleanUseDmd_maybe :: Demand -> Maybe UseDmd
 cleanUseDmd_maybe (JD { ud = Use _ u }) = Just u
 cleanUseDmd_maybe _                     = Nothing
+
+insertSumDemands :: ConTag -> [ConTag] -> StrDmd -> Demand
+insertSumDemands tag all_tags dmd =
+    -- TODO: We need to figure out what ExnStr we need here. For now using
+    -- VanStr (top).
+    mkJointDmd (Str VanStr (SSum (IM.fromList ((tag, dmd) : map (,HyperStr) all_tags)))) useTop
 
 splitFVs :: Bool   -- Thunk
          -> DmdEnv -> (DmdEnv, DmdEnv)
