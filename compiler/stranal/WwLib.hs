@@ -20,7 +20,7 @@ import Id
 import IdInfo           ( vanillaIdInfo )
 import DataCon
 import Demand
-import MkCore           ( mkRuntimeErrorApp, aBSENT_ERROR_ID, mkCoreUbxTup, mkCoreUbxSum )
+import MkCore           ( mkRuntimeErrorApp, aBSENT_ERROR_ID, mkCoreUbxTup, mkCoreUbxSum, mkCoreConApps )
 import MkId             ( voidArgId, voidPrimId )
 import TysPrim          ( voidPrimTy, floatPrimTy, doublePrimTy )
 import TysWiredIn       ( tupleDataCon, mkSumTy, sumDataCon, mkTupleTy )
@@ -39,8 +39,9 @@ import DynFlags
 import FastString
 import ListSetOps
 
-import ElimUbxSums (typeUnboxedSumRep, mkUbxSumAltTy)
+import ElimUbxSums (mkUbxSumAltTy)
 
+import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 import Data.List (sortOn)
 
@@ -151,7 +152,8 @@ mkWwBodies dflags fn_id fam_envs fun_ty demands res_info one_shots
         ; (useful2, wrap_fn_cpr, work_fn_cpr, cpr_res_ty)
               <- mkWWcpr fn_id (gopt Opt_CprAnal dflags) fam_envs res_ty res_info
 
-        ; let (work_lam_args, work_call_args) = mkWorkerArgs dflags work_args all_one_shots cpr_res_ty
+        ; let (work_lam_args, work_call_args) =
+                pprTraceIt "(work_lam_args, work_call_args)" $ mkWorkerArgs dflags work_args all_one_shots cpr_res_ty
               worker_args_dmds = [idDemandInfo v | v <- work_call_args, isId v]
 
               -- Lacking worker Id
@@ -542,10 +544,8 @@ mkWWstr_one dflags fam_envs arg
                                     -- differently, we check use flags etc.
   , Just (data_cons, inst_tys, co)
             <- deepSplitSumType_maybe fam_envs (idType arg)
-  = do let
-            casted_scrut = Var arg `mkCast` co
-
-            --------------------------------------------------------------------------
+  , IM.keysSet m == IS.fromList (map dataConTag data_cons)
+  = do let  --------------------------------------------------------------------------
 
             data_cons_sorted = sortOn dataConTag data_cons
 
@@ -560,17 +560,6 @@ mkWWstr_one dflags fam_envs arg
 
             --------------------------------------------------------------------------
 
-            -- Worker packs the unpacked version of the argument. Why? I believe
-            -- the reason is because before the simplifications take place, the
-            -- worker is just the original RHS of the fuctions. So here we do
-            -- this packing only to later remove it in the simplification.
-            mkWorkerAlt :: DataCon -> UniqSM CoreAlt
-            mkWorkerAlt con = undefined
-
-            -- Wrapper unpacks the original, packed argument
-            mkWrapperAlt :: DataCon -> UniqSM CoreAlt
-            mkWrapperAlt con = undefined
-
        ubx_sum_bndr <- mkWwLocalM ubx_sum_ty
 
        --------
@@ -583,31 +572,64 @@ mkWWstr_one dflags fam_envs arg
 
        -- Unpack original sum argument, bind ubx_sum_bndr.
        let
-            mkUnboxAlt :: DataCon -> CoreAlt
-            mkUnboxAlt = undefined
+            mkUnboxAlt :: DataCon -> UniqSM CoreAlt
+            mkUnboxAlt con
+              = do let con_args = rep_tys !! (dataConTag con - 1)
+                   con_field_bndrs <- mapM mkWwLocalM con_args
+                   return
+                     ( DataAlt con
+                     , con_field_bndrs
+                     , mkCoreUbxSum sum_alt_tys (dataConTag con) $
+                         case con_field_bndrs of
+                           []     -> Var voidPrimId -- FIXME: lifted or unlifted void?
+                           [bndr] -> Var bndr
+                           _      -> mkCoreUbxTup con_args (map Var con_field_bndrs)
+                     )
 
-            unbox_fn :: CoreExpr -> CoreExpr
-            unbox_fn body
-              = Case (Case scrut scrut_bndr ubx_sum_ty (map mkUnboxAlt data_cons_sorted))
-                     ubx_sum_scrut_bndr
-                     (exprType body)
-                     [(DEFAULT, [], body)]
+            unbox_fn :: UniqSM (CoreExpr -> CoreExpr)
+            unbox_fn
+              = do alts <- mapM mkUnboxAlt data_cons_sorted
+                   return $ \body ->
+                     Case (Case scrut scrut_bndr ubx_sum_ty alts)
+                          ubx_sum_scrut_bndr
+                          (exprType body)
+                          [(DEFAULT, [], body)]
 
        --------
 
        -- Pack unboxed sum argument, unboxed version is bound to ubx_sum_bndr.
        let
-            mkBoxAlt :: DataCon -> CoreAlt
-            mkBoxAlt = undefined
+            mkBoxAlt :: DataCon -> UniqSM CoreAlt
+            mkBoxAlt con
+              = do let con_arg_tys = rep_tys !! (dataConTag con - 1)
+                       alt_con     = DataAlt (sumDataCon (dataConTag con) (length data_cons_sorted))
+                   case con_arg_tys of
+                     []   -> return (alt_con, [], mkConApp2 con inst_tys [])
+                     [ty] -> do
+                       field_bndr <- mkWwLocalM ty
+                       return (alt_con, [field_bndr], mkConApp2 con inst_tys [field_bndr])
+                     _    -> do
+                       field_bndrs <- mapM mkWwLocalM con_arg_tys
+                       tup_bndr    <- mkWwLocalM (mkTupleTy Unboxed con_arg_tys)
+                       return (alt_con, [tup_bndr],
+                               -- NOTE: tup_bndr as both binder and scrutinee,
+                               -- it that OK?
+                               Case (Var tup_bndr) tup_bndr (idType arg)
+                                 [(DataAlt (tupleDataCon Unboxed (length con_arg_tys)),
+                                   field_bndrs,
+                                   mkConApp2 con inst_tys field_bndrs)])
 
-            rebox_fn :: CoreExpr -> CoreExpr
-            rebox_fn body
-              = -- NOTE: re-using ubx_sum_scrut_bndr here
-                Case (Var ubx_sum_bndr) ubx_sum_scrut_bndr (exprType body)
-                     (map mkBoxAlt data_cons_sorted)
+            rebox_fn :: UniqSM (CoreExpr -> CoreExpr)
+            rebox_fn
+              = do -- NOTE: re-using ubx_sum_scrut_bndr here
+                   alts <- mapM mkBoxAlt data_cons_sorted
+                   return $ \body ->
+                     Case (Var ubx_sum_bndr) ubx_sum_scrut_bndr (exprType body) alts
 
        -- TODO: We may need to recursively unpack for deep unpacking.
-       return (True, [ubx_sum_scrut_bndr], unbox_fn, rebox_fn)
+       unbox_fn' <- unbox_fn
+       rebox_fn' <- rebox_fn
+       return (True, [ubx_sum_bndr], unbox_fn', rebox_fn')
 
   | otherwise   -- Other cases
   = return (False, [arg], nop_fn, nop_fn)
