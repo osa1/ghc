@@ -4,7 +4,8 @@
 \section[WwLib]{A library for the ``worker\/wrapper'' back-end to the strictness analyser}
 -}
 
-{-# LANGUAGE BangPatterns, CPP, MultiWayIf, NondecreasingIndentation #-}
+{-# LANGUAGE BangPatterns, CPP, MultiWayIf, NondecreasingIndentation,
+             ScopedTypeVariables #-}
 
 module WwLib ( mkWwBodies, mkWWstr, mkWorkerArgs
              , deepSplitProductType_maybe, deepSplitSumType_maybe
@@ -146,11 +147,6 @@ mkWwBodies dflags fn_id fam_envs fun_ty demands res_info one_shots
 
         ; (useful1, work_args, wrap_fn_str, work_fn_str) <- mkWWstr dflags fam_envs wrap_args
 
-        -- ; pprTrace "mkWwBodies" (text "fn_id:" <+> ppr fn_id $$
-        --                          text "demands:" <+> ppr demands $$
-        --                          text "res_info:" <+> ppr res_info $$
-        --                          text "wrap_args:" <+> ppr wrap_args) (return ())
-
         -- Do CPR w/w.  See Note [Always do CPR w/w]
         ; (useful2, wrap_fn_cpr, work_fn_cpr, cpr_res_ty)
               <- mkWWcpr fn_id (gopt Opt_CprAnal dflags) fam_envs res_ty res_info
@@ -158,12 +154,32 @@ mkWwBodies dflags fn_id fam_envs fun_ty demands res_info one_shots
         ; let (work_lam_args, work_call_args) = mkWorkerArgs dflags work_args all_one_shots cpr_res_ty
               worker_args_dmds = [idDemandInfo v | v <- work_call_args, isId v]
 
+              -- Lacking worker Id
               wrapper_body :: Var -> CoreExpr
               wrapper_body =
-                wrap_fn_args . wrap_fn_cpr . wrap_fn_str . applyToVars work_call_args . Var
+                pprTraceIt "after wrap_fn_args" .
+                  wrap_fn_args .
+                    pprTraceIt "after wrap_fn_cpr" .
+                      wrap_fn_cpr .
+                        pprTraceIt "after wrap_fn_str" .
+                          wrap_fn_str .
+                            pprTraceIt "after applyToVars" .
+                              applyToVars work_call_args .
+                                pprTraceIt "after Var" .
+                                  Var
 
+              -- Lacking original function body
               worker_body :: CoreExpr -> CoreExpr
-              worker_body = mkLams work_lam_args . work_fn_str . work_fn_cpr . work_fn_args
+              worker_body =
+                pprTraceIt "work_lam_args" .
+                  mkLams work_lam_args .
+                    pprTraceIt "after work_fn_str" .
+                      work_fn_str .
+                        pprTraceIt "after work_fn_cpr" .
+                          work_fn_cpr .
+                            pprTraceIt "after work_fn_args" .
+                              work_fn_args .
+                                pprTraceIt "original arg"
 
         ; if (useful1 && not (only_one_void_argument)) || useful2
           then return (Just (worker_args_dmds, wrapper_body, worker_body))
@@ -492,31 +508,41 @@ mkWWstr_one dflags fam_envs arg
       -- See Note [Unpacking arguments with product and polymorphic demands]
   , Just (data_con, inst_tys, inst_con_arg_tys, co)
              <- deepSplitProductType_maybe fam_envs (idType arg)
-  , Just cs <- splitProdDmd_maybe dmd
+  , Just (cs :: [Demand]) <- splitProdDmd_maybe dmd
   , cs `equalLength` inst_con_arg_tys
       -- See Note [mkWWstr and unsafeCoerce]
   =  do { (uniq1:uniqs) <- getUniquesM
         ; let   unpk_args      = zipWith mk_ww_local uniqs inst_con_arg_tys
+
                 unpk_args_w_ds = zipWithEqual "mkWWstr" set_worker_arg_info unpk_args cs
+
+                ---
+                unbox_fn :: CoreExpr -> CoreExpr
                 unbox_fn       = mkUnpackCase (Var arg) co uniq1
                                               data_con unpk_args
+
+                ---
                 con_app        = mkConApp2 data_con inst_tys unpk_args `mkCast` mkSymCo co
+
+                rebox_fn :: CoreExpr -> CoreExpr
                 rebox_fn       = Let (NonRec arg con_app)
-         ; (_, worker_args, wrap_fn, work_fn) <- mkWWstr dflags fam_envs unpk_args_w_ds
+
+         ; -- Recursively unpack con fields
+           (_, worker_args, wrap_fn, work_fn) <- mkWWstr dflags fam_envs unpk_args_w_ds
+
          ; return (True, worker_args,
-                         unbox_fn . wrap_fn,
-                         work_fn . rebox_fn) }
+                         unbox_fn . wrap_fn, -- wrapper
+                         work_fn . rebox_fn  -- worker
+                         ) }
                            -- Don't pass the arg, rebox instead
 
-{-
   | isStrictDmd dmd
   , Str _ (SSum m) <- getStrDmd dmd -- FIXME(osa): This part needs to be updated, probably.
-                                    -- in the prodict case above, we do things
+                                    -- in the product case above, we do things
                                     -- differently, we check use flags etc.
   , Just (data_cons, inst_tys, co)
             <- deepSplitSumType_maybe fam_envs (idType arg)
-  = do -- unpk_args <- mapM mkWwLocalM instr_con_arg_tys
-       let
+  = do let
             casted_scrut = Var arg `mkCast` co
 
             --------------------------------------------------------------------------
@@ -529,46 +555,59 @@ mkWWstr_one dflags fam_envs arg
             sum_alt_tys :: [Type]
             sum_alt_tys = map mkUbxSumAltTy rep_tys
 
-            --------------------------------------------------------------------------
-
             ubx_sum_ty :: Type
             ubx_sum_ty = mkSumTy sum_alt_tys
 
-            -- Case on boxed variant
-            mkUnboxAlt :: DataCon -> UniqSM CoreAlt
-            mkUnboxAlt con = do
-              field_bndrs <- mapM mkWwLocalM (dataConRepArgTys con)
-              -- TODO(osa): We need to recursively unpack stuff here.
-              return
-                (DataAlt con, field_bndrs,
-                 mkCoreUbxSum sum_alt_tys (dataConTag con)
-                   (mkCoreUbxTup (rep_tys !! (dataConTag con - 1)) (map Var field_bndrs)))
+            --------------------------------------------------------------------------
 
-            -- Case on unboxed variant
-            mkBoxedAlt :: DataCon -> UniqSM CoreAlt
-            mkBoxedAlt con = do
-              field_bndrs <- mapM mkWwLocalM (dataConRepArgTys con)
-              tup_bndr <- mkWwLocalM (sum_alt_tys !! (dataConTag con - 1))
-              return
-                (DataAlt (sumDataCon (dataConTag con) (length data_cons)),
-                 [tup_bndr],
-                 Case (Var tup_bndr) )
-                 
+            -- Worker packs the unpacked version of the argument. Why? I believe
+            -- the reason is because before the simplifications take place, the
+            -- worker is just the original RHS of the fuctions. So here we do
+            -- this packing only to later remove it in the simplification.
+            mkWorkerAlt :: DataCon -> UniqSM CoreAlt
+            mkWorkerAlt con = undefined
 
-       -- boxed_case_bndr <- mkWwLocalM (exprType casted_scrut)
-       -- unboxed_case_bndr <- mkWwLocalM (exp
+            -- Wrapper unpacks the original, packed argument
+            mkWrapperAlt :: DataCon -> UniqSM CoreAlt
+            mkWrapperAlt con = undefined
 
+       ubx_sum_bndr <- mkWwLocalM ubx_sum_ty
 
-       -- unboxer <- Case casted_scrut case_bndr undefined <$>
-       --              mapM mkUnboxAlt data_cons
+       --------
 
-       -- NOTE(osa): I don't understand this part, arg is used in two different
-       -- places (here and in unboxer) with different types. Coercions won't
-       -- work as one of the types are unlifted.
-       -- boxer <- Case (Var arg)
+       let  scrut = Var arg
+            casted_scrut = scrut `mkCast` co
 
-       pprPanic "not implemented yet" (ppr arg)
--}
+       scrut_bndr <- mkWwLocalM (exprType casted_scrut)
+       ubx_sum_scrut_bndr <- mkWwLocalM ubx_sum_ty
+
+       -- Unpack original sum argument, bind ubx_sum_bndr.
+       let
+            mkUnboxAlt :: DataCon -> CoreAlt
+            mkUnboxAlt = undefined
+
+            unbox_fn :: CoreExpr -> CoreExpr
+            unbox_fn body
+              = Case (Case scrut scrut_bndr ubx_sum_ty (map mkUnboxAlt data_cons_sorted))
+                     ubx_sum_scrut_bndr
+                     (exprType body)
+                     [(DEFAULT, [], body)]
+
+       --------
+
+       -- Pack unboxed sum argument, unboxed version is bound to ubx_sum_bndr.
+       let
+            mkBoxAlt :: DataCon -> CoreAlt
+            mkBoxAlt = undefined
+
+            rebox_fn :: CoreExpr -> CoreExpr
+            rebox_fn body
+              = -- NOTE: re-using ubx_sum_scrut_bndr here
+                Case (Var ubx_sum_bndr) ubx_sum_scrut_bndr (exprType body)
+                     (map mkBoxAlt data_cons_sorted)
+
+       -- TODO: We may need to recursively unpack for deep unpacking.
+       return (True, [ubx_sum_scrut_bndr], unbox_fn, rebox_fn)
 
   | otherwise   -- Other cases
   = return (False, [arg], nop_fn, nop_fn)
