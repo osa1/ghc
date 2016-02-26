@@ -563,8 +563,9 @@ mkWWstr_one dflags fam_envs arg
 
        let  scrut = Var arg
             casted_scrut = scrut `mkCast` co
+            casted_scrut_ty = exprType casted_scrut
 
-       scrut_bndr <- mkWwLocalM (exprType casted_scrut)
+       scrut_bndr <- mkWwLocalM casted_scrut_ty
        ubx_sum_scrut_bndr <- mkWwLocalM ubx_sum_ty
 
        -- Unpack original sum argument, bind ubx_sum_bndr.
@@ -611,7 +612,7 @@ mkWWstr_one dflags fam_envs arg
                        return (alt_con, [tup_bndr],
                                -- NOTE: tup_bndr as both binder and scrutinee,
                                -- it that OK?
-                               Case (Var tup_bndr) tup_bndr (idType arg)
+                               Case (Var tup_bndr) tup_bndr casted_scrut_ty
                                  [(DataAlt (tupleDataCon Unboxed (length con_arg_tys)),
                                    field_bndrs,
                                    mkConApp2 con inst_tys field_bndrs)])
@@ -621,9 +622,10 @@ mkWWstr_one dflags fam_envs arg
               = do -- NOTE: re-using ubx_sum_scrut_bndr here
                    alts <- mapM mkBoxAlt data_cons_sorted
                    return $ \body ->
-                     Let (NonRec arg (Case (Var ubx_sum_scrut_bndr)
-                                           ubx_sum_scrut_bndr
-                                           (idType arg) alts))
+                     Let (NonRec (setIdType arg casted_scrut_ty)
+                                 (Case (Var ubx_sum_scrut_bndr)
+                                            ubx_sum_scrut_bndr
+                                            casted_scrut_ty alts))
                          body
 
        -- TODO: We may need to recursively unpack for deep unpacking.
