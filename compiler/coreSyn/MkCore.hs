@@ -141,11 +141,13 @@ mkCoreApps orig_fun orig_args
   where
     go fun _      []               = fun
     go fun fun_ty (Type ty : args) = go (App fun (Type ty)) (piResultTy fun_ty ty) args
-    go fun fun_ty (arg     : args) = ASSERT2( isFunTy fun_ty, ppr fun_ty $$ ppr orig_fun
-                                                              $$ ppr orig_args )
-                                     go (mk_val_app fun arg arg_ty res_ty) res_ty args
-                                   where
-                                     (arg_ty, res_ty) = splitFunTy fun_ty
+    go fun fun_ty (arg     : args) =
+      ASSERT2( isFunTy fun_ty, text "fun_ty:" <+> ppr fun_ty $$
+                               text "orig_fun:" <+> ppr orig_fun $$
+                               text "orig_args:" <+> ppr orig_args )
+      go (mk_val_app fun arg arg_ty res_ty) res_ty args
+        where
+          (arg_ty, res_ty) = splitFunTy fun_ty
 
 -- | Construct an expression which represents the application of a number of
 -- expressions to that of a data constructor expression. The leftmost expression
