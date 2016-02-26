@@ -622,7 +622,7 @@ mkWWstr_one dflags fam_envs arg
                    return $ \body ->
                      Let (NonRec arg (Case (Var ubx_sum_scrut_bndr)
                                            ubx_sum_scrut_bndr
-                                           (exprType body) alts))
+                                           (idType arg) alts))
                          body
 
        -- TODO: We may need to recursively unpack for deep unpacking.
