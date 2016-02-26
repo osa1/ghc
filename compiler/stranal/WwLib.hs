@@ -137,8 +137,13 @@ mkWwBodies :: DynFlags
 mkWwBodies dflags fn_id fam_envs fun_ty demands res_info one_shots
   = do  { let arg_info = demands `zip` (one_shots ++ repeat NoOneShotInfo)
               all_one_shots = foldr (worstOneShot . snd) OneShotLam arg_info
-        ; -- why do this eta expansion?
+        ; -- Q: Why do this eta expansion?
+          -- A: If you look at wwBind, it's passing only the RHS to tryWW, then
+          -- tryWW is calling splitFun using that rhs etc.. so in the end we're
+          -- having only the body in splitFun, which is calling mkWwBodies using
+          -- that RHS.
           (wrap_args, wrap_fn_args, work_fn_args, res_ty) <- mkWWargs emptyTCvSubst fun_ty arg_info
+
         ; (useful1, work_args, wrap_fn_str, work_fn_str) <- mkWWstr dflags fam_envs wrap_args
 
         -- ; pprTrace "mkWwBodies" (text "fn_id:" <+> ppr fn_id $$
