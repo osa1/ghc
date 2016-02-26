@@ -8,7 +8,7 @@
 {-# LANGUAGE CPP, FlexibleInstances, TypeSynonymInstances, TupleSections #-}
 
 module Demand (
-        StrDmd, UseDmd(..), Count(..),
+        StrDmd(..), UseDmd(..), Count(..), Str(..),
         countOnce, countMany,   -- cardinality
 
         Demand, CleanDemand, getStrDmd, getUseDmd,
@@ -20,7 +20,7 @@ module Demand (
         catchArgDmd,
         isTopDmd, isAbsDmd, isSeqDmd, isLazyDmd,
         peelUseCall, cleanUseDmd_maybe, strictenDmd, bothCleanDmd,
-        insertSumDemands,
+        insertSumDemands, extractSumDemandAlt,
         addCaseBndrDmd,
 
         DmdType(..), dmdTypeDepth, lubDmdType, bothDmdType,
@@ -343,7 +343,7 @@ splitStrProdDmd :: Int -> StrDmd -> Maybe [ArgStr]
 splitStrProdDmd n HyperStr   = Just (replicate n strBot)
 splitStrProdDmd n HeadStr    = Just (replicate n strTop)
 splitStrProdDmd n (SProd ds) = ASSERT( ds `lengthIs` n) Just ds
-splitStrProdDmd _ SSum{}     = error "found sum"
+splitStrProdDmd _ dmd@SSum{} = pprPanic "found sum" (ppr dmd)
 splitStrProdDmd _ (SCall {}) = Nothing
       -- This can happen when the programmer uses unsafeCoerce,
       -- and we don't then want to crash the compiler (Trac #9208)
@@ -500,12 +500,15 @@ addCaseBndrDmd :: Demand    -- On the case binder
                -> [Demand]  -- On the components of the constructor
                -> [Demand]  -- Final demands for the components of the constructor
 -- See Note [Demand on case-alternative binders]
-addCaseBndrDmd (JD { sd = ms, ud = mu }) alt_dmds
-  = case mu of
-     Abs     -> zipWith bothDmd alt_dmds (mkJointDmds ss (replicate arity Abs)) -- alt_dmds
-     Use _ u -> zipWith bothDmd alt_dmds (mkJointDmds ss us)
-             where
-               Just us = splitUseProdDmd    arity u   -- Ditto
+addCaseBndrDmd case_bndr_dmd@(JD { sd = ms, ud = mu }) alt_dmds
+  = pprTrace "addCaseBndrDmd" (text "case_bndr_dmd:" <+> ppr case_bndr_dmd $$
+                               text "alt_dmds:" <+> ppr alt_dmds) $
+    let ret = case mu of
+                Abs     -> zipWith bothDmd alt_dmds (mkJointDmds ss (replicate arity Abs)) -- alt_dmds
+                Use _ u -> zipWith bothDmd alt_dmds (mkJointDmds ss us)
+                        where
+                          Just us = splitUseProdDmd    arity u   -- Ditto
+    in pprTrace "addCaseBndrDmd" (text "ret:" <+> ppr ret) ret
   where
     Just ss = splitArgStrProdDmd arity ms  -- Guaranteed not to be a call
     arity = length alt_dmds
@@ -816,11 +819,25 @@ cleanUseDmd_maybe :: Demand -> Maybe UseDmd
 cleanUseDmd_maybe (JD { ud = Use _ u }) = Just u
 cleanUseDmd_maybe _                     = Nothing
 
+-- Definition 7.11 of Ralf Hinze's thesis
 insertSumDemands :: ConTag -> [ConTag] -> StrDmd -> Demand
 insertSumDemands tag all_tags dmd =
     -- TODO: We need to figure out what ExnStr we need here. For now using
     -- VanStr (top).
     mkJointDmd (Str VanStr (SSum (IM.fromList ((tag, dmd) : map (,HyperStr) all_tags)))) useTop
+
+-- Definition 7.10 of Ralf Hinze's thesis
+extractSumDemandAlt :: Demand -> ConTag -> Demand
+extractSumDemandAlt dmd@(JD { sd = s, ud = ud }) tag =
+    case s of
+      Lazy -> dmd
+      Str exn (SSum m)
+        | Just altDmd <- IM.lookup tag m
+        -> JD (Str exn altDmd) ud
+        | otherwise
+        -> pprPanic "extractSumDemandAlt" (ppr dmd <+> ppr tag)
+      Str{} -> dmd
+
 
 splitFVs :: Bool   -- Thunk
          -> DmdEnv -> (DmdEnv, DmdEnv)
@@ -1756,14 +1773,15 @@ dmdTransformSig (StrictSig dmd_ty@(DmdType _ arg_ds _)) cd
   = postProcessUnsat (peelManyCalls (length arg_ds) cd) dmd_ty
     -- see Note [Demands from unsaturated function calls]
 
-dmdTransformDataConSig :: Arity -> StrictSig -> CleanDemand -> DmdType
+dmdTransformDataConSig :: Arity -> ConTag -> StrictSig -> CleanDemand -> DmdType
 -- Same as dmdTransformSig but for a data constructor (worker),
 -- which has a special kind of demand transformer.
 -- If the constructor is saturated, we feed the demand on
 -- the result into the constructor arguments.
-dmdTransformDataConSig arity (StrictSig (DmdType _ _ con_res))
-                             (JD { sd = str, ud = abs })
-  | Just str_dmds <- go_str arity str
+dmdTransformDataConSig arity tag sig@(StrictSig (DmdType _ _ con_res))
+                             dmd@(JD { sd = str, ud = abs })
+  | pprTrace "dmdTransformDataConSig" (ppr arity $$ ppr sig $$ ppr dmd) True
+  , Just str_dmds <- go_str arity str
   , Just abs_dmds <- go_abs arity abs
   = DmdType emptyDmdEnv (mkJointDmds str_dmds abs_dmds) con_res
                 -- Must remember whether it's a product, hence con_res, not TopRes
@@ -1771,6 +1789,13 @@ dmdTransformDataConSig arity (StrictSig (DmdType _ _ con_res))
   | otherwise   -- Not saturated
   = nopDmdType
   where
+    go_str :: Int -> StrDmd -> Maybe [ArgStr]
+    go_str 0 (SSum m)
+      | Just str <- IM.lookup tag m
+      = splitStrProdDmd arity str
+      | otherwise
+      = pprPanic "dmdTransformDataConSig" (ppr arity $$ ppr sig $$ ppr dmd)
+
     go_str 0 dmd        = splitStrProdDmd arity dmd
     go_str n (SCall s') = go_str (n-1) s'
     go_str n HyperStr   = go_str (n-1) HyperStr
