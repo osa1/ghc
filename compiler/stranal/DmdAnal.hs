@@ -312,13 +312,11 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
         res_ty :: DmdType
         res_ty               = alt_ty `bothDmdType` toBothDmdArg scrut_ty
     in
-    pprTrace "dmdAnal:Case2" (vcat [ text "expr" <+> ppr expr
-                                   , text "scrut_ty" <+> ppr scrut_ty
-                                   , text "alt_tys" <+> ppr alt_tys
-                                   , text "alt_ty" <+> ppr alt_ty
-                                   ])
-                                   -- , text "alt_ty" <+> ppr alt_ty
-                                   -- , text "res_ty" <+> ppr res_ty ]) $
+    -- pprTrace "dmdAnal:Case2" (vcat [ text "expr" <+> ppr expr
+    --                                , text "scrut_ty" <+> ppr scrut_ty
+    --                                , text "alt_tys" <+> ppr alt_tys
+    --                                , text "alt_ty" <+> ppr alt_ty
+    --                                , text "res_ty" <+> ppr res_ty ]) $
     (res_ty, Case scrut' case_bndr' ty alts')
 
 dmdAnal' env dmd (Let (NonRec id rhs) body)
@@ -406,12 +404,12 @@ dmdAnalAlt env dmd case_bndr alt@(con,bndrs,rhs)
 
       id_dmds :: [Demand]
       id_dmds       =
-        pprTrace "dmdAnalAlt" (text "alt:" <+> ppr alt $$
-                               text "case_bndr:" <+> ppr case_bndr $$
-                               text "bndrs:" <+> ppr bndrs $$
-                               text "bndr demands:" <+> ppr dmds $$
-                               text "alt_ty:" <+> ppr alt_ty $$
-                               text "case_bndr_dmd:" <+> ppr case_bndr_dmd) $
+        -- pprTrace "dmdAnalAlt" (text "alt:" <+> ppr alt $$
+        --                        text "case_bndr:" <+> ppr case_bndr $$
+        --                        text "bndrs:" <+> ppr bndrs $$
+        --                        text "bndr demands:" <+> ppr dmds $$
+        --                        text "alt_ty:" <+> ppr alt_ty $$
+        --                        text "case_bndr_dmd:" <+> ppr case_bndr_dmd) $
         addCaseBndrDmd case_bndr_dmd dmds
   = -- pprTrace "dmdAnalAlt" (text "bndrs:"   <+> ppr bndrs $$
     --                        text "rhs:"     <+> ppr rhs $$
