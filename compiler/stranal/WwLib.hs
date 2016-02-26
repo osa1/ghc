@@ -38,7 +38,7 @@ import DynFlags
 import FastString
 import ListSetOps
 
-import ElimUbxSums (typeUnboxedSumRep)
+import ElimUbxSums (typeUnboxedSumRep, mkUbxSumAltTy)
 
 import qualified Data.IntSet as IS
 import Data.List (sortOn)
@@ -515,20 +515,14 @@ mkWWstr_one dflags fam_envs arg
             casted_scrut = Var arg `mkCast` co
 
             --------------------------------------------------------------------------
-            -- FIXME: This code is copied from MkId's unboxed sum parts
 
             data_cons_sorted = sortOn dataConTag data_cons
 
             rep_tys :: [[Type]]
             rep_tys = map (\con -> dataConInstArgTys con inst_tys) data_cons_sorted
 
-            mk_sum_alt_ty :: [Type] -> Type
-            mk_sum_alt_ty []   = voidPrimTy
-            mk_sum_alt_ty [ty] = ty
-            mk_sum_alt_ty tys  = mkTupleTy Unboxed tys
-
             sum_alt_tys :: [Type]
-            sum_alt_tys = map mk_sum_alt_ty rep_tys
+            sum_alt_tys = map mkUbxSumAltTy rep_tys
 
             --------------------------------------------------------------------------
 

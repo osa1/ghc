@@ -4,6 +4,7 @@ module ElimUbxSums
   ( typeUnboxedSumRep
   , unboxedSumTyConFields
   , unboxedSumRepTypes
+  , mkUbxSumAltTy
   ) where
 
 #include "HsVersions.h"
@@ -87,6 +88,18 @@ unboxedSumTyConFields alts =
       (ubx_tys, bx_tys) = partition isUnliftedType rep_tys
     in
       (length ubx_tys, length bx_tys)
+
+--------------------------------------------------------------------------------
+
+-- | Every alternative of an unboxed sum has exactly one field, and we use
+-- unboxed tuples when we need more than one fields. This generates an unboxed
+-- tuple when necessary, to be used in unboxed sum alts.
+mkUbxSumAltTy :: [Type] -> Type
+mkUbxSumAltTy []   = voidPrimTy
+mkUbxSumAltTy [ty] = ty
+mkUbxSumAltTy tys  = mkTupleTy Unboxed tys
+
+--------------------------------------------------------------------------------
 
 liftedAny :: Type
 liftedAny = anyTypeOfKind liftedTypeKind
