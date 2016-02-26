@@ -818,13 +818,8 @@ mkWWcpr_sum_help data_cons inst_tys co body_ty = do
       rep_tys :: [[Type]]
       rep_tys = map (\con -> dataConInstArgTys con inst_tys) data_cons_sorted
 
-      mk_sum_alt_ty :: [Type] -> Type
-      mk_sum_alt_ty []   = voidPrimTy
-      mk_sum_alt_ty [ty] = ty
-      mk_sum_alt_ty tys  = mkTupleTy Unboxed tys
-
       sum_alt_tys :: [Type]
-      sum_alt_tys = map mk_sum_alt_ty rep_tys
+      sum_alt_tys = map mkUbxSumAltTy rep_tys
 
       --------------------------------------------------------------------------
 
