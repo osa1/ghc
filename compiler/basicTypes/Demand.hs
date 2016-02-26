@@ -501,14 +501,11 @@ addCaseBndrDmd :: Demand    -- On the case binder
                -> [Demand]  -- Final demands for the components of the constructor
 -- See Note [Demand on case-alternative binders]
 addCaseBndrDmd case_bndr_dmd@(JD { sd = ms, ud = mu }) alt_dmds
-  = pprTrace "addCaseBndrDmd" (text "case_bndr_dmd:" <+> ppr case_bndr_dmd $$
-                               text "alt_dmds:" <+> ppr alt_dmds) $
-    let ret = case mu of
-                Abs     -> zipWith bothDmd alt_dmds (mkJointDmds ss (replicate arity Abs)) -- alt_dmds
-                Use _ u -> zipWith bothDmd alt_dmds (mkJointDmds ss us)
-                        where
-                          Just us = splitUseProdDmd    arity u   -- Ditto
-    in pprTrace "addCaseBndrDmd" (text "ret:" <+> ppr ret) ret
+  = case mu of
+      Abs     -> zipWith bothDmd alt_dmds (mkJointDmds ss (replicate arity Abs)) -- alt_dmds
+      Use _ u -> zipWith bothDmd alt_dmds (mkJointDmds ss us)
+              where
+                Just us = splitUseProdDmd    arity u   -- Ditto
   where
     Just ss = splitArgStrProdDmd arity ms  -- Guaranteed not to be a call
     arity = length alt_dmds
@@ -1782,8 +1779,7 @@ dmdTransformDataConSig :: Arity -> ConTag -> StrictSig -> CleanDemand -> DmdType
 -- the result into the constructor arguments.
 dmdTransformDataConSig arity tag sig@(StrictSig (DmdType _ _ con_res))
                              dmd@(JD { sd = str, ud = abs })
-  | pprTrace "dmdTransformDataConSig" (ppr arity $$ ppr sig $$ ppr dmd) True
-  , Just str_dmds <- go_str arity str
+  | Just str_dmds <- go_str arity str
   , Just abs_dmds <- go_abs arity abs
   = DmdType emptyDmdEnv (mkJointDmds str_dmds abs_dmds) con_res
                 -- Must remember whether it's a product, hence con_res, not TopRes

@@ -141,10 +141,10 @@ mkWwBodies dflags fn_id fam_envs fun_ty demands res_info one_shots
           (wrap_args, wrap_fn_args, work_fn_args, res_ty) <- mkWWargs emptyTCvSubst fun_ty arg_info
         ; (useful1, work_args, wrap_fn_str, work_fn_str) <- mkWWstr dflags fam_envs wrap_args
 
-        ; pprTrace "mkWwBodies" (text "fn_id:" <+> ppr fn_id $$
-                                 text "demands:" <+> ppr demands $$
-                                 text "res_info:" <+> ppr res_info $$
-                                 text "wrap_args:" <+> ppr wrap_args) (return ())
+        -- ; pprTrace "mkWwBodies" (text "fn_id:" <+> ppr fn_id $$
+        --                          text "demands:" <+> ppr demands $$
+        --                          text "res_info:" <+> ppr res_info $$
+        --                          text "wrap_args:" <+> ppr wrap_args) (return ())
 
         -- Do CPR w/w.  See Note [Always do CPR w/w]
         ; (useful2, wrap_fn_cpr, work_fn_cpr, cpr_res_ty)
