@@ -1079,7 +1079,9 @@ returnsCPR_maybe (Dunno c) = retCPR_maybe c
 returnsCPR_maybe _         = Nothing
 
 retCPR_maybe :: CPRResult -> Maybe IS.IntSet
-retCPR_maybe (RetSum t)  = Just t
+retCPR_maybe (RetSum t)
+  | IS.null t = Nothing -- FIXME(osa): Why is this happening?
+  | otherwise = Just t
 retCPR_maybe RetProd     = Just (IS.singleton fIRST_TAG)
 retCPR_maybe NoCPR       = Nothing
 
