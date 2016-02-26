@@ -560,10 +560,6 @@ mkWWstr_one dflags fam_envs arg
 
             --------------------------------------------------------------------------
 
-       ubx_sum_bndr <- mkWwLocalM ubx_sum_ty
-
-       --------
-
        let  scrut = Var arg
             casted_scrut = scrut `mkCast` co
 
@@ -624,12 +620,12 @@ mkWWstr_one dflags fam_envs arg
               = do -- NOTE: re-using ubx_sum_scrut_bndr here
                    alts <- mapM mkBoxAlt data_cons_sorted
                    return $ \body ->
-                     Case (Var ubx_sum_bndr) ubx_sum_scrut_bndr (exprType body) alts
+                     Case (Var ubx_sum_scrut_bndr) ubx_sum_scrut_bndr (exprType body) alts
 
        -- TODO: We may need to recursively unpack for deep unpacking.
        unbox_fn' <- unbox_fn
        rebox_fn' <- rebox_fn
-       return (True, [ubx_sum_bndr], unbox_fn', rebox_fn')
+       return (True, [ubx_sum_scrut_bndr], unbox_fn', rebox_fn')
 
   | otherwise   -- Other cases
   = return (False, [arg], nop_fn, nop_fn)
