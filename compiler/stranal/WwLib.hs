@@ -545,7 +545,8 @@ mkWWstr_one dflags fam_envs arg
   , Just (data_cons, inst_tys, co)
             <- deepSplitSumType_maybe fam_envs (idType arg)
   , IM.keysSet m == IS.fromList (map dataConTag data_cons)
-  = do let  --------------------------------------------------------------------------
+  = do pprTrace "====mkWWdmd====" (text "Demand WW on sum type. arg:" <+> ppr arg) (return ())
+       let  --------------------------------------------------------------------------
 
             data_cons_sorted = sortOn dataConTag data_cons
 
@@ -792,10 +793,10 @@ mkWWcpr fn_id opt_CprAnal fam_envs body_ty res
                           [used_con] ->
                             mkWWcpr_help used_con tc_args (dataConInstArgTys used_con tc_args) co
                           _ ->
-                            -- mkWWcpr_sum_help used_cons tc_args co body_ty
                             pprTrace "====mkWWcpr===="
                               (text "CPR on sum type in function:" <+> ppr fn_id) $
-                            return (False, id, id, body_ty)
+                            mkWWcpr_sum_help used_cons tc_args co body_ty
+                            -- return (False, id, id, body_ty)
 
                      |  otherwise
                         -- See Note [non-algebraic or open body type warning]
