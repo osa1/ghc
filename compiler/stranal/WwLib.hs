@@ -620,7 +620,10 @@ mkWWstr_one dflags fam_envs arg
               = do -- NOTE: re-using ubx_sum_scrut_bndr here
                    alts <- mapM mkBoxAlt data_cons_sorted
                    return $ \body ->
-                     Case (Var ubx_sum_scrut_bndr) ubx_sum_scrut_bndr (exprType body) alts
+                     Let (NonRec arg (Case (Var ubx_sum_scrut_bndr)
+                                           ubx_sum_scrut_bndr
+                                           (exprType body) alts))
+                         body
 
        -- TODO: We may need to recursively unpack for deep unpacking.
        unbox_fn' <- unbox_fn
