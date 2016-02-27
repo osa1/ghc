@@ -602,7 +602,9 @@ mkWWstr_one dflags fam_envs arg
               = do let con_arg_tys = rep_tys !! (dataConTag con - 1)
                        alt_con     = DataAlt (sumDataCon (dataConTag con) (length data_cons_sorted))
                    case con_arg_tys of
-                     []   -> return (alt_con, [], mkConApp2 con inst_tys [])
+                     []   -> do
+                       field_bndr <- mkWwLocalM voidPrimTy
+                       return (alt_con, [field_bndr], mkConApp2 con inst_tys [])
                      [ty] -> do
                        field_bndr <- mkWwLocalM ty
                        return (alt_con, [field_bndr], mkConApp2 con inst_tys [field_bndr])
