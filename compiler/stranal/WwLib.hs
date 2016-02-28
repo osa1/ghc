@@ -153,35 +153,17 @@ mkWwBodies dflags fn_id fam_envs fun_ty demands res_info one_shots
               <- mkWWcpr fn_id (gopt Opt_CprAnal dflags) fam_envs res_ty res_info
 
         ; let (work_lam_args, work_call_args) =
-                pprTraceIt "(work_lam_args, work_call_args)" $ mkWorkerArgs dflags work_args all_one_shots cpr_res_ty
+                mkWorkerArgs dflags work_args all_one_shots cpr_res_ty
               worker_args_dmds = [idDemandInfo v | v <- work_call_args, isId v]
 
               -- Lacking worker Id
               wrapper_body :: Var -> CoreExpr
               wrapper_body =
-                pprTraceIt "after wrap_fn_args" .
-                  wrap_fn_args .
-                    pprTraceIt "after wrap_fn_cpr" .
-                      wrap_fn_cpr .
-                        pprTraceIt "after wrap_fn_str" .
-                          wrap_fn_str .
-                            pprTraceIt "after applyToVars" .
-                              applyToVars work_call_args .
-                                pprTraceIt "after Var" .
-                                  Var
+                wrap_fn_args .  wrap_fn_cpr .  wrap_fn_str .  applyToVars work_call_args .  Var
 
               -- Lacking original function body
               worker_body :: CoreExpr -> CoreExpr
-              worker_body =
-                pprTraceIt "work_lam_args" .
-                  mkLams work_lam_args .
-                    pprTraceIt "after work_fn_str" .
-                      work_fn_str .
-                        pprTraceIt "after work_fn_cpr" .
-                          work_fn_cpr .
-                            pprTraceIt "after work_fn_args" .
-                              work_fn_args .
-                                pprTraceIt "original arg"
+              worker_body = mkLams work_lam_args .  work_fn_str .  work_fn_cpr .  work_fn_args
 
         ; if (useful1 && not (only_one_void_argument)) || useful2
           then return (Just (worker_args_dmds, wrapper_body, worker_body))
