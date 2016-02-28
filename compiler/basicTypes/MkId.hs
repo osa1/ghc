@@ -701,6 +701,11 @@ dataConSrcToImplBang dflags fam_envs data_con arg_ty
               --   so we make sure there's at least two (not one)
               cons <- tyConDataCons tc
             , length cons >= 2
+
+              -- Try not to unpack floats
+            , let con_rep_tys = map dataConRepArgTys cons
+            , not (any (any (\ty -> eqType floatPrimTy ty || eqType doublePrimTy ty)) con_rep_tys)
+
             = unboxSmallStrictSums dflags >= Just (length (typeUnboxedSumRep cons))
 
             | otherwise
