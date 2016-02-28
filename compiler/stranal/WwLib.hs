@@ -21,7 +21,7 @@ import IdInfo           ( vanillaIdInfo )
 import DataCon
 import Demand
 import MkCore           ( mkRuntimeErrorApp, aBSENT_ERROR_ID, mkCoreUbxTup, mkCoreUbxSum, mkCoreConApps )
-import MkId             ( voidArgId, voidPrimId )
+import MkId             ( voidArgId, voidPrimId, isUnpackableType )
 import TysPrim          ( voidPrimTy, floatPrimTy, doublePrimTy )
 import TysWiredIn       ( tupleDataCon, mkSumTy, sumDataCon, mkTupleTy )
 import Type
@@ -150,7 +150,7 @@ mkWwBodies dflags fn_id fam_envs fun_ty demands res_info one_shots
 
         -- Do CPR w/w.  See Note [Always do CPR w/w]
         ; (useful2, wrap_fn_cpr, work_fn_cpr, cpr_res_ty)
-              <- mkWWcpr fn_id (gopt Opt_CprAnal dflags) fam_envs res_ty res_info
+              <- mkWWcpr dflags fn_id (gopt Opt_CprAnal dflags) fam_envs res_ty res_info
 
         ; let (work_lam_args, work_call_args) =
                 mkWorkerArgs dflags work_args all_one_shots cpr_res_ty
@@ -524,6 +524,7 @@ mkWWstr_one dflags fam_envs arg
   , Str _ (SSum m) <- getStrDmd dmd -- FIXME(osa): This part needs to be updated, probably.
                                     -- in the product case above, we do things
                                     -- differently, we check use flags etc.
+  , isUnpackableType dflags fam_envs (idType arg)
   , Just (data_cons, inst_tys, co)
             <- deepSplitSumType_maybe fam_envs (idType arg)
   , IM.keysSet m == IS.fromList (map dataConTag data_cons)
@@ -766,7 +767,8 @@ The non-CPR results appear ordered in the unboxed tuple as if by a
 left-to-right traversal of the result structure.
 -}
 
-mkWWcpr :: Id
+mkWWcpr :: DynFlags
+        -> Id
         -> Bool
         -> FamInstEnvs
         -> Type                              -- function body type
@@ -776,7 +778,7 @@ mkWWcpr :: Id
                    CoreExpr -> CoreExpr,     -- New worker
                    Type)                     -- Type of worker's body
 
-mkWWcpr fn_id opt_CprAnal fam_envs body_ty res
+mkWWcpr dflags fn_id opt_CprAnal fam_envs body_ty res
     -- CPR explicitly turned off (or in -O0)
   | not opt_CprAnal = return (False, id, id, body_ty)
     -- CPR is turned on by default for -O and O2
@@ -788,11 +790,12 @@ mkWWcpr fn_id opt_CprAnal fam_envs body_ty res
                      -> case used_cons of
                           [used_con] ->
                             mkWWcpr_help used_con tc_args (dataConInstArgTys used_con tc_args) co
-                          _ ->
-                            -- pprTrace "====mkWWcpr===="
-                            --   (text "CPR on sum type in function:" <+> ppr fn_id) $
-                            -- mkWWcpr_sum_help used_cons tc_args co body_ty
-                            return (False, id, id, body_ty)
+                          _ | isUnpackableType dflags fam_envs body_ty ->
+                              pprTrace "====mkWWcpr===="
+                                (text "CPR on sum type in function:" <+> ppr fn_id) $
+                              mkWWcpr_sum_help used_cons tc_args co body_ty
+                            | otherwise ->
+                              return (False, id, id, body_ty)
 
                      |  otherwise
                         -- See Note [non-algebraic or open body type warning]

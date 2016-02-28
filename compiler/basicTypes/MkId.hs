@@ -34,7 +34,9 @@ module MkId (
         proxyHashId,
 
         -- Re-export error Ids
-        module PrelRules
+        module PrelRules,
+
+        isUnpackableType
     ) where
 
 #include "HsVersions.h"
