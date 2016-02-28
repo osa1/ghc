@@ -543,6 +543,12 @@ mkWWstr_one dflags fam_envs arg
 
             --------------------------------------------------------------------------
 
+       -- FIXME: Not unpacking floats...
+       if any (any (\ty -> eqType floatPrimTy ty || eqType doublePrimTy ty)) rep_tys
+         then pprTrace "mkWWdmd" (text "Not doing WW.") $
+                return (False, [arg], nop_fn, nop_fn)
+         else do
+
        let  scrut = Var arg
             casted_scrut = scrut `mkCast` co
             casted_scrut_ty = exprType casted_scrut
