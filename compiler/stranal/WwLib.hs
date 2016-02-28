@@ -527,7 +527,8 @@ mkWWstr_one dflags fam_envs arg
   , Just (data_cons, inst_tys, co)
             <- deepSplitSumType_maybe fam_envs (idType arg)
   , IM.keysSet m == IS.fromList (map dataConTag data_cons)
-  = do pprTrace "====mkWWdmd====" (text "Demand WW on sum type. arg:" <+> ppr arg) (return ())
+  = do pprTrace "====mkWWdmd====" (text "Demand WW on sum type. arg:" <+>
+                                   ppr arg <+> parens (ppr (idType arg))) (return ())
        let  --------------------------------------------------------------------------
 
             data_cons_sorted = sortOn dataConTag data_cons
@@ -550,10 +551,8 @@ mkWWstr_one dflags fam_envs arg
          else do
 
        let  scrut = Var arg
-            casted_scrut = scrut `mkCast` co
-            casted_scrut_ty = exprType casted_scrut
+            scrut_ty = exprType scrut
 
-       scrut_bndr <- mkWwLocalM casted_scrut_ty
        ubx_sum_scrut_bndr <- mkWwLocalM ubx_sum_ty
 
        -- Unpack original sum argument, bind ubx_sum_bndr.
@@ -575,8 +574,11 @@ mkWWstr_one dflags fam_envs arg
             unbox_fn :: UniqSM (CoreExpr -> CoreExpr)
             unbox_fn
               = do alts <- mapM mkUnboxAlt data_cons_sorted
+                   let casted_scrut = scrut `mkCast` co
+                       casted_scrut_ty = exprType casted_scrut
+                   scrut_bndr <- mkWwLocalM casted_scrut_ty
                    return $ \body ->
-                     Case (Case scrut scrut_bndr ubx_sum_ty alts)
+                     Case (Case casted_scrut scrut_bndr ubx_sum_ty alts)
                           ubx_sum_scrut_bndr
                           (exprType body)
                           [(DEFAULT, [], body)]
@@ -592,30 +594,32 @@ mkWWstr_one dflags fam_envs arg
                    case con_arg_tys of
                      []   -> do
                        field_bndr <- mkWwLocalM voidPrimTy
-                       return (alt_con, [field_bndr], mkConApp2 con inst_tys [])
+                       return (alt_con, [field_bndr],
+                               mkConApp2 con inst_tys [] `mkCast` mkSymCo co)
                      [ty] -> do
                        field_bndr <- mkWwLocalM ty
-                       return (alt_con, [field_bndr], mkConApp2 con inst_tys [field_bndr])
+                       return (alt_con, [field_bndr],
+                               mkConApp2 con inst_tys [field_bndr] `mkCast` mkSymCo co)
                      _    -> do
                        field_bndrs <- mapM mkWwLocalM con_arg_tys
                        tup_bndr    <- mkWwLocalM (mkTupleTy Unboxed con_arg_tys)
                        return (alt_con, [tup_bndr],
                                -- NOTE: tup_bndr as both binder and scrutinee,
                                -- it that OK?
-                               Case (Var tup_bndr) tup_bndr casted_scrut_ty
+                               Case (Var tup_bndr) tup_bndr scrut_ty
                                  [(DataAlt (tupleDataCon Unboxed (length con_arg_tys)),
                                    field_bndrs,
-                                   mkConApp2 con inst_tys field_bndrs)])
+                                   mkConApp2 con inst_tys field_bndrs `mkCast` mkSymCo co)])
 
             rebox_fn :: UniqSM (CoreExpr -> CoreExpr)
             rebox_fn
               = do -- NOTE: re-using ubx_sum_scrut_bndr here
                    alts <- mapM mkBoxAlt data_cons_sorted
                    return $ \body ->
-                     Let (NonRec (setIdType arg casted_scrut_ty)
+                     Let (NonRec arg
                                  (Case (Var ubx_sum_scrut_bndr)
-                                            ubx_sum_scrut_bndr
-                                            casted_scrut_ty alts))
+                                       ubx_sum_scrut_bndr
+                                       scrut_ty alts))
                          body
 
        -- TODO: We may need to recursively unpack for deep unpacking.
@@ -785,10 +789,10 @@ mkWWcpr fn_id opt_CprAnal fam_envs body_ty res
                           [used_con] ->
                             mkWWcpr_help used_con tc_args (dataConInstArgTys used_con tc_args) co
                           _ ->
-                            pprTrace "====mkWWcpr===="
-                              (text "CPR on sum type in function:" <+> ppr fn_id) $
-                            mkWWcpr_sum_help used_cons tc_args co body_ty
-                            -- return (False, id, id, body_ty)
+                            -- pprTrace "====mkWWcpr===="
+                            --   (text "CPR on sum type in function:" <+> ppr fn_id) $
+                            -- mkWWcpr_sum_help used_cons tc_args co body_ty
+                            return (False, id, id, body_ty)
 
                      |  otherwise
                         -- See Note [non-algebraic or open body type warning]
