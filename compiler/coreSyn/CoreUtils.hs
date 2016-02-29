@@ -843,7 +843,8 @@ exprIsBottom e
     go n (Cast e _)              = go n e
     go n (Let _ e)               = go n e
     go n (Lam v e) | isTyVar v   = go n e
-    go _ (Case _ _ _ alts)       = null alts
+    go _ (Case scrt _ _ alts)    =
+      null alts || all (\(_, _, rhs) -> exprIsBottom rhs) alts || exprIsBottom scrt
        -- See Note [Empty case alternatives] in CoreSyn
     go _ _                       = False
 
