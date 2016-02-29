@@ -79,6 +79,7 @@ import DataCon         ( splitDataProductType_maybe, dataConTag, DataCon )
 
 import CoreSyn
 
+import Data.List (foldl')
 import qualified Data.IntSet as IS
 import qualified Data.IntMap.Strict as IM
 
@@ -226,6 +227,13 @@ mkSProd sx
   | any isHyperStr sx = HyperStr
   | all isLazy     sx = HeadStr
   | otherwise         = SProd sx
+
+mkSProdExnStr :: [ArgStr] -> (StrDmd, ExnStr)
+mkSProdExnStr argStrs =
+    (mkSProd argStrs, foldl' lubExnStr VanStr (map get_str argStrs))
+  where
+    get_str Lazy        = VanStr
+    get_str (Str exn _) = exn
 
 isLazy :: ArgStr -> Bool
 isLazy Lazy     = True
@@ -817,11 +825,21 @@ cleanUseDmd_maybe (JD { ud = Use _ u }) = Just u
 cleanUseDmd_maybe _                     = Nothing
 
 -- Definition 7.11 of Ralf Hinze's thesis
-insertSumDemands :: ConTag -> [ConTag] -> StrDmd -> Demand
-insertSumDemands tag all_tags dmd =
-    -- TODO: We need to figure out what ExnStr we need here. For now using
-    -- VanStr (top).
-    mkJointDmd (Str VanStr (SSum (IM.fromList ((tag, dmd) : map (,HyperStr) all_tags)))) useTop
+insertSumDemands :: ConTag -> [ConTag] -> Demand -> [Demand] -> Demand
+insertSumDemands tag all_tags scrt_dmd prod_dmds =
+    let
+      bndrs_prod_ty :: StrDmd
+      (bndrs_prod_ty, exn) = mkSProdExnStr (map getStrDmd prod_dmds)
+
+      case_bndr_exn = case getStrDmd scrt_dmd of
+                        Lazy -> VanStr
+                        Str exn _ -> exn
+
+      final_exn = lubExnStr exn case_bndr_exn
+
+      sum_dmd = SSum (IM.fromList ((tag, bndrs_prod_ty) : map (,HyperStr) all_tags))
+    in
+      mkJointDmd (Str final_exn sum_dmd) useTop
 
 -- Definition 7.10 of Ralf Hinze's thesis
 extractSumDemandAlt :: Demand -> ConTag -> Demand

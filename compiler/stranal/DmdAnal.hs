@@ -440,9 +440,6 @@ dmdAnalSumAlt env dmd case_bndr con_tags alt@(DataAlt con, bndrs, rhs)
 
       (alt_ty, dmds) = findBndrsDmds env rhs_ty bndrs
 
-      bndrs_prod_ty :: StrDmd
-      bndrs_prod_ty = mkSProd (map getStrDmd dmds)
-
       case_bndr_orig_dmd :: Demand
       case_bndr_orig_dmd = findIdDemand alt_ty case_bndr
 
@@ -451,7 +448,8 @@ dmdAnalSumAlt env dmd case_bndr con_tags alt@(DataAlt con, bndrs, rhs)
         | all isLazyDmd dmds
         = case_bndr_orig_dmd
         | otherwise
-        = insertSumDemands (dataConTag con) (delete (dataConTag con) con_tags) bndrs_prod_ty
+        = insertSumDemands (dataConTag con) (delete (dataConTag con) con_tags)
+                           case_bndr_orig_dmd dmds
           `bothDmd` case_bndr_orig_dmd
 
       id_dmds :: [Demand]
