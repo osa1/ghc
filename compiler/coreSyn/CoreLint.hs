@@ -673,9 +673,9 @@ lintCoreExpr e@(Case scrut var alt_ty alts) =
      -- See Note [No alternatives lint check]
      ; when (null alts) $
      do { checkL (not (exprIsHNF scrut))
-          (text "No alternatives for a case scrutinee in head-normal form:" <+> ppr scrut)
+          (text "No alternatives for a case scrutinee in head-normal form:" <+> ppr scrut $$ ppr e)
         ; checkL (exprIsBottom scrut)
-          (text "No alternatives for a case scrutinee not known to diverge for sure:" <+> ppr scrut)
+          (text "No alternatives for a case scrutinee not known to diverge for sure:" <+> ppr scrut $$ ppr e)
         }
 
      -- See Note [Rules for floating-point comparisons] in PrelRules
