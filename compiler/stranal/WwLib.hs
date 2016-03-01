@@ -528,8 +528,12 @@ mkWWstr_one dflags fam_envs arg
   , Just (data_cons, inst_tys, co)
             <- deepSplitSumType_maybe fam_envs (idType arg)
   , IM.keysSet m == IS.fromList (map dataConTag data_cons)
-  = do pprTrace "====mkWWdmd====" (text "Demand WW on sum type. arg:" <+>
-                                   ppr arg <+> parens (ppr (idType arg))) (return ())
+  , pprTrace "====mkWWdmd====" (text "Demand WW on sum type. arg:" <+>
+                                ppr arg <+> parens (ppr (idType arg))) True
+  , if not (doSumDmdWw dflags)
+      then pprTrace "mkWWdmd" (text "Not doing WW, no -fdo-sum-dmd-ww.") False
+      else True
+  = do
        let  --------------------------------------------------------------------------
 
             data_cons_sorted = sortOn dataConTag data_cons
@@ -547,7 +551,7 @@ mkWWstr_one dflags fam_envs arg
 
        -- FIXME: Not unpacking floats...
        if any (any (\ty -> eqType floatPrimTy ty || eqType doublePrimTy ty)) rep_tys
-         then pprTrace "mkWWdmd" (text "Not doing WW.") $
+         then pprTrace "mkWWdmd" (text "Not doing WW (found float).") $
                 return (False, [arg], nop_fn, nop_fn)
          else do
 
@@ -793,7 +797,10 @@ mkWWcpr dflags fn_id opt_CprAnal fam_envs body_ty res
                           _ | isUnpackableType dflags fam_envs body_ty ->
                               pprTrace "====mkWWcpr===="
                                 (text "CPR on sum type in function:" <+> ppr fn_id) $
-                              mkWWcpr_sum_help used_cons tc_args co body_ty
+                                if doSumCprWw dflags
+                                  then mkWWcpr_sum_help used_cons tc_args co body_ty
+                                  else pprTrace "mkWWcpr" (text "Not doing WW, no -fdo-sum-cpr-ww.") $
+                                         return (False, id, id, body_ty)
                             | otherwise ->
                               return (False, id, id, body_ty)
 
