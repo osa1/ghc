@@ -270,8 +270,6 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
           -- pprTrace "alt_tys" (text "expr:" <+> ppr expr $$ ppr alt_tys $$ ppr alts_dmd) $
           foldr lubDmdType botDmdType alt_tys
 
-
-            -- | PROBLEM IS HERE: Our scrutinee demand is getting lost!!!
         (alt_ty, case_bndr_dmd) = findBndrDmd env False alt_tys_lubd case_bndr
                                -- NB: Base case is botDmdType, for empty case alternatives
                                --     This is a unit for lubDmdType, and the right result
@@ -429,7 +427,9 @@ dmdAnalSumAlt _ _ _ _ alt@(LitAlt{},_,_)
   = pprPanic "dmdAnalSumAlt" (text "Found a literal:" <+> ppr alt)
 
 dmdAnalSumAlt env dmd case_bndr _ alt@(DEFAULT, bndrs, rhs)
-  = dmdAnalAlt env dmd case_bndr alt
+  = -- FIXME: Consider all the tags that are not part of the map, products will
+    -- be SProd of LLLL...
+    dmdAnalAlt env dmd case_bndr alt
 
 dmdAnalSumAlt env dmd case_bndr con_tags alt@(DataAlt con, bndrs, rhs)
   = let
@@ -445,9 +445,6 @@ dmdAnalSumAlt env dmd case_bndr con_tags alt@(DataAlt con, bndrs, rhs)
 
       case_bndr_dmd :: Demand
       case_bndr_dmd
-        | all isLazyDmd dmds
-        = case_bndr_orig_dmd
-        | otherwise
         = insertSumDemands (dataConTag con) (delete (dataConTag con) con_tags)
                            case_bndr_orig_dmd dmds
           `bothDmd` case_bndr_orig_dmd

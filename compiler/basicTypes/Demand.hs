@@ -230,7 +230,8 @@ mkSProd sx
 
 mkSProdExnStr :: [ArgStr] -> (StrDmd, ExnStr)
 mkSProdExnStr argStrs =
-    (mkSProd argStrs, foldl' lubExnStr VanStr (map get_str argStrs))
+    -- NOTE: We don't want to use mkSProd here, for reasons TODO: explain
+    (SProd argStrs, foldl' lubExnStr VanStr (map get_str argStrs))
   where
     get_str Lazy        = VanStr
     get_str (Str exn _) = exn
@@ -281,7 +282,6 @@ lubStr (SProd s1) (SProd s2) -- NOTE(osa): Why is this case not an error?
 lubStr (SProd _) (SCall _)     = HeadStr
 
 lubStr (SSum s1) (SSum s2)     =
-  -- TODO: split this into orStr and lubStr
   -- (lubStr should be on equaivalent sums, orStr should be this (make sure the
   -- key setes are disjoint though))
   SSum (IM.unionWith lubStr s1 s2)
@@ -318,11 +318,12 @@ bothStr (SProd s1) (SProd s2)
     | length s1 == length s2   = mkSProd (zipWith bothArgStr s1 s2)
     | otherwise                = HyperStr  -- Weird
 
+
 bothStr (SSum s1) (SSum s2)    = SSum (IM.unionWith bothStr s1 s2)
-bothStr _         HyperStr     = HyperStr
 bothStr s1@SSum{} s2@SProd{}   = pprPanic "bothStr" (ppr s1 $$ ppr s2)
 bothStr s1@SSum{} HeadStr      = s1
 
+bothStr _         HyperStr     = HyperStr
 bothStr (SProd _) (SCall _)    = HyperStr
 
 bothStr s1        s2           = pprPanic "bothStr" (ppr s1 $$ ppr s2)
@@ -363,9 +364,9 @@ splitStrProdDmd _ (SCall {}) = Nothing
 *                                                                      *
 ************************************************************************
 
-         Used
-         /   \
-     UCall   UProd
+         Used -----
+         /   \     \
+     UCall   UProd USum
          \   /
          UHead
           |
@@ -384,6 +385,9 @@ data UseDmd
                          -- See Note [Don't optimise UProd(Used) to Used]
                          -- [Invariant] Not all components are Abs
                          --             (in that case, use UHead)
+
+  | USum (IM.IntMap UseDmd)
+                         -- INVARIANT: UseDmd is never UCall.
 
   | UHead                -- May be used; but its sub-components are
                          -- definitely *not* used.  Roughly U(AAA)
@@ -422,6 +426,7 @@ instance Outputable UseDmd where
   ppr (UCall c a)    = char 'C' <> ppr c <> parens (ppr a)
   ppr UHead          = char 'H'
   ppr (UProd as)     = char 'U' <> parens (hcat (punctuate (char ',') (map ppr as)))
+  ppr (USum as)      = char 'S' <> parens (pprWithBars ppr (IM.toList as))
 
 instance Outputable Count where
   ppr One  = char '1'
@@ -468,6 +473,16 @@ lubUse (UProd {}) (UCall {})       = Used
 -- lubUse (UProd {}) Used             = Used
 lubUse (UProd ux) Used             = UProd (map (`lubArgUse` useTop) ux)
 lubUse Used       (UProd ux)       = UProd (map (`lubArgUse` useTop) ux)
+
+lubUse (USum ux) Used              = USum (IM.map (`lubUse` Used) ux)
+lubUse (USum ux1) (USum ux2)       = USum (IM.unionWith lubUse ux1 ux2)
+lubUse Used (USum ux)              = USum (IM.map (`lubUse` Used) ux)
+
+lubUse dmd1@USum{} dmd2@UProd{}    = Used
+lubUse dmd1@UProd{} dmd2@USum{}    = Used
+lubUse dmd1@USum{} dmd2@UCall{}    = Used
+lubUse dmd1@USum{} UHead{}         = dmd1
+
 lubUse Used _                      = Used  -- Note [Used should win]
 
 -- `both` is different from `lub` in its treatment of counting; if
@@ -498,6 +513,15 @@ bothUse (UProd {}) (UCall {})       = Used
 -- bothUse (UProd {}) Used             = Used  -- Note [Used should win]
 bothUse Used (UProd ux)             = UProd (map (`bothArgUse` useTop) ux)
 bothUse (UProd ux) Used             = UProd (map (`bothArgUse` useTop) ux)
+
+bothUse Used (USum ux)              = USum (IM.map (`bothUse` Used) ux)
+bothUse (USum ux) Used              = USum (IM.map (`bothUse` Used) ux)
+bothUse (USum ux1) (USum ux2)       = USum (IM.unionWith bothUse ux1 ux2)
+bothUse UProd{}      USum{}         = Used
+bothUse USum{}       UProd{}        = Used
+bothUse USum{}       UCall{}        = Used
+bothUse u1@USum{}  UHead{}          = u1
+
 bothUse Used _                      = Used  -- Note [Used should win]
 
 peelUseCall :: UseDmd -> Maybe (Count, UseDmd)
@@ -604,6 +628,7 @@ markReusedDmd (Use _ a)   = Use Many (markReused a)
 markReused :: UseDmd -> UseDmd
 markReused (UCall _ u)      = UCall Many u   -- No need to recurse here
 markReused (UProd ux)       = UProd (map markReusedDmd ux)
+markReused (USum ux)        = USum (IM.map markReused ux)
 markReused u                = u
 
 isUsedMU :: ArgUse -> Bool
@@ -617,12 +642,14 @@ isUsedU :: UseDmd -> Bool
 isUsedU Used           = True
 isUsedU UHead          = True
 isUsedU (UProd us)     = all isUsedMU us
+isUsedU (USum ux)      = all isUsedU (IM.elems ux)
 isUsedU (UCall One _)  = False
 isUsedU (UCall Many _) = True  -- No need to recurse
 
 -- Squashing usage demand demands
 seqUseDmd :: UseDmd -> ()
 seqUseDmd (UProd ds)   = seqArgUseList ds
+seqUseDmd (USum m)     = IM.map seqUseDmd m `seq` ()
 seqUseDmd (UCall c d)  = c `seq` seqUseDmd d
 seqUseDmd _            = ()
 
@@ -640,6 +667,7 @@ splitUseProdDmd n Used        = Just (replicate n useTop)
 splitUseProdDmd n UHead       = Just (replicate n Abs)
 splitUseProdDmd n (UProd ds)  = ASSERT2( ds `lengthIs` n, text "splitUseProdDmd" $$ ppr n $$ ppr ds )
                                 Just ds
+splitUseProdDmd _ dmd@USum{}  = pprPanic "splitUseProdDmd" (text "found sum:" <+> ppr dmd)
 splitUseProdDmd _ (UCall _ _) = Nothing
       -- This can happen when the programmer uses unsafeCoerce,
       -- and we don't then want to crash the compiler (Trac #9208)
@@ -831,6 +859,9 @@ insertSumDemands tag all_tags scrt_dmd prod_dmds =
       bndrs_prod_ty :: StrDmd
       (bndrs_prod_ty, exn) = mkSProdExnStr (map getStrDmd prod_dmds)
 
+      bndrs_use_dmd :: UseDmd
+      bndrs_use_dmd = mkUProd (map getUseDmd prod_dmds)
+
       case_bndr_exn = case getStrDmd scrt_dmd of
                         Lazy -> VanStr
                         Str exn _ -> exn
@@ -838,8 +869,12 @@ insertSumDemands tag all_tags scrt_dmd prod_dmds =
       final_exn = lubExnStr exn case_bndr_exn
 
       sum_dmd = SSum (IM.fromList ((tag, bndrs_prod_ty) : map (,HyperStr) all_tags))
+      sum_use = USum (IM.fromList ((tag, bndrs_use_dmd) : map (,UHead) all_tags))
+
+      sum_use_amt :: ArgUse
+      sum_use_amt = markReusedDmd (getUseDmd scrt_dmd)
     in
-      mkJointDmd (Str final_exn sum_dmd) useTop
+      mkJointDmd (Str final_exn sum_dmd) (Use (useCount sum_use_amt) sum_use)
 
 -- Definition 7.10 of Ralf Hinze's thesis
 extractSumDemandAlt :: Demand -> ConTag -> Demand
@@ -890,8 +925,9 @@ trimToType (JD { sd = ms, ud = mu }) ts
     go_s (SCall s)   (TsFun ts)   = SCall (go_s s ts)
     go_s (SProd mss) (TsProd tss)
       | equalLength mss tss       = SProd (zipWith go_ms mss tss)
-    go_s (SSum m)    (TsSum m')   =
-      SSum (IM.intersectionWith (\strDmd tyS -> go_s strDmd tyS) m (IM.fromList m'))
+    go_s (SSum m)    (TsSum m')
+      | IM.keysSet m == IS.fromList (map fst m')
+      = SSum (IM.intersectionWith (\strDmd tyS -> go_s strDmd tyS) m (IM.fromList m'))
     go_s _           _            = HeadStr
 
     go_mu :: ArgUse -> TypeShape -> ArgUse
@@ -903,6 +939,10 @@ trimToType (JD { sd = ms, ud = mu }) ts
     go_u (UCall c u) (TsFun ts) = UCall c (go_u u ts)
     go_u (UProd mus) (TsProd tss)
       | equalLength mus tss      = UProd (zipWith go_mu mus tss)
+    go_u (USum ux) (TsSum tss)
+      | IM.keysSet ux == IS.fromList (map fst tss)
+      = USum (IM.intersectionWith (\useDmd tyS -> go_u useDmd tyS) ux (IM.fromList tss))
+
     go_u _           _           = Used
 
 {-
@@ -2124,6 +2164,9 @@ instance Binary UseDmd where
     put_ bh (UProd ux)   = do
             putByte bh 3
             put_ bh ux
+    put_ bh (USum m) = do
+            putByte bh 4
+            put_ bh (IM.toList m)
 
     get  bh = do
             h <- getByte bh
@@ -2133,8 +2176,11 @@ instance Binary UseDmd where
               2 -> do c <- get bh
                       u <- get bh
                       return (UCall c u)
-              _ -> do ux <- get bh
+              3 -> do ux <- get bh
                       return (UProd ux)
+              4 -> do ux <- get bh
+                      return (USum (IM.fromList ux))
+              _ -> pprPanic "UseDmd get: Wrong tag:" (text (show h))
 
 instance (Binary s, Binary u) => Binary (JointDmd s u) where
     put_ bh (JD { sd = x, ud = y }) = do put_ bh x; put_ bh y
