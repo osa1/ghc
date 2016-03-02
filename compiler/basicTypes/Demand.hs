@@ -514,12 +514,12 @@ bothUse (UProd {}) (UCall {})       = Used
 bothUse Used (UProd ux)             = UProd (map (`bothArgUse` useTop) ux)
 bothUse (UProd ux) Used             = UProd (map (`bothArgUse` useTop) ux)
 
-bothUse Used (USum ux)              = USum (IM.map (`bothUse` Used) ux)
-bothUse (USum ux) Used              = USum (IM.map (`bothUse` Used) ux)
+bothUse Used       (USum ux)        = USum (IM.map (`bothUse` Used) ux)
+bothUse (USum ux)  Used             = USum (IM.map (`bothUse` Used) ux)
 bothUse (USum ux1) (USum ux2)       = USum (IM.unionWith bothUse ux1 ux2)
-bothUse UProd{}      USum{}         = Used
-bothUse USum{}       UProd{}        = Used
-bothUse USum{}       UCall{}        = Used
+bothUse UProd{}    USum{}           = Used
+bothUse USum{}     UProd{}          = Used
+bothUse USum{}     UCall{}          = Used
 bothUse u1@USum{}  UHead{}          = u1
 
 bothUse Used _                      = Used  -- Note [Used should win]
@@ -534,13 +534,12 @@ addCaseBndrDmd :: Demand    -- On the case binder
 -- See Note [Demand on case-alternative binders]
 addCaseBndrDmd case_bndr_dmd@(JD { sd = ms, ud = mu }) alt_dmds
   = case mu of
-      Abs     -> zipWith bothDmd alt_dmds (mkJointDmds ss (replicate arity Abs)) -- alt_dmds
+      Abs     -> alt_dmds
       Use _ u -> zipWith bothDmd alt_dmds (mkJointDmds ss us)
               where
+                arity   = length alt_dmds
+                Just ss = splitArgStrProdDmd arity ms  -- Guaranteed not to be a call
                 Just us = splitUseProdDmd    arity u   -- Ditto
-  where
-    Just ss = splitArgStrProdDmd arity ms  -- Guaranteed not to be a call
-    arity = length alt_dmds
 
 {- Note [Demand on case-alternative binders]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -878,16 +877,28 @@ insertSumDemands tag all_tags scrt_dmd prod_dmds =
 
 -- Definition 7.10 of Ralf Hinze's thesis
 extractSumDemandAlt :: Demand -> ConTag -> Demand
-extractSumDemandAlt dmd@(JD { sd = s, ud = ud }) tag =
-    case s of
-      Lazy -> dmd
-      Str exn (SSum m)
-        | Just altDmd <- IM.lookup tag m
-        -> JD (Str exn altDmd) ud
-        | otherwise
-        -> pprPanic "extractSumDemandAlt" (ppr dmd <+> ppr tag)
-      Str{} -> dmd
+extractSumDemandAlt dmd@(JD { sd = s, ud = u }) tag =
+    JD (extractSumArgStr s tag) (extractSumArgUse u tag)
 
+extractSumArgStr :: ArgStr -> ConTag -> ArgStr
+extractSumArgStr Lazy _
+  = Lazy
+extractSumArgStr str@(Str exn (SSum m)) tag
+  | Just altDmd <- IM.lookup tag m
+  = Str exn altDmd
+  | otherwise
+  = pprPanic "extractSumArgStr" (ppr str <+> ppr tag)
+extractSumArgStr dmd _ = dmd -- TODO: Should we panic here?
+
+extractSumArgUse :: ArgUse -> ConTag -> ArgUse
+extractSumArgUse Abs _
+  = Abs
+extractSumArgUse use@(Use c (USum m)) tag
+  | Just altUse <- IM.lookup tag m
+  = Use c altUse
+  | otherwise
+  = pprPanic "extractSumArgUse" (ppr use <+> ppr tag)
+extractSumArgUse use _ = use -- TODO: Should we panic here?
 
 splitFVs :: Bool   -- Thunk
          -> DmdEnv -> (DmdEnv, DmdEnv)
@@ -1856,6 +1867,12 @@ dmdTransformDataConSig arity tag sig@(StrictSig (DmdType _ _ con_res))
     go_str n (SCall s') = go_str (n-1) s'
     go_str n HyperStr   = go_str (n-1) HyperStr
     go_str _ _          = Nothing
+
+    go_abs 0 (USum m)
+      | Just dmd <- IM.lookup tag m
+      = splitUseProdDmd arity dmd
+      | otherwise
+      = pprPanic "dmdTransformDataConSig" (ppr arity $$ ppr sig $$ ppr dmd)
 
     go_abs 0 dmd            = splitUseProdDmd arity dmd
     go_abs n (UCall One u') = go_abs (n-1) u'
