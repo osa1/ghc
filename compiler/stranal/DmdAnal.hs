@@ -255,7 +255,6 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty [(DataAlt dc, bndrs, rhs)])
     --                     text "res_ty:" <+> ppr res_ty) $
     (res_ty, Case scrut' case_bndr' ty [(DataAlt dc, bndrs', rhs')])
 
-{-
 dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
   -- Demand analysis on sums
   | Just (tycon, _) <- splitTyConApp_maybe (idType case_bndr)
@@ -271,6 +270,8 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
           -- pprTrace "alt_tys" (text "expr:" <+> ppr expr $$ ppr alt_tys $$ ppr alts_dmd) $
           foldr lubDmdType botDmdType alt_tys
 
+
+            -- | PROBLEM IS HERE: Our scrutinee demand is getting lost!!!
         (alt_ty, case_bndr_dmd) = findBndrDmd env False alt_tys_lubd case_bndr
                                -- NB: Base case is botDmdType, for empty case alternatives
                                --     This is a unit for lubDmdType, and the right result
@@ -298,7 +299,6 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
     --                                , text "scrut_ty:" <+> ppr scrut_ty
     --                                ])
     (res_ty, Case scrut' case_bndr' ty alts_dmd)
--}
 
 dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
   = let      -- Case expression with multiple alternatives
