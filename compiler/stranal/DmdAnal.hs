@@ -1207,7 +1207,7 @@ extendSigsWithLam env id
   | isId id
   , isStrictDmd (idDemandInfo id) || ae_virgin env
   , Just (cons, _, _) <- deepSplitSumType_maybe (ae_fam_envs env) $ idType id
-  = extendAnalEnv NotTopLevel env id cprSumSig
+  = extendAnalEnv NotTopLevel env id (cprSumSig cons)
 
   | otherwise
   = env

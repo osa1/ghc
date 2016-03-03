@@ -1114,8 +1114,8 @@ cprSumRes tag = Dunno $ RetSum (IS.singleton tag)
 vanillaCprProdRes :: Arity -> DmdResult
 vanillaCprProdRes _arity = Dunno $ RetProd
 
-vanillaCprSumRes :: DmdResult
-vanillaCprSumRes = Dunno (RetSum IS.empty)
+vanillaCprSumRes :: [DataCon] -> DmdResult
+vanillaCprSumRes cons = Dunno (RetSum (IS.fromList (map dataConTag cons)))
 
 isTopRes :: DmdResult -> Bool
 isTopRes (Dunno NoCPR) = True
@@ -1402,9 +1402,9 @@ cprProdDmdType :: Arity -> DmdType
 cprProdDmdType arity
   = DmdType emptyDmdEnv [] (vanillaCprProdRes arity)
 
-cprSumDmdType :: DmdType
-cprSumDmdType
-  = DmdType emptyDmdEnv [] vanillaCprSumRes
+cprSumDmdType :: [DataCon] -> DmdType
+cprSumDmdType cons
+  = DmdType emptyDmdEnv [] (vanillaCprSumRes cons)
 
 isNopDmdType :: DmdType -> Bool
 isNopDmdType (DmdType env [] res)
@@ -1827,8 +1827,8 @@ botSig = StrictSig botDmdType
 cprProdSig :: Arity -> StrictSig
 cprProdSig arity = StrictSig (cprProdDmdType arity)
 
-cprSumSig :: StrictSig
-cprSumSig = StrictSig cprSumDmdType
+cprSumSig :: [DataCon] -> StrictSig
+cprSumSig cons = StrictSig (cprSumDmdType cons)
 
 seqStrictSig :: StrictSig -> ()
 seqStrictSig (StrictSig ty) = seqDmdType ty
