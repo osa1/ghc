@@ -77,8 +77,6 @@ import Type            ( Type, isUnliftedType )
 import TyCon           ( isNewTyCon, isClassTyCon )
 import DataCon         ( splitDataProductType_maybe, dataConTag, DataCon )
 
-import CoreSyn
-
 import Data.List (foldl')
 import qualified Data.IntSet as IS
 import qualified Data.IntMap.Strict as IM
@@ -478,9 +476,9 @@ lubUse (USum ux) Used              = USum (IM.map (`lubUse` Used) ux)
 lubUse (USum ux1) (USum ux2)       = USum (IM.unionWith lubUse ux1 ux2)
 lubUse Used (USum ux)              = USum (IM.map (`lubUse` Used) ux)
 
-lubUse dmd1@USum{} dmd2@UProd{}    = Used
-lubUse dmd1@UProd{} dmd2@USum{}    = Used
-lubUse dmd1@USum{} dmd2@UCall{}    = Used
+lubUse USum{}  UProd{}             = Used
+lubUse UProd{} USum{}              = Used
+lubUse USum{}  UCall{}             = Used
 lubUse dmd1@USum{} UHead{}         = dmd1
 
 lubUse Used _                      = Used  -- Note [Used should win]
@@ -878,7 +876,7 @@ insertSumDemands tag all_tags scrt_dmd prod_dmds =
 
 -- Definition 7.10 of Ralf Hinze's thesis
 extractSumDemandAlt :: Demand -> ConTag -> Demand
-extractSumDemandAlt dmd@(JD { sd = s, ud = u }) tag =
+extractSumDemandAlt (JD { sd = s, ud = u }) tag =
     JD (extractSumArgStr s tag) (extractSumArgUse u tag)
 
 extractSumArgStr :: ArgStr -> ConTag -> ArgStr
