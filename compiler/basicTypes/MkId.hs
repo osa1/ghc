@@ -839,8 +839,7 @@ dataConArgUnpack arg_ty
         let
           mkUbxSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
           mkUbxSumAlt alt con [] =
-            ( DataAlt con, [],
-              mkCoreUbxSum sum_alt_tys alt (Var (dataConWorkId (tupleDataCon Unboxed 0))) )
+            ( DataAlt con, [], mkCoreUbxSum sum_alt_tys alt (Var voidPrimId) )
 
           mkUbxSumAlt alt con [bndr] =
             ( DataAlt con, [bndr], mkCoreUbxSum sum_alt_tys alt (Var bndr) )
