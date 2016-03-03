@@ -5,7 +5,7 @@
 -}
 
 {-# LANGUAGE BangPatterns, CPP, MultiWayIf, NondecreasingIndentation,
-             ScopedTypeVariables #-}
+             ScopedTypeVariables, TupleSections #-}
 
 module WwLib ( mkWwBodies, mkWWstr, mkWorkerArgs
              , deepSplitProductType_maybe, deepSplitSumType_maybe
@@ -20,7 +20,7 @@ import Id
 import IdInfo           ( vanillaIdInfo )
 import DataCon
 import Demand
-import MkCore           ( mkRuntimeErrorApp, aBSENT_ERROR_ID, mkCoreUbxTup, mkCoreUbxSum, mkCoreConApps )
+import MkCore           ( mkRuntimeErrorApp, aBSENT_ERROR_ID, mkCoreUbxTup, mkCoreUbxSum )
 import MkId             ( voidArgId, voidPrimId, isUnpackableType )
 import TysPrim          ( voidPrimTy, floatPrimTy, doublePrimTy )
 import TysWiredIn       ( tupleDataCon, mkSumTy, sumDataCon, mkTupleTy )
@@ -521,12 +521,24 @@ mkWWstr_one dflags fam_envs arg
                            -- Don't pass the arg, rebox instead
 
   | isStrictDmd dmd
-  , Str _ (SSum m) <- getStrDmd dmd -- FIXME(osa): This part needs to be updated, probably.
-                                    -- in the product case above, we do things
-                                    -- differently, we check use flags etc.
   , isUnpackableType dflags fam_envs (idType arg)
   , Just (data_cons, inst_tys, co)
             <- deepSplitSumType_maybe fam_envs (idType arg)
+
+  , Just m <-
+      -- FIXME(osa): This part needs to be updated, probably.
+      -- in the product case above, we do things
+      -- differently, we check use flags etc.
+    case getStrDmd dmd of
+      Str _ (SSum m) ->
+        Just m
+      Str _ HeadStr  ->
+        -- FIXME(osa): This will probably be redundant once we fix DEFAULT
+        -- handling in sum types.
+        Just (IM.fromList (map (,HeadStr) (map dataConTag data_cons)))
+      _              ->
+        Nothing
+
   , IM.keysSet m == IS.fromList (map dataConTag data_cons)
   , pprTrace "====mkWWdmd====" (text "Demand WW on sum type. arg:" <+>
                                 ppr arg <+> parens (ppr (idType arg))) True
