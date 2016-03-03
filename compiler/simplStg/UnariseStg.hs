@@ -130,7 +130,7 @@ unariseExpr rho (StgConApp dc args) ty
   , (tycon, ty_args) <- splitTyConApp ty
   , ASSERT2(isUnboxedSumTyCon tycon, ppr ty $$ ppr tycon $$ ppr dc) True
   , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropRuntimeRepArgs ty_args)
-  , let args' = unariseArgs rho (filter (not . isVoidTy . stgArgType) args)
+  , let args' = unariseArgs rho (filter (not . isNullaryTupleArg) args)
   , (ubx_args, bx_args) <- partition (isUnliftedType . stgArgType) args'
   , let tag = dataConTag dc
   = return (StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
@@ -294,3 +294,7 @@ dummyDefaultAlt = (DEFAULT, [], StgApp rUNTIME_ERROR_ID [])
 
 mkTagArg :: Int -> StgArg
 mkTagArg = StgLitArg . MachInt . fromIntegral
+
+isNullaryTupleArg :: StgArg -> Bool
+isNullaryTupleArg StgLitArg{} = False
+isNullaryTupleArg (StgVarArg v) = v == ubxTupleId0

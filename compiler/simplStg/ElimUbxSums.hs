@@ -62,6 +62,9 @@ unboxedSumRepTypes alts =
         , isUnboxedSumTyCon tc
         = concatMap go (unboxedSumRepTypes (dropRuntimeRepArgs args))
 
+        -- | isVoidTy ty -- FIXME(osa): This seems wrong.
+        -- = []
+
         | otherwise
         = [ty]
 
@@ -92,9 +95,8 @@ unboxedSumTyConFields alts =
 -- unboxed tuples when we need more than one fields. This generates an unboxed
 -- tuple when necessary, to be used in unboxed sum alts.
 mkUbxSumAltTy :: [Type] -> Type
-mkUbxSumAltTy []   = voidPrimTy
 mkUbxSumAltTy [ty] = ty
-mkUbxSumAltTy tys  = mkTupleTy Unboxed tys
+mkUbxSumAltTy tys  = mkTupleTy Unboxed tys -- FIXME: nullary tuples are OK?
 
 --------------------------------------------------------------------------------
 
