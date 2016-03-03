@@ -532,14 +532,15 @@ addCaseBndrDmd :: Demand    -- On the case binder
                -> [Demand]  -- On the components of the constructor
                -> [Demand]  -- Final demands for the components of the constructor
 -- See Note [Demand on case-alternative binders]
-addCaseBndrDmd case_bndr_dmd@(JD { sd = ms, ud = mu }) alt_dmds
+addCaseBndrDmd (JD { sd = ms, ud = mu }) alt_dmds
   = case mu of
-      Abs     -> alt_dmds
-      Use _ u -> zipWith bothDmd alt_dmds (mkJointDmds ss us)
-              where
-                arity   = length alt_dmds
+     Abs     -> alt_dmds
+     Use _ u -> zipWith bothDmd alt_dmds (mkJointDmds ss us)
+             where
                 Just ss = splitArgStrProdDmd arity ms  -- Guaranteed not to be a call
-                Just us = splitUseProdDmd    arity u   -- Ditto
+                Just us = splitUseProdDmd      arity u   -- Ditto
+  where
+    arity = length alt_dmds
 
 {- Note [Demand on case-alternative binders]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
