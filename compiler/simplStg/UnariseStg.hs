@@ -42,21 +42,15 @@ import Literal (Literal (..))
 import MkCore (rUNTIME_ERROR_ID)
 import MkId (realWorldPrimId)
 import MonadUtils (mapAccumLM)
-import Name
-import OccName
 import Outputable
 import StgSyn
 import TyCon
 import Type
 import TysPrim (intPrimTy, anyTypeOfKind, intPrimTyCon)
 import TysWiredIn
-import DataCon
-import OccName
-import Name
 import UniqSupply
 import Util
 import VarEnv
-import VarSet
 
 import Data.Bifunctor (second)
 import Data.List (partition)
@@ -87,7 +81,7 @@ unariseBinding rho (StgRec xrhss)    =
     StgRec <$> mapM (\(x, rhs) -> (x,) <$> unariseRhs rho rhs) xrhss
 
 unariseRhs :: UnariseEnv -> StgRhs -> UniqSM StgRhs
-unariseRhs rho rhs@(StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
+unariseRhs rho (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
   = do (rho', args') <- unariseIdBinders rho args
        expr' <- unariseExpr rho' expr body_ty
        return (StgRhsClosure ccs b_info (unariseIds rho fvs) update_flag args' expr' body_ty)
@@ -126,7 +120,7 @@ unariseExpr rho (StgApp f args) ty
 unariseExpr _ (StgLit l) _
   = return (StgLit l)
 
-unariseExpr rho e@(StgConApp dc args) ty
+unariseExpr rho (StgConApp dc args) ty
   | isUnboxedTupleCon dc
   , let args' = unariseArgs rho args
   = return (StgConApp (tupleDataCon Unboxed (length args')) args')
@@ -150,7 +144,7 @@ unariseExpr rho e@(StgConApp dc args) ty
 unariseExpr rho (StgOpApp op args ty) _
   = return (StgOpApp op (unariseArgs rho args) ty)
 
-unariseExpr rho e@StgLam{} _
+unariseExpr _ e@StgLam{} _
   = pprPanic "unariseExpr: found lambda" (ppr e)
 
 unariseExpr rho (StgCase e bndr alt_ty alts) ty
@@ -214,6 +208,8 @@ unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
 
            return ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], ret )
 
+         mkAlt alt@(LitAlt{}, _, _) = pprPanic "unariseAlts.mkAlt" (ppr alt)
+
        inner_case <-
          StgCase (StgApp tag_bndr []) tag_bndr
                  (PrimAlt intPrimTyCon) . mkDefaultAlt <$> mapM mkAlt alts
@@ -275,9 +271,6 @@ unariseIdBinder rho x =
 
 mkIds :: FastString -> [UnaryType] -> UniqSM [Id]
 mkIds fs tys = mapM (mkSysLocalOrCoVarM fs) tys
-
-concatMapVarSet :: (Var -> [Var]) -> VarSet -> VarSet
-concatMapVarSet f xs = mkVarSet [x' | x <- varSetElems xs, x' <- f x]
 
 --------------------------------------------------------------------------------
 

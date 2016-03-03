@@ -212,7 +212,7 @@ dmdAnal' env dmd (Lam var body)
     in
     (postProcessUnsat defer_and_use lam_ty, Lam var' body')
 
-dmdAnal' env dmd expr@(Case scrut case_bndr ty [(DataAlt dc, bndrs, rhs)])
+dmdAnal' env dmd _expr@(Case scrut case_bndr ty [(DataAlt dc, bndrs, rhs)])
   -- Only one alternative with a product constructor
   | let tycon = dataConTyCon dc
   , isJust (isDataProductTyCon_maybe tycon)
@@ -227,7 +227,7 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty [(DataAlt dc, bndrs, rhs)])
         id_dmds :: [Demand]
         id_dmds                  =
           -- pprTrace "dmdAnal'"
-          --   (text "expr:" <+> ppr expr $$
+          --   (text "expr:" <+> ppr _expr $$
           --    text "case_bndr_dmd:" <+> ppr case_bndr_dmd) $
           addCaseBndrDmd case_bndr_dmd dmds
 
@@ -242,7 +242,7 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty [(DataAlt dc, bndrs, rhs)])
         case_bndr'         = setIdDemandInfo case_bndr case_bndr_dmd
         bndrs'             = setBndrsDemandInfo bndrs id_dmds
     in
-    -- pprTrace "dmdAnal" (text "expr:" <+> ppr expr $$
+    -- pprTrace "dmdAnal" (text "expr:" <+> ppr _expr $$
     --                     text "bndrs:" <+> ppr bndrs $$
     --                     text "env:" <+> ppr env $$
     --                     text "env_alt:" <+> ppr env_alt $$
@@ -256,7 +256,7 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty [(DataAlt dc, bndrs, rhs)])
     --                     text "res_ty:" <+> ppr res_ty) $
     (res_ty, Case scrut' case_bndr' ty [(DataAlt dc, bndrs', rhs')])
 
-dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
+dmdAnal' env dmd _expr@(Case scrut case_bndr ty alts)
   -- Demand analysis on sums
   | doSumDmd (ae_dflags env)
   , Just (tycon, _) <- splitTyConApp_maybe (idType case_bndr)
@@ -269,7 +269,7 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
         alt_tys :: [DmdType]
         (alt_tys, alts_dmd)     = mapAndUnzip (dmdAnalSumAlt env dmd case_bndr all_tags) alts
         alt_tys_lubd            =
-          -- pprTrace "alt_tys" (text "expr:" <+> ppr expr $$ ppr alt_tys $$ ppr alts_dmd) $
+          -- pprTrace "alt_tys" (text "expr:" <+> ppr _expr $$ ppr alt_tys $$ ppr alts_dmd) $
           foldr lubDmdType botDmdType alt_tys
 
         (alt_ty, case_bndr_dmd) = findBndrDmd env False alt_tys_lubd case_bndr
@@ -289,7 +289,7 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
         -- See Note [Demand on scrutinee of a product case]
         case_bndr'         = setIdDemandInfo case_bndr case_bndr_dmd
     in
---    pprTrace "dmdAnal:Case2" (vcat [ text "expr" <+> ppr expr
+--    pprTrace "dmdAnal:Case2" (vcat [ text "expr" <+> ppr _expr
 --                                   , text "case_bndr:" <+> ppr case_bndr
 --                                   , text "alt_tys:" <+> ppr alt_tys
 --                                   , text "alt_tys_lubd:" <+> ppr alt_tys_lubd
@@ -300,7 +300,7 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
 --                                   ])
     (res_ty, Case scrut' case_bndr' ty alts_dmd)
 
-dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
+dmdAnal' env dmd _expr@(Case scrut case_bndr ty alts)
   = let      -- Case expression with multiple alternatives
         alt_tys :: [DmdType]
         (alt_tys, alts')     = mapAndUnzip (dmdAnalAlt env dmd case_bndr) alts
@@ -312,7 +312,7 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
         res_ty :: DmdType
         res_ty               = alt_ty `bothDmdType` toBothDmdArg scrut_ty
     in
-    -- pprTrace "dmdAnal:Case2" (vcat [ text "expr" <+> ppr expr
+    -- pprTrace "dmdAnal:Case2" (vcat [ text "expr" <+> ppr _expr
     --                                , text "scrut_ty" <+> ppr scrut_ty
     --                                , text "alt_tys" <+> ppr alt_tys
     --                                , text "alt_ty" <+> ppr alt_ty
@@ -387,7 +387,7 @@ setOneShotness One  bndr = setOneShotLambda bndr
 setOneShotness Many bndr = bndr
 
 dmdAnalAlt :: AnalEnv -> CleanDemand -> Id -> CoreAlt -> (DmdType, CoreAlt)
-dmdAnalAlt env dmd case_bndr alt@(con,bndrs,rhs)
+dmdAnalAlt env dmd case_bndr _alt@(con,bndrs,rhs)
   | null bndrs    -- Literals, DEFAULT, and nullary constructors
   , (rhs_ty, rhs') <- dmdAnal env dmd rhs
   = (rhs_ty, (con, [], rhs'))
@@ -404,7 +404,7 @@ dmdAnalAlt env dmd case_bndr alt@(con,bndrs,rhs)
 
       id_dmds :: [Demand]
       id_dmds       =
-        -- pprTrace "dmdAnalAlt" (text "alt:" <+> ppr alt $$
+        -- pprTrace "dmdAnalAlt" (text "alt:" <+> ppr _alt $$
         --                        text "case_bndr:" <+> ppr case_bndr $$
         --                        text "bndrs:" <+> ppr bndrs $$
         --                        text "bndr demands:" <+> ppr dmds $$
@@ -415,7 +415,7 @@ dmdAnalAlt env dmd case_bndr alt@(con,bndrs,rhs)
     --                        text "rhs:"     <+> ppr rhs $$
     --                        text "rhs_ty:"  <+> ppr rhs_ty $$
     --                        text "id_dmds:" <+> ppr id_dmds)
-    -- pprTrace "dmdAnalAlt" (text "alt:" <+> ppr alt $$
+    -- pprTrace "dmdAnalAlt" (text "alt:" <+> ppr _alt $$
     --                        text "case_bndr:" <+> ppr case_bndr $$
     --                        text "bndrs:" <+> ppr bndrs $$
     --                        text "bndr demands:" <+> ppr dmds $$
@@ -428,12 +428,12 @@ dmdAnalSumAlt :: AnalEnv -> CleanDemand -> Id -> [ConTag] -> CoreAlt -> (DmdType
 dmdAnalSumAlt _ _ _ _ alt@(LitAlt{},_,_)
   = pprPanic "dmdAnalSumAlt" (text "Found a literal:" <+> ppr alt)
 
-dmdAnalSumAlt env dmd case_bndr _ alt@(DEFAULT, bndrs, rhs)
+dmdAnalSumAlt env dmd case_bndr _ alt@(DEFAULT, _, _)
   = -- FIXME: Consider all the tags that are not part of the map, products will
     -- be SProd of LLLL...
     dmdAnalAlt env dmd case_bndr alt
 
-dmdAnalSumAlt env dmd case_bndr con_tags alt@(DataAlt con, bndrs, rhs)
+dmdAnalSumAlt env dmd case_bndr con_tags _alt@(DataAlt con, bndrs, rhs)
   = let
       (rhs_ty, rhs') = dmdAnal env dmd rhs
 
@@ -456,7 +456,7 @@ dmdAnalSumAlt env dmd case_bndr con_tags alt@(DataAlt con, bndrs, rhs)
         let sumAltProdDmd = extractSumDemandAlt case_bndr_orig_dmd (dataConTag con)
          in -- TODO: Extract from case_bndr_dmd, not from case_bndr_orig_dmd
             -- pprTrace "dmdAnalSumAlt"
-            --   (text "alt:" <+> ppr alt $$
+            --   (text "alt:" <+> ppr _alt $$
             --    text "case_bndr_orig_dmd:" <+> ppr case_bndr_orig_dmd $$
             --    text "case_bndr_dmd:" <+> ppr case_bndr_dmd $$
             --    text "sumAltProdDmd:" <+> ppr sumAltProdDmd) $
