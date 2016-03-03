@@ -257,7 +257,8 @@ dmdAnal' env dmd expr@(Case scrut case_bndr ty [(DataAlt dc, bndrs, rhs)])
 
 dmdAnal' env dmd expr@(Case scrut case_bndr ty alts)
   -- Demand analysis on sums
-  | Just (tycon, _) <- splitTyConApp_maybe (idType case_bndr)
+  | doSumDmd (ae_dflags env)
+  , Just (tycon, _) <- splitTyConApp_maybe (idType case_bndr)
   , Just cons       <- isDataSumTyCon_maybe tycon
   , not (isRecursiveTyCon tycon)
   , not (isEnumerationTyCon tycon)

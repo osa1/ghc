@@ -887,6 +887,9 @@ data DynFlags = DynFlags {
   -- | Max flattened size, in words, of sum types that can be unpacked
   unboxSmallStrictSums :: Maybe Int,
 
+  -- | Demand analysis on sums
+  doSumDmd :: Bool,
+
   -- | Worker/wrapper for unboxed sums
   doSumCprWw :: Bool,
   doSumDmdWw :: Bool
@@ -1602,6 +1605,7 @@ defaultDynFlags mySettings =
 
         unboxSmallStrictSums = Nothing,
 
+        doSumDmd   = False,
         doSumCprWw = False,
         doSumDmdWw = False
       }
@@ -2878,6 +2882,8 @@ dynamic_flags_deps = [
   , make_ord_flag defFlag "funbox-small-strict-sums"
       (optIntSuffix (\mi d -> d { unboxSmallStrictSums = mi <|> Just 2 }))
 
+  , make_ord_flag defFlag "fdo-sum-dmd"
+      (noArg (\d -> d { doSumDmd = True }))
   , make_ord_flag defFlag "fdo-sum-cpr-ww"
       (noArg (\d -> d { doSumCprWw = True } ))
   , make_ord_flag defFlag "fdo-sum-dmd-ww"
