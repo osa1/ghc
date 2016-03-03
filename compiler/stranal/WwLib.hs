@@ -571,7 +571,7 @@ mkWWstr_one dflags fam_envs arg
                      , con_field_bndrs
                      , mkCoreUbxSum sum_alt_tys (dataConTag con) $
                          case con_field_bndrs of
-                           []     -> Var voidPrimId -- FIXME: lifted or unlifted void?
+                           []     -> Var (dataConWorkId (tupleDataCon Unboxed 0))
                            [bndr] -> Var bndr
                            _      -> mkCoreUbxTup con_args (map Var con_field_bndrs)
                      )
@@ -598,7 +598,7 @@ mkWWstr_one dflags fam_envs arg
                        alt_con     = DataAlt (sumDataCon (dataConTag con) (length data_cons_sorted))
                    case con_arg_tys of
                      []   -> do
-                       field_bndr <- mkWwLocalM voidPrimTy
+                       field_bndr <- mkWwLocalM (mkTupleTy Unboxed [])
                        return (alt_con, [field_bndr],
                                mkConApp2 con inst_tys [] `mkCast` mkSymCo co)
                      [ty] -> do
