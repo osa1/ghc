@@ -2118,7 +2118,7 @@ instance Binary StrDmd where
            3 -> do sx <- get bh
                    return (SProd sx)
            4 -> SSum . IM.fromList <$> get bh
-           _ -> pprPanic "Binary instance of StrDmd" (text "unexpected tag byte:" <+> text (show h))
+           _ -> pprPanic "StrDmd get: Wrong tag:" (text (show h))
 
 instance Binary ExnStr where
   put_ bh VanStr = putByte bh 0
@@ -2127,7 +2127,8 @@ instance Binary ExnStr where
   get bh = do h <- getByte bh
               return (case h of
                         0 -> VanStr
-                        _ -> ExnStr)
+                        1 -> ExnStr
+                        _ -> pprPanic "ExnStr get: Wrong tag:" (text (show h)))
 
 instance Binary ArgStr where
     put_ bh Lazy         = do
@@ -2141,9 +2142,10 @@ instance Binary ArgStr where
             h <- getByte bh
             case h of
               0 -> return Lazy
-              _ -> do x <- get bh
+              1 -> do x <- get bh
                       s  <- get bh
                       return $ Str x s
+              _ -> pprPanic "ArgStr get: Wrong tag:" (text (show h))
 
 instance Binary Count where
     put_ bh One  = do putByte bh 0
@@ -2152,7 +2154,8 @@ instance Binary Count where
     get  bh = do h <- getByte bh
                  case h of
                    0 -> return One
-                   _ -> return Many
+                   1 -> return Many
+                   _ -> pprPanic "Count get: Wrong tag:" (text (show h))
 
 instance Binary ArgUse where
     put_ bh Abs          = do
@@ -2166,9 +2169,10 @@ instance Binary ArgUse where
             h <- getByte bh
             case h of
               0 -> return Abs
-              _ -> do c  <- get bh
+              1 -> do c  <- get bh
                       u  <- get bh
                       return $ Use c u
+              _ -> pprPanic "ArgUse get: Wrong tag:" (text (show h))
 
 instance Binary UseDmd where
     put_ bh Used         = do
@@ -2233,7 +2237,8 @@ instance Binary DmdResult where
               ; case h of
                   0 -> do { c <- get bh; return (Dunno c) }
                   1 -> return ThrowsExn
-                  _ -> return Diverges }
+                  2 -> return Diverges
+                  _ -> pprPanic "DmdResult get: Wrong tag:" (text (show h)) }
 
 instance Binary CPRResult where
     put_ bh (RetSum n)   = do { putByte bh 0; put_ bh (IS.toList n) }
@@ -2245,4 +2250,5 @@ instance Binary CPRResult where
             case h of
               0 -> do { n <- get bh; return (RetSum (IS.fromList n)) }
               1 -> return RetProd
-              _ -> return NoCPR
+              2 -> return NoCPR
+              _ -> pprPanic "CPRResult get: Wrong tag:" (text (show h))
