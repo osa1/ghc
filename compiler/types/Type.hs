@@ -1236,8 +1236,6 @@ repType ty
       = go rec_nts' (newTyConInstRhs tc tys)
 
       | isUnboxedTupleTyCon tc
-      , let non_levity_tys = drop (length tys `div` 2) tys
-          -- See Note [Unboxed tuple levity vars] in TyCon
       = if null tys
          then UnaryRep voidPrimTy -- See Note [Nullary unboxed tuple]
          else UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
