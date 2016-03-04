@@ -3815,6 +3815,9 @@ setUnboxSmallStrictSums :: Maybe Int -> DynFlags -> DynFlags
 setUnboxSmallStrictSums mws d =
     d { unboxSmallStrictSums = mws <|> Just smallSumSize }
 
+smallSumSize :: Int
+smallSumSize   = 2
+
 -- -----------------------------------------------------------------------------
 -- Standard sets of warning options
 
