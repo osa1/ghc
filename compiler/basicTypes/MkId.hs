@@ -470,17 +470,7 @@ dataConCPR con
 --     another expression that binds the variables before the input expression.
 --     (e.g. by wrapping the input expression with a case or let expression)
 --
--- NOTE(osa): As a part of generalizing UNPACK support, I'm changing what second
--- element of the pair does. It should now take, as argument, the data con, and
--- it should apply the variables. Previously, the argument was the data con
--- application, the variables were applied by the caller. Now we're handling
--- that.
---
--- EDIT: Actually, since we're applying whatever we want to the constructor, we
--- don't need to return variables. So I'm removing the pair, we now return just
--- a `CoreExpr -> CoreExpr` functions.
---
-type Unboxer = Var -> UniqSM (CoreExpr -> CoreExpr)
+type Unboxer = Var -> UniqSM ([Var], CoreExpr -> CoreExpr)
 
 -- | Boxer packs fields of an unboxed type to generate the boxed version again.
 --   This is used when pattern matching on the unboxing constructor.
@@ -619,8 +609,9 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
     mk_rep_app [] con_app
       = return con_app
     mk_rep_app ((wrap_arg, unboxer) : prs) con_app
-      = do { unbox_fn <- unboxer wrap_arg
-           ; mk_rep_app prs (unbox_fn con_app) }
+      = do { (rep_ids, unbox_fn) <- unboxer wrap_arg
+           ; expr <- mk_rep_app prs (mkVarApps con_app rep_ids)
+           ; return (unbox_fn expr) }
 
 {-
 Note [Bangs on imported data constructors]
@@ -760,9 +751,9 @@ wrapCo co rep_ty (unbox_rep, box_rep)  -- co :: arg_ty ~ rep_ty
   = (unboxer, boxer)
   where
     unboxer arg_id = do { rep_id <- newLocal rep_ty
-                        ; rep_fn <- unbox_rep rep_id
+                        ; (rep_ids, rep_fn) <- unbox_rep rep_id
                         ; let co_bind = NonRec rep_id (Var arg_id `Cast` co)
-                        ; return (Let co_bind . rep_fn) }
+                        ; return (rep_ids, Let co_bind . rep_fn) }
     boxer = Boxer $ \ subst ->
             do { (rep_ids, rep_expr)
                     <- case box_rep of
@@ -774,13 +765,10 @@ wrapCo co rep_ty (unbox_rep, box_rep)  -- co :: arg_ty ~ rep_ty
 
 ------------------------
 seqUnboxer :: Unboxer
-seqUnboxer v =
-    return $ \e ->
-      let app = mkVarApps e [v]
-       in Case (Var v) v (exprType app) [(DEFAULT, [], app)]
+seqUnboxer v = return ([v], \e -> Case (Var v) v (exprType e) [(DEFAULT, [], e)])
 
 unitUnboxer :: Unboxer
-unitUnboxer v = return (\e -> mkVarApps e [v])
+unitUnboxer v = return ([v], \e -> e)
 
 unitBoxer :: Boxer
 unitBoxer = UnitBox
@@ -804,10 +792,9 @@ dataConArgUnpack arg_ty
     ,( \ arg_id ->
        do { rep_ids <- mapM newLocal rep_tys
           ; let unbox_fn body
-                  = let app = mkVarApps body rep_ids
-                     in Case (Var arg_id) arg_id (exprType app)
-                             [( DataAlt con, rep_ids, app )]
-          ; return unbox_fn }
+                  = Case (Var arg_id) arg_id (exprType body)
+                         [(DataAlt con, rep_ids, body)]
+          ; return (rep_ids, unbox_fn) }
      , Boxer $ \ subst ->
        do { rep_ids <- mapM (newLocal . TcType.substTyUnchecked subst) rep_tys
           ; return (rep_ids, Var (dataConWorkId con)
@@ -834,7 +821,7 @@ dataConArgUnpack arg_ty
       unboxer :: Unboxer
       unboxer arg_id = do
         con_arg_binders <- mapM (mapM newLocal) rep_tys
-        -- ubx_sum_bndr <- newLocal sum_ty
+        ubx_sum_bndr <- newLocal sum_ty
 
         let
           mkUbxSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
@@ -856,11 +843,9 @@ dataConArgUnpack arg_ty
 
           unbox_fn :: CoreExpr -> CoreExpr
           unbox_fn body =
-            mkCoreApp (text "MkId.unbox_fn") body ubxSum
-            -- let rhs = App body (Var ubx_sum_bndr)
-            --  in Case ubxSum ubx_sum_bndr (exprType rhs) [ ( DEFAULT, [], rhs ) ]
+            Case ubxSum ubx_sum_bndr (exprType body) [ ( DEFAULT, [], body ) ]
 
-        return unbox_fn
+        return ([ubx_sum_bndr], unbox_fn)
 
       boxer :: Boxer
       boxer = Boxer $ \ subst -> do
