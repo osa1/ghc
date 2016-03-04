@@ -867,10 +867,10 @@ mkWWcpr_sum_help data_cons inst_tys co body_ty = do
           con_app = mkConApp2 con inst_tys con_args `mkCast` mkSymCo co
           sum_con = sumDataCon ubx_sum_tag (length data_cons_sorted)
 
-        if | null con_args ->
-               pprPanic "WwLib.mkUbxSumAlts"
-                 (text $ "One of our invariants should have been invalidated! " ++
-                         "Found a nullary sum con!")
+        if | null con_args -> do
+               null_bndr <- mkWwLocalM (mkTupleTy Unboxed [])
+               ((DataAlt sum_con, [null_bndr], con_app) :) <$>
+                 mkUbxSumAlts cons (ubx_sum_tag + 1)
            | length con_args == 1 ->
                ((DataAlt sum_con, con_args, con_app) :) <$>
                  mkUbxSumAlts cons (ubx_sum_tag + 1)
