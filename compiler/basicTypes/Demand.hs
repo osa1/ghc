@@ -282,7 +282,7 @@ lubStr (SProd _) (SCall _)     = HeadStr
 lubStr (SSum s1) (SSum s2)     =
   -- (lubStr should be on equaivalent sums, orStr should be this (make sure the
   -- key setes are disjoint though))
-  SSum (IM.unionWith lubStr s1 s2)
+  SSum (IM.unionWith (\_ _ -> HeadStr) s1 s2)
 
 lubStr (SSum _) HeadStr       = HeadStr
 lubStr s@SSum{} HyperStr      = s
@@ -473,7 +473,7 @@ lubUse (UProd ux) Used             = UProd (map (`lubArgUse` useTop) ux)
 lubUse Used       (UProd ux)       = UProd (map (`lubArgUse` useTop) ux)
 
 lubUse (USum ux) Used              = USum (IM.map (`lubUse` Used) ux)
-lubUse (USum ux1) (USum ux2)       = USum (IM.unionWith lubUse ux1 ux2)
+lubUse (USum ux1) (USum ux2)       = USum (IM.unionWith (\_ _ -> Used) ux1 ux2)
 lubUse Used (USum ux)              = USum (IM.map (`lubUse` Used) ux)
 
 lubUse USum{}  UProd{}             = Used
