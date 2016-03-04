@@ -834,7 +834,7 @@ dataConArgUnpack arg_ty
       unboxer :: Unboxer
       unboxer arg_id = do
         con_arg_binders <- mapM (mapM newLocal) rep_tys
-        ubx_sum_bndr <- newLocal sum_ty
+        -- ubx_sum_bndr <- newLocal sum_ty
 
         let
           mkUbxSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
@@ -856,8 +856,9 @@ dataConArgUnpack arg_ty
 
           unbox_fn :: CoreExpr -> CoreExpr
           unbox_fn body =
-            let rhs = App body (Var ubx_sum_bndr)
-             in Case ubxSum ubx_sum_bndr (exprType rhs) [ ( DEFAULT, [], rhs ) ]
+            mkCoreApp (text "MkId.unbox_fn") body ubxSum
+            -- let rhs = App body (Var ubx_sum_bndr)
+            --  in Case ubxSum ubx_sum_bndr (exprType rhs) [ ( DEFAULT, [], rhs ) ]
 
         return unbox_fn
 
