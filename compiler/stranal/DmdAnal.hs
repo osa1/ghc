@@ -748,7 +748,7 @@ dmdAnalRhs top_lvl rec_flag env id rhs
 
     rhs_res'  = trimCPRInfo trim_all trim_sums rhs_res -- FIXME(osa): Why trim sums specifically?
     trim_all  = is_thunk && not_strict
-    trim_sums = not (isTopLevel top_lvl) -- See Note [CPR for sum types]
+    trim_sums = False -- not (isTopLevel top_lvl) -- See Note [CPR for sum types]
 
     -- See Note [CPR for thunks]
     is_thunk = not (exprIsHNF rhs)

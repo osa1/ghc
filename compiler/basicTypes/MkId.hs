@@ -12,7 +12,7 @@ have a standard form, namely:
 - primitive operations
 -}
 
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, MultiWayIf #-}
 
 module MkId (
         mkDictFunId, mkDictFunTy, mkDictSelId, mkDictSelRhs,
@@ -80,7 +80,7 @@ import ElimUbxSums
 import qualified GHC.LanguageExtensions as LangExt
 
 import Data.List        ( zipWith4 )
-import Data.Maybe       ( maybeToList )
+import Data.Maybe       ( maybeToList, isJust )
 
 {-
 ************************************************************************
@@ -427,14 +427,24 @@ dataConCPR con
   | isDataTyCon tycon     -- Real data types only; that is,
                           -- not unboxed tuples or newtypes
   , null (dataConExTyVars con)  -- No existentials
-  , wkr_arity > 0
-  , wkr_arity <= mAX_CPR_SIZE
-  = if is_prod then vanillaCprProdRes (dataConRepArity con)
-               else cprSumRes (dataConTag con)
+  = if | isProductTyCon tycon && wkr_arity > 0 && wkr_arity <= mAX_CPR_SIZE
+         -> vanillaCprProdRes (dataConRepArity con)
+
+       | isJust (isDataSumTyCon_maybe tycon)
+          -- TODO(osa): This test returns false for newtypes. For some reason
+          -- the product test above returns true even if the newtype is for a
+          -- sum type. This may be a bug in stock GHC actually.
+         ->
+           -- We don't check wkr_arity here, we want to give nullary
+           -- constructors CPR property when the type is a sum
+           pprTrace "dataConCPR" (text "giving CPR property:" <+> ppr con) $
+           cprSumRes (dataConTag con)
+       | otherwise
+         -> topRes
+
   | otherwise
   = topRes
   where
-    is_prod   = isProductTyCon tycon
     tycon     = dataConTyCon con
     wkr_arity = dataConRepArity con
 
