@@ -107,7 +107,7 @@ exprType e@(App _ _)
   = case collectArgs e of
         (fun, args) -> applyTypeToArgs e (exprType fun) args
 
-exprType other = pprTrace "exprType" (pprCoreExpr other) alphaTy
+exprType other = {- pprTrace "exprType" (pprCoreExpr other) -} alphaTy
 
 coreAltType :: CoreAlt -> Type
 -- ^ Returns the type of the alternatives right hand side
