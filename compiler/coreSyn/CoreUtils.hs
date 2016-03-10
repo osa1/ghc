@@ -68,6 +68,8 @@ import TyCon
 import Unique
 import Outputable
 import TysPrim
+import TysWiredIn          ( mkTupleTy )
+import BasicTypes          ( Boxity(Unboxed) )
 import DynFlags
 import FastString
 import Maybes
@@ -1609,17 +1611,24 @@ c.f. add_evals in Simplify.simplAlt
 --      otherwise, they may or may not be equal.
 --
 -- See also 'exprIsBig'
-cheapEqExpr :: Expr b -> Expr b -> Bool
+cheapEqExpr :: CoreExpr -> CoreExpr -> Bool
 cheapEqExpr = cheapEqExpr' (const False)
 
 -- | Cheap expression equality test, can ignore ticks by type.
-cheapEqExpr' :: (Tickish Id -> Bool) -> Expr b -> Expr b -> Bool
+cheapEqExpr' :: (Tickish Id -> Bool) -> CoreExpr -> CoreExpr -> Bool
 cheapEqExpr' ignoreTick = go_s
-  where go_s = go `on` stripTicksTopE ignoreTick
+  where ubxTuple0Ty = mkTupleTy Unboxed []
+
+        go_s = go `on` stripTicksTopE ignoreTick
         go (Var v1)   (Var v2)   = v1 == v2
         go (Lit lit1) (Lit lit2) = lit1 == lit2
         go (Type t1)  (Type t2)  = t1 `eqType` t2
         go (Coercion c1) (Coercion c2) = c1 `eqCoercion` c2
+
+        go (App f1 a1) (App f2 a2)
+          | exprType a1 `eqType` ubxTuple0Ty &&
+            exprType a2 `eqType` ubxTuple0Ty
+          = f1 `go_s` f2
 
         go (App f1 a1) (App f2 a2)
           = f1 `go_s` f2 && a1 `go_s` a2
