@@ -1765,74 +1765,57 @@ constructors are vanishingly rare.
 expandSynonymsToMatch :: Type -> Type -> (Type, Type)
 expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
   where
-    (_, ty1_ret, ty2_ret) = go 0 ty1 ty2
+    (ty1_ret, ty2_ret) = go ty1 ty2 ty2
 
     -- | Returns (number of synonym expansions done to make types similar,
     --            type synonym expanded version of first type,
     --            type synonym expanded version of second type)
     --
-    -- Int argument is number of synonym expansions done so far.
-    go :: Int -> Type -> Type -> (Int, Type, Type)
-    go exps t1 t2
+    -- Int arguments are number of synonym expansions done so far.
+    go :: Type -> Type
+       -> Type -- ^ Original second type before starting expanding it
+       -> (Type, Type)
+    go t1 t2 _
       | t1 `pickyEqType` t2 =
         -- Types are same, nothing to do
-        (exps, t1, t2)
+        (t1, t2)
 
-    go exps t1@(TyConApp tc1 tys1) t2@(TyConApp tc2 tys2)
+    go (TyConApp tc1 tys1) (TyConApp tc2 tys2) _
       | tc1 == tc2 =
         -- Type constructors are same. They may be synonyms, but we don't
         -- expand further.
-        let (exps', tys1', tys2') = unzip3 $ zipWith (go 0) tys1 tys2
-         in (exps + sum exps', TyConApp tc1 tys1', TyConApp tc2 tys2')
-      | otherwise =
-        -- Try to expand type constructors
-        case (coreView t1, coreView t2) of
-          -- When only one of the constructors is a synonym, we just
-          -- expand it and continue search
-          (Just t1', Nothing) ->
-            go (exps + 1) t1' t2
-          (Nothing, Just t2') ->
-            go (exps + 1) t1 t2'
-          (Just t1', Just t2') ->
-            -- Both constructors are synonyms, but they may be synonyms of
-            -- each other. We just search for minimally expanded solution.
-            -- See Note [Expanding type synonyms to make types similar].
-            let sol1@(exp1, _, _) = go (exps + 1) t1' t2
-                sol2@(exp2, _, _) = go (exps + 1) t1 t2'
-             in if exp1 < exp2 then sol1 else sol2
-          (Nothing, Nothing) ->
-            -- None of the constructors are synonyms, nothing to do
-            (exps, t1, t2)
+        let (tys1', tys2') = unzip (zipWith (\ty1 ty2 -> go ty1 ty2 ty2) tys1 tys2)
+         in (TyConApp tc1 tys1', TyConApp tc2 tys2')
 
-    go exps t1@TyConApp{} t2
-      | Just t1' <- coreView t1 = go (exps + 1) t1' t2
-      | otherwise               = (exps, t1, t2)
+    go (AppTy t1_1 t1_2) (AppTy t2_1 t2_2) _ =
+      let (t1_1', t2_1') = go t1_1 t2_1 t2_1
+          (t1_2', t2_2') = go t1_2 t2_2 t2_2
+       in (mkAppTy t1_1' t1_2', mkAppTy t2_1' t2_2')
 
-    go exps t1 t2@TyConApp{}
-      | Just t2' <- coreView t2 = go (exps + 1) t1 t2'
-      | otherwise               = (exps, t1, t2)
+    go (ForAllTy (Anon t1_1) t1_2) (ForAllTy (Anon t2_1) t2_2) _ =
+      let (t1_1', t2_1') = go t1_1 t2_1 t2_1
+          (t1_2', t2_2') = go t1_2 t2_2 t2_2
+       in (mkFunTy t1_1' t1_2', mkFunTy t2_1' t2_2')
 
-    go exps (AppTy t1_1 t1_2) (AppTy t2_1 t2_2) =
-      let (exps1, t1_1', t2_1') = go 0 t1_1 t2_1
-          (exps2, t1_2', t2_2') = go 0 t1_2 t2_2
-       in (exps + exps1 + exps2, mkAppTy t1_1' t1_2', mkAppTy t2_1' t2_2')
-
-    go exps (ForAllTy (Anon t1_1) t1_2) (ForAllTy (Anon t2_1) t2_2) =
-      let (exps1, t1_1', t2_1') = go 0 t1_1 t2_1
-          (exps2, t1_2', t2_2') = go 0 t1_2 t2_2
-       in (exps + exps1 + exps2, mkFunTy t1_1' t1_2', mkFunTy t2_1' t2_2')
-
-    go exps (ForAllTy (Named tv1 vis1) t1) (ForAllTy (Named tv2 vis2) t2) =
+    go (ForAllTy (Named tv1 vis1) t1) (ForAllTy (Named tv2 vis2) t2) _ =
       -- NOTE: We may have a bug here, but we just can't reproduce it easily.
       -- See D1016 comments for details and our attempts at producing a test
       -- case. Short version: We probably need RnEnv2 to really get this right.
-      let (exps1, t1', t2') = go exps t1 t2
-       in (exps1, ForAllTy (Named tv1 vis1) t1', ForAllTy (Named tv2 vis2) t2')
+      let (t1', t2') = go t1 t2 t2
+       in (ForAllTy (Named tv1 vis1) t1', ForAllTy (Named tv2 vis2) t2')
 
-    go exps (CastTy ty1 _) ty2 = go exps ty1 ty2
-    go exps ty1 (CastTy ty2 _) = go exps ty1 ty2
+    go (CastTy ty1 _) ty2 _ = go ty1 ty2 ty2
+    go ty1 (CastTy ty2 _) _ = go ty1 ty2 ty2
 
-    go exps t1 t2 = (exps, t1, t2)
+    go t1 t2 t2_orig =
+      -- Try to expand t2 first
+      case coreView t2 of
+        Just t2' -> go t1 t2' t2_orig
+        Nothing  ->
+          -- Reset t2 and expand t1
+          case coreView t1 of
+            Just t1' -> go t1' t2_orig t2_orig
+            Nothing  -> (t1, t2)
 
 sameOccExtra :: TcType -> TcType -> SDoc
 -- See Note [Disambiguating (X ~ X) errors]
