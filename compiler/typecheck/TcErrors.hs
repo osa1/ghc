@@ -1805,8 +1805,8 @@ expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
       let (t1', t2') = go t1 t2 t2
        in (ForAllTy (Named tv1 vis1) t1', ForAllTy (Named tv2 vis2) t2')
 
-    go (CastTy ty1 _) ty2 _ = go ty1 ty2 ty2
-    go ty1 (CastTy ty2 _) _ = go ty1 ty2 ty2
+    go (CastTy ty1 _) ty2 ty2_orig = go ty1 ty2 ty2_orig
+    go ty1 (CastTy ty2 _) ty2_orig = go ty1 ty2 ty2_orig
 
     go t1 t2 t2_orig =
       -- Try to expand t2 first
