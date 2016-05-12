@@ -1833,15 +1833,13 @@ expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
       | otherwise = followExpansions tss
 
     sameShapes :: Type -> Type -> Bool
-    sameShapes TyVarTy{}         TyVarTy{}        = True
-    sameShapes AppTy{}           AppTy{}          = True
-    sameShapes (TyConApp tc1 _)  (TyConApp tc2 _) = tc1 == tc2
-    sameShapes ForAllTy{}        ForAllTy{}       = True
-    sameShapes LitTy{}           LitTy{}          = True
-    sameShapes CoercionTy{}      CoercionTy{}     = True
-    sameShapes (CastTy ty1 _)    ty2              = sameShapes ty1 ty2
-    sameShapes ty1               (CastTy ty2 _)   = sameShapes ty1 ty2
-    sameShapes _                 _                = False
+    sameShapes AppTy{}              AppTy{}              = True
+    sameShapes (TyConApp tc1 _)     (TyConApp tc2 _)     = tc1 == tc2
+    sameShapes (ForAllTy Anon{} _)  (ForAllTy Anon{} _)  = True
+    sameShapes (ForAllTy Named{} _) (ForAllTy Named{} _) = True
+    sameShapes (CastTy ty1 _)       ty2                  = sameShapes ty1 ty2
+    sameShapes ty1                  (CastTy ty2 _)       = sameShapes ty1 ty2
+    sameShapes _                    _                    = False
 
 sameOccExtra :: TcType -> TcType -> SDoc
 -- See Note [Disambiguating (X ~ X) errors]
