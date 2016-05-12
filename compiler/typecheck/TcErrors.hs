@@ -55,7 +55,7 @@ import qualified GHC.LanguageExtensions as LangExt
 import FV ( fvVarList, unionFV )
 
 import Control.Monad    ( when )
-import Data.List        ( partition, mapAccumL, nub, sortBy )
+import Data.List        ( partition, mapAccumL, nub, sortBy, unfoldr )
 import qualified Data.Set as Set
 
 #if __GLASGOW_HASKELL__ > 710
@@ -1765,58 +1765,85 @@ constructors are vanishingly rare.
 expandSynonymsToMatch :: Type -> Type -> (Type, Type)
 expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
   where
-    (ty1_ret, ty2_ret) = go ty1 ty2 ty2
+    (ty1_ret, ty2_ret) = go ty1 ty2
 
-    -- | Returns (number of synonym expansions done to make types similar,
-    --            type synonym expanded version of first type,
+    -- | Returns (type synonym expanded version of first type,
     --            type synonym expanded version of second type)
-    --
-    -- Int arguments are number of synonym expansions done so far.
-    go :: Type -> Type
-       -> Type -- ^ Original second type before starting expanding it
-       -> (Type, Type)
-    go t1 t2 _
+    go :: Type -> Type -> (Type, Type)
+    go t1 t2
       | t1 `pickyEqType` t2 =
         -- Types are same, nothing to do
         (t1, t2)
 
-    go (TyConApp tc1 tys1) (TyConApp tc2 tys2) _
+    go (TyConApp tc1 tys1) (TyConApp tc2 tys2)
       | tc1 == tc2 =
         -- Type constructors are same. They may be synonyms, but we don't
         -- expand further.
         let (tys1', tys2') =
-              unzip (zipWith (\ty1 ty2 -> go ty1 ty2 ty2) tys1 tys2)
+              unzip (zipWith (\ty1 ty2 -> go ty1 ty2) tys1 tys2)
          in (TyConApp tc1 tys1', TyConApp tc2 tys2')
 
-    go (AppTy t1_1 t1_2) (AppTy t2_1 t2_2) _ =
-      let (t1_1', t2_1') = go t1_1 t2_1 t2_1
-          (t1_2', t2_2') = go t1_2 t2_2 t2_2
+    go (AppTy t1_1 t1_2) (AppTy t2_1 t2_2) =
+      let (t1_1', t2_1') = go t1_1 t2_1
+          (t1_2', t2_2') = go t1_2 t2_2
        in (mkAppTy t1_1' t1_2', mkAppTy t2_1' t2_2')
 
-    go (ForAllTy (Anon t1_1) t1_2) (ForAllTy (Anon t2_1) t2_2) _ =
-      let (t1_1', t2_1') = go t1_1 t2_1 t2_1
-          (t1_2', t2_2') = go t1_2 t2_2 t2_2
+    go (ForAllTy (Anon t1_1) t1_2) (ForAllTy (Anon t2_1) t2_2) =
+      let (t1_1', t2_1') = go t1_1 t2_1
+          (t1_2', t2_2') = go t1_2 t2_2
        in (mkFunTy t1_1' t1_2', mkFunTy t2_1' t2_2')
 
-    go (ForAllTy (Named tv1 vis1) t1) (ForAllTy (Named tv2 vis2) t2) _ =
+    go (ForAllTy (Named tv1 vis1) t1) (ForAllTy (Named tv2 vis2) t2) =
       -- NOTE: We may have a bug here, but we just can't reproduce it easily.
       -- See D1016 comments for details and our attempts at producing a test
       -- case. Short version: We probably need RnEnv2 to really get this right.
-      let (t1', t2') = go t1 t2 t2
+      let (t1', t2') = go t1 t2
        in (ForAllTy (Named tv1 vis1) t1', ForAllTy (Named tv2 vis2) t2')
 
-    go (CastTy ty1 _) ty2 ty2_orig = go ty1 ty2 ty2_orig
-    go ty1 (CastTy ty2 _) ty2_orig = go ty1 ty2 ty2_orig
+    go (CastTy ty1 _) ty2 = go ty1 ty2
+    go ty1 (CastTy ty2 _) = go ty1 ty2
 
-    go t1 t2 t2_orig =
-      -- Try to expand t2 first
-      case coreView t2 of
-        Just t2' -> go t1 t2' t2_orig
-        Nothing  ->
-          -- Reset t2 and expand t1
-          case coreView t1 of
-            Just t1' -> go t1' t2_orig t2_orig
-            Nothing  -> (t1, t2)
+    go t1 t2 =
+      let
+        t1_exp_tys = t1 : tyExpansions t1
+        t2_exp_tys = t2 : tyExpansions t2
+        t1_exps    = length t1_exp_tys
+        t2_exps    = length t2_exp_tys
+        dif        = abs (t1_exps - t2_exps)
+      in
+        followExpansions $
+          zipEqual "expandSynonymsToMatch.go"
+            (if t1_exps > t2_exps then drop dif t1_exp_tys else t1_exp_tys)
+            (if t2_exps > t1_exps then drop dif t2_exp_tys else t2_exp_tys)
+
+    -- | Expand top layer type synonyms, collect expanded types in a list. The
+    -- list does not include the original type.
+    tyExpansions :: Type -> [Type]
+    tyExpansions = unfoldr (\t -> (\x -> (x, x)) `fmap` coreView t)
+
+    -- | Drop the type pairs until types in a pair look alike (i.e. the outer
+    -- constructors are the same).
+    followExpansions :: [(Type, Type)] -> (Type, Type)
+    followExpansions [] = pprPanic "followExpansions" empty
+    followExpansions [(t1, t2)]
+      | sameShapes t1 t2 = go t1 t2 -- expand subtrees
+      | otherwise        = (t1, t2) -- the difference is already visible
+    followExpansions ((t1, t2) : tss)
+      -- Traverse subtrees when the outer shapes are the same
+      | sameShapes t1 t2 = go t1 t2
+      -- Otherwise follow the expansions until they look alike
+      | otherwise = followExpansions tss
+
+    sameShapes :: Type -> Type -> Bool
+    sameShapes TyVarTy{}         TyVarTy{}        = True
+    sameShapes AppTy{}           AppTy{}          = True
+    sameShapes (TyConApp tc1 _)  (TyConApp tc2 _) = tc1 == tc2
+    sameShapes ForAllTy{}        ForAllTy{}       = True
+    sameShapes LitTy{}           LitTy{}          = True
+    sameShapes CoercionTy{}      CoercionTy{}     = True
+    sameShapes (CastTy ty1 _)    ty2              = sameShapes ty1 ty2
+    sameShapes ty1               (CastTy ty2 _)   = sameShapes ty1 ty2
+    sameShapes _                 _ = False
 
 sameOccExtra :: TcType -> TcType -> SDoc
 -- See Note [Disambiguating (X ~ X) errors]
