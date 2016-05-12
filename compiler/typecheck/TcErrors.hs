@@ -1749,16 +1749,14 @@ Given two types t1 and t2:
     `T (T5, T3, Bool)` where T5 = T4, T4 = T3, ..., T1 = X, we should return
     `T (T3, T3, Int)` and `T (T3, T3, Bool)`.
 
-In the implementation, we just search in all possible solutions for a solution
-that does minimum amount of expansions. This leads to a complex algorithm: If
-we have two synonyms like X_m = X_{m-1} = .. X and Y_n = Y_{n-1} = .. Y, where
-X and Y are rigid types, we expand m * n times. But in practice it's not a
-problem because deeply nested synonyms with no intervening rigid type
-constructors are vanishingly rare.
+The implementation is a bit like following two linked lists to find a merge
+point, but we have trees instead of lists. If T1 can be expanded N times and T2
+can be expanded M times, in the worst case we do N+M expansions and we traverse
+a subtree at most once.
 
 -}
 
--- | Expand type synonyms in given types only enough to make them as equal as
+-- | Expand type synonyms in given types only enough to make them as similar as
 -- possible. Returned types are the same in terms of used type synonyms.
 --
 -- To expand all synonyms, see 'Type.expandTypeSynonyms'.
@@ -1843,7 +1841,7 @@ expandSynonymsToMatch ty1 ty2 = (ty1_ret, ty2_ret)
     sameShapes CoercionTy{}      CoercionTy{}     = True
     sameShapes (CastTy ty1 _)    ty2              = sameShapes ty1 ty2
     sameShapes ty1               (CastTy ty2 _)   = sameShapes ty1 ty2
-    sameShapes _                 _ = False
+    sameShapes _                 _                = False
 
 sameOccExtra :: TcType -> TcType -> SDoc
 -- See Note [Disambiguating (X ~ X) errors]
