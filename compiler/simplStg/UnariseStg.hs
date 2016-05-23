@@ -27,27 +27,36 @@ which is the Arity taking into account any expanded arguments, and corresponds t
 the number of (possibly-void) *registers* arguments will arrive in.
 -}
 
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, TupleSections #-}
 
 module UnariseStg (unarise) where
 
 #include "HsVersions.h"
 
-import CoreSyn
-import StgSyn
-import VarEnv
-import UniqSupply
-import Id
-import MkId (realWorldPrimId)
-import Type
-import TysWiredIn
-import DataCon
-import OccName
-import Name
-import Util
-import Outputable
 import BasicTypes
+import CoreSyn
+import DataCon
+import FastString (FastString, mkFastString)
+import Id
+import Literal (Literal (..))
+import MkCore (rUNTIME_ERROR_ID)
+import MkId (realWorldPrimId)
+import MonadUtils (mapAccumLM)
+import Outputable
+import StgSyn
+import TyCon
+import Type
+import TysPrim (intPrimTy, intPrimTyCon)
+import TysWiredIn
+import UniqSupply
+import Util
+import VarEnv
 
+import Data.Bifunctor (second)
+import Data.List (partition)
+import Data.Maybe (fromMaybe)
+
+import ElimUbxSums
 
 -- | A mapping from unboxed-tuple binders to the Ids they were expanded to.
 --
@@ -61,99 +70,160 @@ ubxTupleId0 :: Id
 ubxTupleId0 = dataConWorkId (tupleDataCon Unboxed 0)
 
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
-unarise us binds = zipWith (\us -> unariseBinding us init_env) (listSplitUniqSupply us) binds
+unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
   where -- See Note [Nullary unboxed tuple] in Type.hs
         init_env = unitVarEnv ubxTupleId0 [realWorldPrimId]
 
-unariseBinding :: UniqSupply -> UnariseEnv -> StgBinding -> StgBinding
-unariseBinding us rho bind = case bind of
-  StgNonRec x rhs -> StgNonRec x (unariseRhs us rho rhs)
-  StgRec xrhss    -> StgRec $ zipWith (\us (x, rhs) -> (x, unariseRhs us rho rhs))
-                                      (listSplitUniqSupply us) xrhss
+unariseBinding :: UnariseEnv -> StgBinding -> UniqSM StgBinding
+unariseBinding rho (StgNonRec x rhs) =
+    StgNonRec x <$> unariseRhs rho rhs
+unariseBinding rho (StgRec xrhss)    =
+    StgRec <$> mapM (\(x, rhs) -> (x,) <$> unariseRhs rho rhs) xrhss
 
-unariseRhs :: UniqSupply -> UnariseEnv -> StgRhs -> StgRhs
-unariseRhs us rho rhs = case rhs of
-  StgRhsClosure ccs b_info fvs update_flag args expr
-    -> StgRhsClosure ccs b_info (unariseIds rho fvs) update_flag
-                     args' (unariseExpr us' rho' expr)
-    where (us', rho', args') = unariseIdBinders us rho args
-  StgRhsCon ccs con args
-    -> StgRhsCon ccs con (unariseArgs rho args)
+unariseRhs :: UnariseEnv -> StgRhs -> UniqSM StgRhs
+unariseRhs rho (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
+  = do (rho', args') <- unariseIdBinders rho args
+       expr' <- unariseExpr rho' expr body_ty
+       return (StgRhsClosure ccs b_info (unariseIds rho fvs) update_flag args' expr' body_ty)
+
+unariseRhs rho (StgRhsCon ccs con args)
+  = return (StgRhsCon ccs con (unariseArgs rho args))
 
 ------------------------
-unariseExpr :: UniqSupply -> UnariseEnv -> StgExpr -> StgExpr
-unariseExpr _ rho (StgApp f args)
+unariseExpr :: UnariseEnv -> StgExpr -> Type -> UniqSM StgExpr
+unariseExpr rho (StgApp f args) ty
   | null args
   , UbxTupleRep tys <- repType (idType f)
   =  -- Particularly important where (##) is concerned
      -- See Note [Nullary unboxed tuple]
-    StgConApp (tupleDataCon Unboxed (length tys))
-              (map StgVarArg (unariseId rho f))
+    return (StgConApp (tupleDataCon Unboxed (length tys))
+                      (map StgVarArg (unariseId rho f)))
+
+  | null args
+  , Just (tycon, ty_args) <- splitTyConApp_maybe ty
+  , isUnboxedSumTyCon tycon
+  , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropRuntimeRepArgs ty_args)
+  , (ubx_args, bx_args) <- partition (isUnliftedType . idType) (unariseId rho f)
+  = return (StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
+                      (map StgVarArg ubx_args ++
+                       replicate (ubx_fields - length ubx_args) uBX_DUMMY_ARG ++
+                       map StgVarArg bx_args ++
+                       replicate (bx_fields - length bx_args) bX_DUMMY_ARG))
+
+  -- We now use rho for renaming too
+  | Just [f'] <- lookupVarEnv rho f
+  = return (StgApp f' (unariseArgs rho args))
 
   | otherwise
-  = StgApp f (unariseArgs rho args)
+  = return (StgApp f (unariseArgs rho args))
 
-unariseExpr _ _ (StgLit l)
-  = StgLit l
+unariseExpr _ (StgLit l) _
+  = return (StgLit l)
 
-unariseExpr _ rho (StgConApp dc args)
-  | isUnboxedTupleCon dc = StgConApp (tupleDataCon Unboxed (length args')) args'
-  | otherwise            = StgConApp dc args'
-  where
-    args' = unariseArgs rho args
+unariseExpr rho (StgConApp dc args) ty
+  | isUnboxedTupleCon dc
+  , let args' = unariseArgs rho args
+  = return (StgConApp (tupleDataCon Unboxed (length args')) args')
 
-unariseExpr _ rho (StgOpApp op args ty)
-  = StgOpApp op (unariseArgs rho args) ty
+  | isUnboxedSumCon dc
+  , ASSERT2(isUnboxedSumType ty, ppr ty $$ ppr dc) True
+  , (tycon, ty_args) <- splitTyConApp ty
+  , ASSERT2(isUnboxedSumTyCon tycon, ppr ty $$ ppr tycon $$ ppr dc) True
+  , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropRuntimeRepArgs ty_args)
+  , let args' = unariseArgs rho (filter (not . isNullaryTupleArg) args)
+  , (ubx_args, bx_args) <- partition (isUnliftedType . stgArgType) args'
+  , let tag = dataConTag dc
+  = return (StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
+                      (mkTagArg tag :
+                       ubx_args ++ replicate (ubx_fields - length ubx_args - 1) uBX_DUMMY_ARG ++
+                       bx_args ++ replicate (bx_fields - length bx_args) bX_DUMMY_ARG))
 
-unariseExpr us rho (StgLam xs e)
-  = StgLam xs' (unariseExpr us' rho' e)
-  where
-    (us', rho', xs') = unariseIdBinders us rho xs
+  | otherwise
+  = return (StgConApp dc (unariseArgs rho args))
 
-unariseExpr us rho (StgCase e bndr alt_ty alts)
-  = StgCase (unariseExpr us1 rho e) bndr alt_ty alts'
+unariseExpr rho (StgOpApp op args ty) _
+  = return (StgOpApp op (unariseArgs rho args) ty)
+
+unariseExpr _ e@StgLam{} _
+  = pprPanic "unariseExpr: found lambda" (ppr e)
+
+unariseExpr rho (StgCase e bndr alt_ty alts) ty
+  = do e' <- unariseExpr rho e (idType bndr)
+       alts' <- unariseAlts rho alt_ty bndr alts ty
+       return (StgCase e' bndr alt_ty' alts')
  where
-    (us1, us2) = splitUniqSupply us
-    alts'      = unariseAlts us2 rho alt_ty bndr alts
+    alt_ty' = case alt_ty of
+                UbxSumAlt ubx_fields bx_fields -> UbxTupAlt (ubx_fields + bx_fields)
+                _ -> alt_ty
 
-unariseExpr us rho (StgLet bind e)
-  = StgLet (unariseBinding us1 rho bind) (unariseExpr us2 rho e)
-  where
-    (us1, us2) = splitUniqSupply us
+unariseExpr rho (StgLet bind e) ty
+  = StgLet <$> unariseBinding rho bind <*> unariseExpr rho e ty
 
-unariseExpr us rho (StgLetNoEscape bind e)
-  = StgLetNoEscape (unariseBinding us1 rho bind) (unariseExpr us2 rho e)
-  where
-    (us1, us2) = splitUniqSupply us
+unariseExpr rho (StgLetNoEscape bind e) ty
+  = StgLetNoEscape <$> unariseBinding rho bind <*> unariseExpr rho e ty
 
-unariseExpr us rho (StgTick tick e)
-  = StgTick tick (unariseExpr us rho e)
+unariseExpr rho (StgTick tick e) ty
+  = StgTick tick <$> unariseExpr rho e ty
 
 ------------------------
-unariseAlts :: UniqSupply -> UnariseEnv -> AltType -> Id -> [StgAlt] -> [StgAlt]
-unariseAlts us rho (UbxTupAlt n) bndr [(DEFAULT, [], e)]
-  = [(DataAlt (tupleDataCon Unboxed n), ys, unariseExpr us2' rho' e)]
-  where
-    (us2', rho', ys) = unariseIdBinder us rho bndr
+unariseAlts :: UnariseEnv -> AltType -> Id -> [StgAlt] -> Type -> UniqSM [StgAlt]
+unariseAlts rho (UbxTupAlt n) bndr [(DEFAULT, [], e)] ty
+  = do (rho', ys) <- unariseIdBinder rho bndr
+       e' <- unariseExpr rho' e ty
+       return [(DataAlt (tupleDataCon Unboxed n), ys, e')]
 
-unariseAlts us rho (UbxTupAlt n) bndr [(DataAlt _, ys, e)]
-  = [(DataAlt (tupleDataCon Unboxed n), ys', unariseExpr us2' rho'' e)]
-  where
-    (us2', rho', ys') = unariseIdBinders us rho ys
-    rho'' = extendVarEnv rho' bndr ys'
+unariseAlts rho (UbxTupAlt n) bndr [(DataAlt _, ys, e)] ty
+  = do (rho', ys') <- unariseIdBinders rho ys
+       let rho'' = extendVarEnv rho' bndr ys'
+       e' <- unariseExpr rho'' e ty
+       return [(DataAlt (tupleDataCon Unboxed n), ys', e')]
 
-unariseAlts _ _ (UbxTupAlt _) _ alts
+unariseAlts _ (UbxTupAlt _) _ alts _
   = pprPanic "unariseExpr: strange unboxed tuple alts" (ppr alts)
 
-unariseAlts us rho _ _ alts
-  = zipWith (\us alt -> unariseAlt us rho alt) (listSplitUniqSupply us) alts
+unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
+  = do (rho_sum_bndrs, ys) <- unariseIdBinder rho bndr
+       ASSERT(length ys == ubx_fields + bx_fields) (return ())
+       let
+         (tag_bndr : ubx_ys, bx_ys) = splitAt ubx_fields ys
+
+         mkAlt :: StgAlt -> UniqSM StgAlt
+         mkAlt (DEFAULT, _, e) =
+           ( DEFAULT, [], ) <$> unariseExpr rho_sum_bndrs e ty
+
+         mkAlt (DataAlt sumCon, bs, e) = do
+           (rho_alt_bndrs, bs') <- unariseIdBinders rho_sum_bndrs bs
+           let
+             (ubx_bs, bx_bs) = partition (isUnliftedType . idType) bs'
+             rns = zip ubx_bs ubx_ys ++ zip bx_bs bx_ys
+
+             rho_alt_bndrs_renamed =
+               flip mapVarEnv rho_alt_bndrs $ \vals ->
+                 map (\val -> fromMaybe val (lookup val rns)) vals
+
+             rho_alt_bndrs_orig_bndr_added =
+               extendVarEnvList rho_alt_bndrs_renamed (map (second (:[])) rns)
+
+           ret <- unariseExpr rho_alt_bndrs_orig_bndr_added e ty
+
+           return ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], ret )
+
+         mkAlt alt@(LitAlt{}, _, _) = pprPanic "unariseAlts.mkAlt" (ppr alt)
+
+       inner_case <-
+         StgCase (StgApp tag_bndr []) tag_bndr
+                 (PrimAlt intPrimTyCon) . mkDefaultAlt <$> mapM mkAlt alts
+
+       return [(DataAlt (tupleDataCon Unboxed (ubx_fields + bx_fields)), ys, inner_case)]
+
+unariseAlts rho _ _ alts ty
+  = mapM (\alt -> unariseAlt rho alt ty) alts
 
 --------------------------
-unariseAlt :: UniqSupply -> UnariseEnv -> StgAlt -> StgAlt
-unariseAlt us rho (con, xs, e)
-  = (con, xs', unariseExpr us' rho' e)
-  where
-    (us', rho', xs') = unariseIdBinders us rho xs
+unariseAlt :: UnariseEnv -> StgAlt -> Type -> UniqSM StgAlt
+unariseAlt rho (con, xs, e) ty
+  = do (rho', xs') <- unariseIdBinders rho xs
+       (con, xs',) <$> unariseExpr rho' e ty
 
 ------------------------
 unariseArgs :: UnariseEnv -> [StgArg] -> [StgArg]
@@ -169,26 +239,62 @@ unariseIds rho = concatMap (unariseId rho)
 unariseId :: UnariseEnv -> Id -> [Id]
 unariseId rho x
   | Just ys <- lookupVarEnv rho x
-  = ASSERT2( case repType (idType x) of UbxTupleRep _ -> True; _ -> x == ubxTupleId0
-           , text "unariseId: not unboxed tuple" <+> ppr x )
+  = -- Disabling the assertion as we also use the env for renaming now.
+    -- ASSERT2( case repType (idType x) of UbxTupleRep{} -> True; UbxSumRep{} -> True; _ -> x == ubxTupleId0
+    --        , text "unariseId: not unboxed tuple or sum" <+> ppr x <+> parens (ppr (idType x)) )
     ys
 
   | otherwise
-  = ASSERT2( case repType (idType x) of UbxTupleRep _ -> False; _ -> True
-           , text "unariseId: was unboxed tuple" <+> ppr x )
+  = -- ASSERT2( case repType (idType x) of UbxTupleRep{} -> False; UbxSumRep{} -> False; _ -> True
+    --        , text "unariseId: was unboxed tuple or sum" <+> ppr x )
     [x]
 
-unariseIdBinders :: UniqSupply -> UnariseEnv -> [Id] -> (UniqSupply, UnariseEnv, [Id])
-unariseIdBinders us rho xs = third3 concat $ mapAccumL2 unariseIdBinder us rho xs
+unariseIdBinders :: UnariseEnv -> [Id] -> UniqSM (UnariseEnv, [Id])
+unariseIdBinders rho xs = second concat <$> mapAccumLM unariseIdBinder rho xs
 
-unariseIdBinder :: UniqSupply -> UnariseEnv -> Id -> (UniqSupply, UnariseEnv, [Id])
-unariseIdBinder us rho x = case repType (idType x) of
-    UnaryRep _      -> (us, rho, [x])
-    UbxTupleRep tys -> let (us0, us1) = splitUniqSupply us
-                           ys   = unboxedTupleBindersFrom us0 x tys
-                           rho' = extendVarEnv rho x ys
-                       in (us1, rho', ys)
+unariseIdBinder :: UnariseEnv -> Id -> UniqSM (UnariseEnv, [Id])
+unariseIdBinder rho x =
+  case repType (idType x) of
+    UnaryRep _      -> return (rho, [x])
+    UbxTupleRep tys -> do
+      ys <- mkIds (mkFastString "tup") tys
+      let rho' = extendVarEnv rho x ys
+      return (rho', ys)
+    UbxSumRep ubx_fields bx_fields -> do
+      ASSERT(length ubx_fields > 0) (return ())
+      tag <- mkSysLocalOrCoVarM (mkFastString "tag") intPrimTy
+      ys1 <- mkIds (mkFastString "ubx") (replicate (length ubx_fields - 1) intPrimTy)
+      ys2 <- mkIds (mkFastString "bx")  (replicate (length bx_fields) liftedAny)
+      let ys = tag : ys1 ++ ys2
+          rho' = extendVarEnv rho x ys
+      return (rho', ys)
 
-unboxedTupleBindersFrom :: UniqSupply -> Id -> [UnaryType] -> [Id]
-unboxedTupleBindersFrom us x tys = zipWith (mkSysLocalOrCoVar fs) (uniqsFromSupply us) tys
-  where fs = occNameFS (getOccName x)
+mkIds :: FastString -> [UnaryType] -> UniqSM [Id]
+mkIds fs tys = mapM (mkSysLocalOrCoVarM fs) tys
+
+--------------------------------------------------------------------------------
+
+liftedAny :: Type
+liftedAny = anyTypeOfKind liftedTypeKind
+
+uBX_DUMMY_ARG :: StgArg
+uBX_DUMMY_ARG = StgLitArg (MachWord 0)
+
+bX_DUMMY_ARG :: StgArg
+bX_DUMMY_ARG = StgVarArg rUNTIME_ERROR_ID
+
+mkDefaultAlt :: [StgAlt] -> [StgAlt]
+mkDefaultAlt [] = pprPanic "elimUbxSumExpr.mkDefaultAlt" (text "Empty alts")
+mkDefaultAlt alts@((DEFAULT, _, _) : _) = alts
+mkDefaultAlt ((LitAlt{}, [], rhs) : alts) = (DEFAULT, [], rhs) : alts
+mkDefaultAlt alts = dummyDefaultAlt : alts
+
+dummyDefaultAlt :: StgAlt
+dummyDefaultAlt = (DEFAULT, [], StgApp rUNTIME_ERROR_ID [])
+
+mkTagArg :: Int -> StgArg
+mkTagArg = StgLitArg . MachInt . fromIntegral
+
+isNullaryTupleArg :: StgArg -> Bool
+isNullaryTupleArg StgLitArg{} = False
+isNullaryTupleArg (StgVarArg v) = v == ubxTupleId0

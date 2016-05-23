@@ -100,7 +100,8 @@ module Type (
         isPiTy,
 
         -- (Lifting and boxity)
-        isUnliftedType, isUnboxedTupleType, isAlgType, isClosedAlgType,
+        isUnliftedType, isUnboxedTupleType, isUnboxedSumType,
+        isAlgType, isClosedAlgType,
         isPrimitiveType, isStrictType,
         isRuntimeRepTy, isRuntimeRepVar, isRuntimeRepKindedTy,
         dropRuntimeRepArgs,
@@ -210,7 +211,8 @@ import Class
 import TyCon
 import TysPrim
 import {-# SOURCE #-} TysWiredIn ( listTyCon, typeNatKind
-                                 , typeSymbolKind, liftedTypeKind )
+                                 , typeSymbolKind, liftedTypeKind
+                                 , anyTypeOfKind )
 import PrelNames
 import CoAxiom
 import {-# SOURCE #-} Coercion
@@ -224,6 +226,7 @@ import Pair
 import ListSetOps
 import Digraph
 import Unique ( nonDetCmpUnique )
+import {-# SOURCE #-} ElimUbxSums ( unboxedSumTyConFields )
 
 import Maybes           ( orElse )
 import Data.Maybe       ( isJust, mapMaybe )
@@ -1192,14 +1195,22 @@ thunk and a function takes a nullary unboxed tuple as an argument!
 type UnaryType = Type
 
 data RepType = UbxTupleRep [UnaryType] -- INVARIANT: never an empty list (see Note [Nullary unboxed tuple])
+             | UbxSumRep [UnaryType] [UnaryType]
+                 -- ^ Unlifted fields, lifted fields
+                 -- INVARIANT: Unlifted fields list only contains an 'Int#' for
+                 -- the tag, and an unlifted type that is as big as all other
+                 -- unlifted types. Lifted fields list only contains 'Any'.
              | UnaryRep UnaryType
 
 instance Outputable RepType where
   ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
+  ppr (UbxSumRep ubx_tys bx_tys) =
+    text "UbxSumRep" <+> ppr ubx_tys <+> ppr bx_tys
   ppr (UnaryRep ty)     = text "UnaryRep"    <+> ppr ty
 
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (UbxTupleRep tys) = tys
+flattenRepType (UbxSumRep ubx_tys bx_tys) = ubx_tys ++ bx_tys
 flattenRepType (UnaryRep ty)     = [ty]
 
 -- | Looks through:
@@ -1233,6 +1244,12 @@ repType ty
       = if null tys
          then UnaryRep voidPrimTy -- See Note [Nullary unboxed tuple]
          else UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
+
+      | isUnboxedSumTyCon tc
+      , let (ubx_fields, bx_fields) = unboxedSumTyConFields (drop (length tys `div` 2) tys)
+      = -- TODO: Currently all unlifted types are held as 'Int#'.
+        UbxSumRep (intPrimTy : replicate (ubx_fields - 1) intPrimTy)
+                  (replicate bx_fields (anyTypeOfKind liftedTypeKind))
       where
           -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
         non_rr_tys = dropRuntimeRepArgs tys
@@ -1977,6 +1994,11 @@ isUnboxedTupleType :: Type -> Bool
 isUnboxedTupleType ty = case tyConAppTyCon_maybe ty of
                            Just tc -> isUnboxedTupleTyCon tc
                            _       -> False
+
+isUnboxedSumType :: Type -> Bool
+isUnboxedSumType ty = case tyConAppTyCon_maybe ty of
+                        Just tc -> isUnboxedSumTyCon tc
+                        _       -> False
 
 -- | See "Type#type_classification" for what an algebraic type is.
 -- Should only be applied to /types/, as opposed to e.g. partially

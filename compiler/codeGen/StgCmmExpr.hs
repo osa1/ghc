@@ -140,7 +140,7 @@ cgLetNoEscapeRhsBody
     -> Id
     -> StgRhs
     -> FCode (CgIdInfo, FCode ())
-cgLetNoEscapeRhsBody local_cc bndr (StgRhsClosure cc _bi _ _upd args body)
+cgLetNoEscapeRhsBody local_cc bndr (StgRhsClosure cc _bi _ _upd args body _)
   = cgLetNoEscapeClosure bndr local_cc cc (nonVoidIds args) body
 cgLetNoEscapeRhsBody local_cc bndr (StgRhsCon cc con args)
   = cgLetNoEscapeClosure bndr local_cc cc [] (StgConApp con args)
@@ -400,7 +400,10 @@ cgCase (StgApp v []) bndr alt_type@(PrimAlt _) alts
   = -- assignment suffices for unlifted types
     do { dflags <- getDynFlags
        ; unless reps_compatible $
-           panic "cgCase: reps do not match, perhaps a dodgy unsafeCoerce?"
+       -- ; unless (sizes_compatible dflags) $
+           pprPanic "cgCase: reps do not match, perhaps a dodgy unsafeCoerce?"
+             (text "v:" <+> ppr v <> parens (ppr (idType v)) $$
+              text "bndr:" <+> ppr bndr <> parens (ppr (idType bndr)))
        ; v_info <- getCgIdInfo v
        ; emitAssign (CmmLocal (idToReg dflags (NonVoid bndr)))
                     (idInfoToAmode v_info)
@@ -408,6 +411,8 @@ cgCase (StgApp v []) bndr alt_type@(PrimAlt _) alts
        ; cgAlts (NoGcInAlts,AssignedDirectly) (NonVoid bndr) alt_type alts }
   where
     reps_compatible = idPrimRep v == idPrimRep bndr
+    -- sizes_compatible dflags =
+    --   primRepSizeW dflags (idPrimRep v) <= primRepSizeW dflags (idPrimRep bndr)
 
 {- Note [Dodgy unsafeCoerce 2, #3132]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -529,8 +534,9 @@ chooseReturnBndrs :: Id -> AltType -> [StgAlt] -> [NonVoid Id]
 chooseReturnBndrs bndr (PrimAlt _) _alts
   = nonVoidIds [bndr]
 
-chooseReturnBndrs _bndr (UbxTupAlt _) [(_, ids, _)]
-  = nonVoidIds ids      -- 'bndr' is not assigned!
+chooseReturnBndrs _bndr (UbxTupAlt n) [(_, ids, _)]
+  = ASSERT2(n == length ids, ppr n $$ ppr ids $$ ppr _bndr)
+    nonVoidIds ids      -- 'bndr' is not assigned!
 
 chooseReturnBndrs bndr (AlgAlt _) _alts
   = nonVoidIds [bndr]   -- Only 'bndr' is assigned
