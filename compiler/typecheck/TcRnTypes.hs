@@ -2890,6 +2890,7 @@ exprCtOrigin (HsPar (L _ e))    = exprCtOrigin e
 exprCtOrigin (SectionL _ _)     = SectionOrigin
 exprCtOrigin (SectionR _ _)     = SectionOrigin
 exprCtOrigin (ExplicitTuple {}) = Shouldn'tHappenOrigin "explicit tuple"
+exprCtOrigin HsSum{}            = Shouldn'tHappenOrigin "HsSum"
 exprCtOrigin (HsCase _ matches) = matchesCtOrigin matches
 exprCtOrigin (HsIf (Just syn) _ _ _) = exprCtOrigin (syn_expr syn)
 exprCtOrigin (HsIf {})          = Shouldn'tHappenOrigin "if expression"

@@ -59,7 +59,9 @@ module RdrHsSyn (
         mkModuleImpExp,
         mkTypeImpExp,
         mkImpExpSubSpec,
-        checkImportSpec
+        checkImportSpec,
+
+        mkSumOrTuple
 
     ) where
 
@@ -865,6 +867,9 @@ checkAPat msg loc e0 = do
                                    return (TuplePat ps b [])
      | otherwise -> parseErrorSDoc loc (text "Illegal tuple section in pattern:" $$ ppr e0)
 
+   HsSum alt arity expr _ -> do p <- checkLPat msg expr
+                                return (SumPat p alt arity placeHolderType)
+
    RecordCon { rcon_con_name = c, rcon_flds = HsRecFields fs dd }
                         -> do fs <- mapM (checkPatField msg) fs
                               return (ConPatIn c (RecCon (HsRecFields fs dd)))
@@ -1474,3 +1479,13 @@ mkImpExpSubSpec xs =
 
 parseErrorSDoc :: SrcSpan -> SDoc -> P a
 parseErrorSDoc span s = failSpanMsgP span s
+
+-- TODO: Get the exact source loc of the whole experssion.
+mkSumOrTuple :: Boxity -> Either (Int, Int, LHsExpr RdrName) [LHsTupArg RdrName]
+             -> P (HsExpr RdrName)
+mkSumOrTuple Unboxed (Left (alt, arity, e)) = return $ HsSum alt arity e PlaceHolder
+mkSumOrTuple boxity (Right es) = return $ ExplicitTuple es boxity
+mkSumOrTuple Boxed (Left (_, _, (L l e))) =
+    parseErrorSDoc l $
+    hang (text "Boxed sums not supported:")
+    2 (ppr e)
