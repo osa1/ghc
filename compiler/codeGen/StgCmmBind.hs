@@ -205,12 +205,12 @@ cgRhs :: Id
                                   -- (see above)
                )
 
-cgRhs id (StgRhsCon cc con args)
+cgRhs id (StgRhsCon cc con args _)
   = withNewTickyCounterCon (idName id) $
     buildDynCon id True cc con args
 
 {- See Note [GC recovery] in compiler/codeGen/StgCmmClosure.hs -}
-cgRhs name (StgRhsClosure cc bi fvs upd_flag args body)
+cgRhs name (StgRhsClosure cc bi fvs upd_flag args body _)
   = do dflags <- getDynFlags
        mkRhsClosure dflags name cc bi (nonVoidIds fvs) upd_flag args body
 
@@ -551,7 +551,7 @@ mkSlowEntryCode bndr cl_info arg_regs -- function closure is already in `Node'
            -- mkDirectJump does not clobber `Node' containing function closure
            jump = mkJump dflags NativeNodeCall
                                 (mkLblExpr fast_lbl)
-                                (map (CmmReg . CmmLocal) (node : arg_regs))
+                                (map (CmmExprArg . CmmReg . CmmLocal) (node : arg_regs))
                                 (initUpdFrameOff dflags)
        tscope <- getTickScope
        emitProcWithConvention Slow Nothing slow_lbl

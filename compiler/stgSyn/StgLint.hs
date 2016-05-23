@@ -21,6 +21,7 @@ import Maybes
 import Name             ( getSrcLoc )
 import ErrUtils         ( MsgDoc, Severity(..), mkLocMessage )
 import Type
+import RepType
 import TyCon
 import Util
 import SrcLoc
@@ -81,6 +82,7 @@ lintStgBindings whodunnit binds
 lintStgArg :: StgArg -> LintM (Maybe Type)
 lintStgArg (StgLitArg lit) = return (Just (literalType lit))
 lintStgArg (StgVarArg v)   = lintStgVar v
+lintStgArg (StgRubbishArg ty) = return (Just ty)
 
 lintStgVar :: Id -> LintM (Maybe Kind)
 lintStgVar v = do checkInScope v
@@ -124,18 +126,23 @@ lint_binds_help (binder, rhs)
 
 lintStgRhs :: StgRhs -> LintM (Maybe Type)   -- Just ty => type is exact
 
-lintStgRhs (StgRhsClosure _ _ _ _ [] expr)
+lintStgRhs (StgRhsClosure _ _ _ _ [] expr _)
   = lintStgExpr expr
 
-lintStgRhs (StgRhsClosure _ _ _ _ binders expr)
+lintStgRhs (StgRhsClosure _ _ _ _ binders expr _)
   = addLoc (LambdaBodyOf binders) $
       addInScopeVars binders $ runMaybeT $ do
         body_ty <- MaybeT $ lintStgExpr expr
         return (mkFunTys (map idType binders) body_ty)
 
-lintStgRhs (StgRhsCon _ con args) = runMaybeT $ do
-    arg_tys <- mapM (MaybeT . lintStgArg) args
-    MaybeT $ checkFunApp con_ty arg_tys (mkRhsConMsg con_ty arg_tys)
+lintStgRhs rhs@(StgRhsCon _ con args _arg_tys) = do
+    -- TODO: Check arg_tys
+    when (isUnboxedTupleCon con || isUnboxedSumCon con) $
+      addErrL (text "StgRhsCon is an unboxed tuple or sum application" $$
+               ppr rhs)
+    runMaybeT $ do
+      arg_tys <- mapM (MaybeT . lintStgArg) args
+      MaybeT $ checkFunApp con_ty arg_tys (mkRhsConMsg con_ty arg_tys)
   where
     con_ty = dataConRepType con
 
@@ -148,7 +155,8 @@ lintStgExpr e@(StgApp fun args) = runMaybeT $ do
     arg_tys <- mapM (MaybeT . lintStgArg) args
     MaybeT $ checkFunApp fun_ty arg_tys (mkFunAppMsg fun_ty arg_tys e)
 
-lintStgExpr e@(StgConApp con args) = runMaybeT $ do
+lintStgExpr e@(StgConApp con args _arg_tys) = runMaybeT $ do
+    -- TODO: Check arg_tys
     arg_tys <- mapM (MaybeT . lintStgArg) args
     MaybeT $ checkFunApp con_ty arg_tys (mkFunAppMsg con_ty arg_tys e)
   where
@@ -166,7 +174,7 @@ lintStgExpr (StgOpApp _ args res_ty) = runMaybeT $ do
     _maybe_arg_tys <- mapM (MaybeT . lintStgArg) args
     return res_ty
 
-lintStgExpr (StgLam bndrs _) = do
+lintStgExpr (StgLam bndrs _ _) = do
     addErrL (text "Unexpected StgLam" <+> ppr bndrs)
     return Nothing
 
@@ -192,6 +200,7 @@ lintStgExpr (StgCase scrut bndr alts_type alts) = runMaybeT $ do
         AlgAlt tc    -> check_bndr tc >> return True
         PrimAlt tc   -> check_bndr tc >> return True
         UbxTupAlt _  -> return False -- Binder is always dead in this case
+        UbxSumAlt _  -> return False -- Same as UbxTupAlt
         PolyAlt      -> return True
 
     MaybeT $ addInScopeVars [bndr | in_scope] $
@@ -362,7 +371,7 @@ have long since disappeared.
 
 checkFunApp :: Type                 -- The function type
             -> [Type]               -- The arg type(s)
-            -> MsgDoc              -- Error message
+            -> MsgDoc               -- Error message
             -> LintM (Maybe Type)   -- Just ty => result type is accurate
 
 checkFunApp fun_ty arg_tys msg

@@ -858,8 +858,8 @@ mkCmmIfThen e tbranch = do
                       , mkLabel tid tscp, tbranch, mkLabel endif tscp ]
 
 
-mkCall :: CmmExpr -> (Convention, Convention) -> [CmmFormal] -> [CmmActual]
-       -> UpdFrameOffset -> [CmmActual] -> FCode CmmAGraph
+mkCall :: CmmExpr -> (Convention, Convention) -> [CmmFormal] -> [CmmArg]
+       -> UpdFrameOffset -> [CmmArg] -> FCode CmmAGraph
 mkCall f (callConv, retConv) results actuals updfr_off extra_stack = do
   dflags <- getDynFlags
   k      <- newLabelC
@@ -869,7 +869,7 @@ mkCall f (callConv, retConv) results actuals updfr_off extra_stack = do
       copyout = mkCallReturnsTo dflags f callConv actuals k off updfr_off extra_stack
   return $ catAGraphs [copyout, mkLabel k tscp, copyin]
 
-mkCmmCall :: CmmExpr -> [CmmFormal] -> [CmmActual] -> UpdFrameOffset
+mkCmmCall :: CmmExpr -> [CmmFormal] -> [CmmArg] -> UpdFrameOffset
           -> FCode CmmAGraph
 mkCmmCall f results actuals updfr_off
    = mkCall f (NativeDirectCall, NativeReturn) results actuals updfr_off []

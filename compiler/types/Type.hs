@@ -102,7 +102,8 @@ module Type (
         isPiTy,
 
         -- (Lifting and boxity)
-        isUnliftedType, isUnboxedTupleType, isAlgType, isClosedAlgType,
+        isUnliftedType, isUnboxedTupleType, isUnboxedSumType,
+        isAlgType, isClosedAlgType,
         isPrimitiveType, isStrictType,
         isRuntimeRepTy, isRuntimeRepVar, isRuntimeRepKindedTy,
         dropRuntimeRepArgs,
@@ -142,7 +143,6 @@ module Type (
         -- * Other views onto Types
         coreView, coreViewOneStarKind,
 
-        UnaryType, RepType(..), flattenRepType, repType,
         tyConsOfType,
 
         -- * Type representation for the code generator
@@ -232,6 +232,7 @@ import Unique ( nonDetCmpUnique )
 import SrcLoc  ( SrcSpan )
 import OccName ( OccName )
 import Name    ( mkInternalName )
+import {-# SOURCE #-} RepType ( UnaryType, RepType (..), repType, flattenRepType )
 
 import Maybes           ( orElse )
 import Data.Maybe       ( isJust, mapMaybe )
@@ -1738,68 +1739,13 @@ typeSize (TyConApp _ ts)            = 1 + sum (map typeSize ts)
 typeSize (CastTy ty co)             = typeSize ty + coercionSize co
 typeSize (CoercionTy co)            = coercionSize co
 
-
-{- **********************************************************************
-*                                                                       *
-                Representation types
-*                                                                       *
-********************************************************************** -}
-
-type UnaryType = Type
-
-data RepType
-  = UbxTupleRep [UnaryType] -- Represented by multiple values
-                            -- Can be zero, one, or more
-  | UnaryRep UnaryType      -- Represented by a single value
-
-instance Outputable RepType where
-  ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
-  ppr (UnaryRep ty)     = text "UnaryRep"    <+> ppr ty
-
-flattenRepType :: RepType -> [UnaryType]
-flattenRepType (UbxTupleRep tys) = tys
-flattenRepType (UnaryRep ty)     = [ty]
-
--- | 'repType' figure out how a type will be represented
---   at runtime.  It looks through
---
---      1. For-alls
---      2. Synonyms
---      3. Predicates
---      4. All newtypes, including recursive ones, but not newtype families
---      5. Casts
---
-repType :: Type -> RepType
-repType ty
-  = go initRecTc ty
-  where
-    go :: RecTcChecker -> Type -> RepType
-    go rec_nts ty                       -- Expand predicates and synonyms
-      | Just ty' <- coreView ty
-      = go rec_nts ty'
-
-    go rec_nts (ForAllTy _ ty2)  -- Drop type foralls
-      = go rec_nts ty2
-
-    go rec_nts (TyConApp tc tys)        -- Expand newtypes
-      | isNewTyCon tc
-      , tys `lengthAtLeast` tyConArity tc
-      , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
-      = go rec_nts' (newTyConInstRhs tc tys)
-
-      | isUnboxedTupleTyCon tc
-      = UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
-      where
-          -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
-        non_rr_tys = dropRuntimeRepArgs tys
-
-    go rec_nts (CastTy ty _)
-      = go rec_nts ty
-
-    go _ ty@(CoercionTy _)
-      = pprPanic "repType" (ppr ty)
-
-    go _ ty = UnaryRep ty
+{-
+%************************************************************************
+%*                                                                      *
+                   PrimRep
+*                                                                      *
+************************************************************************
+-}
 
 -- ToDo: this could be moved to the code generator, using splitTyConApp instead
 -- of inspecting the type directly.
@@ -1984,6 +1930,11 @@ isUnboxedTupleType :: Type -> Bool
 isUnboxedTupleType ty = case tyConAppTyCon_maybe ty of
                            Just tc -> isUnboxedTupleTyCon tc
                            _       -> False
+
+isUnboxedSumType :: Type -> Bool
+isUnboxedSumType ty = case tyConAppTyCon_maybe ty of
+                        Just tc -> isUnboxedSumTyCon tc
+                        _       -> False
 
 -- | See "Type#type_classification" for what an algebraic type is.
 -- Should only be applied to /types/, as opposed to e.g. partially

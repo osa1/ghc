@@ -17,7 +17,8 @@ import Name             ( Name, getName )
 import NameEnv
 import DataCon          ( DataCon, dataConRepArgTys, dataConIdentity )
 import TyCon            ( TyCon, tyConFamilySize, isDataTyCon, tyConDataCons )
-import Type             ( flattenRepType, repType, typePrimRep )
+import Type             ( typePrimRep )
+import RepType          ( flattenRepType, repType )
 import StgCmmLayout     ( mkVirtHeapOffsets )
 import Util
 import Panic

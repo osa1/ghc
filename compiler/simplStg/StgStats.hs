@@ -124,10 +124,10 @@ statBinding top (StgRec pairs)
 
 statRhs :: Bool -> (Id, StgRhs) -> StatEnv
 
-statRhs top (_, StgRhsCon _ _ _)
+statRhs top (_, StgRhsCon _ _ _ _)
   = countOne (ConstructorBinds top)
 
-statRhs top (_, StgRhsClosure _ _ fv u _ body)
+statRhs top (_, StgRhsClosure _ _ fv u _ body _)
   = statExpr body                       `combineSE`
     countN FreeVariables (length fv)    `combineSE`
     countOne (
@@ -149,7 +149,7 @@ statExpr :: StgExpr -> StatEnv
 
 statExpr (StgApp _ _)     = countOne Applications
 statExpr (StgLit _)       = countOne Literals
-statExpr (StgConApp _ _)  = countOne ConstructorApps
+statExpr (StgConApp _ _ _)= countOne ConstructorApps
 statExpr (StgOpApp _ _ _) = countOne PrimitiveApps
 statExpr (StgTick _ e)    = statExpr e
 

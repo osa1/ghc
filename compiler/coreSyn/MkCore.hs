@@ -46,7 +46,7 @@ module MkCore (
         rEC_CON_ERROR_ID, iRREFUT_PAT_ERROR_ID, rUNTIME_ERROR_ID,
         nON_EXHAUSTIVE_GUARDS_ERROR_ID, nO_METHOD_BINDING_ERROR_ID,
         pAT_ERROR_ID, rEC_SEL_ERROR_ID, aBSENT_ERROR_ID,
-        tYPE_ERROR_ID
+        tYPE_ERROR_ID, rUBBISH_ENTRY_ERROR_ID
     ) where
 
 #include "HsVersions.h"
@@ -683,7 +683,7 @@ errorIds
 recSelErrorName, runtimeErrorName, absentErrorName :: Name
 irrefutPatErrorName, recConErrorName, patErrorName :: Name
 nonExhaustiveGuardsErrorName, noMethodBindingErrorName :: Name
-typeErrorName :: Name
+typeErrorName, rubbishEntryErrorName :: Name
 
 recSelErrorName     = err_nm "recSelError"     recSelErrorIdKey     rEC_SEL_ERROR_ID
 absentErrorName     = err_nm "absentError"     absentErrorIdKey     aBSENT_ERROR_ID
@@ -692,6 +692,7 @@ irrefutPatErrorName = err_nm "irrefutPatError" irrefutPatErrorIdKey iRREFUT_PAT_
 recConErrorName     = err_nm "recConError"     recConErrorIdKey     rEC_CON_ERROR_ID
 patErrorName        = err_nm "patError"        patErrorIdKey        pAT_ERROR_ID
 typeErrorName       = err_nm "typeError"       typeErrorIdKey       tYPE_ERROR_ID
+rubbishEntryErrorName = err_nm "rubbishEntryError" rubbishEntryErrorIdKey rUBBISH_ENTRY_ERROR_ID
 
 noMethodBindingErrorName     = err_nm "noMethodBindingError"
                                   noMethodBindingErrorIdKey nO_METHOD_BINDING_ERROR_ID
@@ -703,8 +704,7 @@ err_nm str uniq id = mkWiredInIdName cONTROL_EXCEPTION_BASE (fsLit str) uniq id
 
 rEC_SEL_ERROR_ID, rUNTIME_ERROR_ID, iRREFUT_PAT_ERROR_ID, rEC_CON_ERROR_ID :: Id
 pAT_ERROR_ID, nO_METHOD_BINDING_ERROR_ID, nON_EXHAUSTIVE_GUARDS_ERROR_ID :: Id
-tYPE_ERROR_ID :: Id
-aBSENT_ERROR_ID :: Id
+aBSENT_ERROR_ID, tYPE_ERROR_ID, rUBBISH_ENTRY_ERROR_ID :: Id
 rEC_SEL_ERROR_ID                = mkRuntimeErrorId recSelErrorName
 rUNTIME_ERROR_ID                = mkRuntimeErrorId runtimeErrorName
 iRREFUT_PAT_ERROR_ID            = mkRuntimeErrorId irrefutPatErrorName
@@ -714,6 +714,7 @@ nO_METHOD_BINDING_ERROR_ID      = mkRuntimeErrorId noMethodBindingErrorName
 nON_EXHAUSTIVE_GUARDS_ERROR_ID  = mkRuntimeErrorId nonExhaustiveGuardsErrorName
 aBSENT_ERROR_ID                 = mkRuntimeErrorId absentErrorName
 tYPE_ERROR_ID                   = mkRuntimeErrorId typeErrorName
+rUBBISH_ENTRY_ERROR_ID          = mkRuntimeErrorId rubbishEntryErrorName
 
 mkRuntimeErrorId :: Name -> Id
 -- Error function

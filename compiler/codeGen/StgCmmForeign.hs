@@ -34,6 +34,7 @@ import Cmm
 import CmmUtils
 import MkGraph
 import Type
+import RepType
 import TysPrim
 import CLabel
 import SMRep
@@ -110,7 +111,7 @@ cgForeignCall (CCall (CCallSpec target cconv safety)) stg_args res_ty
 
             _something_else ->
                 do { _ <- emitForeignCall safety res_regs call_target call_args
-                   ; emitReturn (map (CmmReg . CmmLocal) res_regs)
+                   ; emitReturn (map (CmmExprArg . CmmReg . CmmLocal) res_regs)
                    }
          }
 
@@ -526,7 +527,7 @@ getFCallArgs args
     get arg | isVoidRep arg_rep
             = return Nothing
             | otherwise
-            = do { cmm <- getArgAmode (NonVoid arg)
+            = do { CmmExprArg cmm <- getArgAmode (NonVoid arg) -- TODO (osa): Not sure about this part
                  ; dflags <- getDynFlags
                  ; return (Just (add_shim dflags arg_ty cmm, hint)) }
             where
