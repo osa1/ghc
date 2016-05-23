@@ -101,7 +101,8 @@ module Type (
         isPiTy,
 
         -- (Lifting and boxity)
-        isUnliftedType, isUnboxedTupleType, isAlgType, isClosedAlgType,
+        isUnliftedType, isUnboxedTupleType, isUnboxedSumType,
+        isAlgType, isClosedAlgType,
         isPrimitiveType, isStrictType,
         isRuntimeRepTy, isRuntimeRepVar, isRuntimeRepKindedTy,
         dropRuntimeRepArgs,
@@ -213,7 +214,8 @@ import Class
 import TyCon
 import TysPrim
 import {-# SOURCE #-} TysWiredIn ( listTyCon, typeNatKind
-                                 , typeSymbolKind, liftedTypeKind )
+                                 , typeSymbolKind, liftedTypeKind
+                                 , anyTypeOfKind )
 import PrelNames
 import CoAxiom
 import {-# SOURCE #-} Coercion
@@ -227,6 +229,7 @@ import Pair
 import ListSetOps
 import Digraph
 import Unique ( nonDetCmpUnique )
+import {-# SOURCE #-} ElimUbxSums ( unboxedSumTyConFields )
 
 import Maybes           ( orElse )
 import Data.Maybe       ( isJust, mapMaybe )
@@ -1967,6 +1970,11 @@ isUnboxedTupleType :: Type -> Bool
 isUnboxedTupleType ty = case tyConAppTyCon_maybe ty of
                            Just tc -> isUnboxedTupleTyCon tc
                            _       -> False
+
+isUnboxedSumType :: Type -> Bool
+isUnboxedSumType ty = case tyConAppTyCon_maybe ty of
+                        Just tc -> isUnboxedSumTyCon tc
+                        _       -> False
 
 -- | See "Type#type_classification" for what an algebraic type is.
 -- Should only be applied to /types/, as opposed to e.g. partially
