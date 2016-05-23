@@ -454,6 +454,7 @@ compiler_stage2_dll0_MODULES = \
 	Digraph \
 	DriverPhases \
 	DynFlags \
+	ElimUbxSums \
 	Encoding \
 	ErrUtils \
 	Exception \
