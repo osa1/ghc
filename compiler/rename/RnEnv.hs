@@ -43,7 +43,7 @@ module RnEnv (
 
         checkDupRdrNames, checkShadowedRdrNames,
         checkDupNames, checkDupAndShadowedNames, dupNamesErr,
-        checkTupSize,
+        checkTupSize, checkSumArity,
         addFvRn, mapFvRn, mapMaybeFvRn, mapFvRnCPS,
         warnUnusedMatches, warnUnusedTypePatterns,
         warnUnusedTopBinds, warnUnusedLocalBinds,
@@ -74,7 +74,8 @@ import DataCon
 import TyCon
 import PrelNames        ( mkUnboundName, isUnboundName, rOOT_MAIN, forall_tv_RDR )
 import ErrUtils         ( MsgDoc )
-import BasicTypes       ( Fixity(..), FixityDirection(..), minPrecedence, defaultFixity )
+import BasicTypes       ( Fixity(..), FixityDirection(..), minPrecedence, defaultFixity,
+                          Arity )
 import SrcLoc
 import Outputable
 import Util
@@ -87,7 +88,7 @@ import Control.Monad
 import Data.List
 import Data.Function    ( on )
 import ListSetOps       ( minusList )
-import Constants        ( mAX_TUPLE_SIZE )
+import Constants        ( mAX_TUPLE_SIZE, mAX_SUM_SIZE )
 import qualified GHC.LanguageExtensions as LangExt
 
 {-
@@ -2249,6 +2250,14 @@ checkTupSize tup_size
   = addErr (sep [text "A" <+> int tup_size <> ptext (sLit "-tuple is too large for GHC"),
                  nest 2 (parens (text "max size is" <+> int mAX_TUPLE_SIZE)),
                  nest 2 (text "Workaround: use nested tuples or define a data type")])
+
+checkSumArity :: Arity -> RnM ()
+checkSumArity arity
+  | arity <= mAX_SUM_SIZE
+  = return ()
+  | otherwise
+  = addErr (sep [text "Sum has" <+> int arity <+> text "alternatives",
+                 nest 2 (parens (text "max arity is" <+> int mAX_SUM_SIZE))])
 
 {-
 ************************************************************************
