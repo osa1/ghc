@@ -454,6 +454,7 @@ compiler_stage2_dll0_MODULES = \
 	Digraph \
 	DriverPhases \
 	DynFlags \
+	ElimUbxSums \
 	Encoding \
 	ErrUtils \
 	Exception \
@@ -522,6 +523,7 @@ compiler_stage2_dll0_MODULES = \
 	SrcLoc \
 	StaticFlags \
 	StringBuffer \
+	StgSyn \
 	TcEvidence \
 	TcRnTypes \
 	TcType \

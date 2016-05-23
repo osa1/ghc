@@ -46,6 +46,7 @@ import SMRep
 import Bitmap
 import OrdList
 import Maybes
+import ElimUbxSums (ubxSumFieldTypes)
 
 import Data.List
 import Foreign
@@ -1200,6 +1201,7 @@ maybe_getCCallReturnRep fn_ty
             = if isSingleton r_reps then Nothing else Just (r_reps !! 1)
          r_reps = case repType r_ty of
                       UbxTupleRep reps -> map typePrimRep reps
+                      UbxSumRep sum_rep-> map typePrimRep (ubxSumFieldTypes sum_rep)
                       UnaryRep _       -> blargh
          ok = ( ( r_reps `lengthIs` 2 && VoidRep == head r_reps)
                 || r_reps == [VoidRep] )

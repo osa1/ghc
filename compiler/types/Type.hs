@@ -102,7 +102,8 @@ module Type (
         isPiTy,
 
         -- (Lifting and boxity)
-        isUnliftedType, isUnboxedTupleType, isAlgType, isClosedAlgType,
+        isUnliftedType, isUnboxedTupleType, isUnboxedSumType,
+        isAlgType, isClosedAlgType,
         isPrimitiveType, isStrictType,
         isRuntimeRepTy, isRuntimeRepVar, isRuntimeRepKindedTy,
         dropRuntimeRepArgs,
@@ -232,6 +233,7 @@ import Unique ( nonDetCmpUnique )
 import SrcLoc  ( SrcSpan )
 import OccName ( OccName )
 import Name    ( mkInternalName )
+import {-# SOURCE #-} ElimUbxSums ( ubxSumRepType, UbxSumRepTy, flattenSumRep )
 
 import Maybes           ( orElse )
 import Data.Maybe       ( isJust, mapMaybe )
@@ -1750,15 +1752,20 @@ type UnaryType = Type
 data RepType
   = UbxTupleRep [UnaryType] -- Represented by multiple values
                             -- Can be zero, one, or more
+                            -- INVARIANT: never an empty list
+                            -- (see Note [Nullary unboxed tuple])
+  | UbxSumRep UbxSumRepTy
   | UnaryRep UnaryType      -- Represented by a single value
 
 instance Outputable RepType where
   ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
-  ppr (UnaryRep ty)     = text "UnaryRep"    <+> ppr ty
+  ppr (UbxSumRep rep) = text "UbxSumRep" <+> ppr rep
+  ppr (UnaryRep ty) = text "UnaryRep" <+> ppr ty
 
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (UbxTupleRep tys) = tys
-flattenRepType (UnaryRep ty)     = [ty]
+flattenRepType (UbxSumRep sum_rep) = flattenSumRep sum_rep
+flattenRepType (UnaryRep ty) = [ty]
 
 -- | 'repType' figure out how a type will be represented
 --   at runtime.  It looks through
@@ -1789,6 +1796,9 @@ repType ty
 
       | isUnboxedTupleTyCon tc
       = UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
+
+      | isUnboxedSumTyCon tc
+      = ubxSumRepType non_rr_tys
       where
           -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
         non_rr_tys = dropRuntimeRepArgs tys
@@ -1984,6 +1994,11 @@ isUnboxedTupleType :: Type -> Bool
 isUnboxedTupleType ty = case tyConAppTyCon_maybe ty of
                            Just tc -> isUnboxedTupleTyCon tc
                            _       -> False
+
+isUnboxedSumType :: Type -> Bool
+isUnboxedSumType ty = case tyConAppTyCon_maybe ty of
+                        Just tc -> isUnboxedSumTyCon tc
+                        _       -> False
 
 -- | See "Type#type_classification" for what an algebraic type is.
 -- Should only be applied to /types/, as opposed to e.g. partially

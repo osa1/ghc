@@ -20,3 +20,4 @@ coreView :: Type -> Maybe Type
 
 tyCoVarsOfTypesWellScoped :: [Type] -> [TyVar]
 
+data RepType

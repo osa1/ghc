@@ -193,7 +193,7 @@ emitRtsCallGen res lbl args safe
   where
     call updfr_off =
       if safe then
-        emit =<< mkCmmCall fun_expr res' args' updfr_off
+        emit =<< mkCmmCall fun_expr res' (map CmmExprArg args') updfr_off
       else do
         let conv = ForeignConvention CCallConv arg_hints res_hints CmmMayReturn
         emit $ mkUnsafeCall (ForeignTarget fun_expr conv) res' args'
@@ -251,7 +251,7 @@ callerSaveVolatileRegs dflags = (caller_save, caller_load)
 
     callerRestoreGlobalReg reg
         = mkAssign (CmmGlobal reg)
-                    (CmmLoad (get_GlobalReg_addr dflags reg) (globalRegType dflags reg))
+                   (CmmLoad (get_GlobalReg_addr dflags reg) (globalRegType dflags reg))
 
 -- -----------------------------------------------------------------------------
 -- Global registers
@@ -377,7 +377,7 @@ newUnboxedTupleRegs res_ty
 --      emitMultiAssign
 -------------------------------------------------------------------------
 
-emitMultiAssign :: [LocalReg] -> [CmmExpr] -> FCode ()
+emitMultiAssign :: [LocalReg] -> [CmmArg] -> FCode ()
 -- Emit code to perform the assignments in the
 -- input simultaneously, using temporary variables when necessary.
 
@@ -393,11 +393,20 @@ type Stmt = (LocalReg, CmmExpr) -- r := e
 --        that is, if s1 should *follow* s2 in the final order
 
 emitMultiAssign []    []    = return ()
-emitMultiAssign [reg] [rhs] = emitAssign (CmmLocal reg) rhs
+emitMultiAssign [reg] [CmmExprArg rhs] = emitAssign (CmmLocal reg) rhs
+emitMultiAssign [_]   [CmmRubbishArg _] = return ()
 emitMultiAssign regs rhss   = do
   dflags <- getDynFlags
   ASSERT2( equalLength regs rhss, ppr regs $$ ppr rhss )
-    unscramble dflags ([1..] `zip` (regs `zip` rhss))
+    unscramble dflags (filter_rubbish_out ([1..] `zip` (regs `zip` rhss)))
+  where
+    filter_rubbish_out :: [(Int, (LocalReg, CmmArg))] -> [(Int, (LocalReg, CmmExpr))]
+    filter_rubbish_out []
+      = []
+    filter_rubbish_out ((_, (_, CmmRubbishArg _)) : rest)
+      = filter_rubbish_out rest
+    filter_rubbish_out ((k, (r, CmmExprArg e)) : rest)
+      = (k, (r, e)) : filter_rubbish_out rest
 
 unscramble :: DynFlags -> [Vrtx] -> FCode ()
 unscramble dflags vertices = mapM_ do_component components

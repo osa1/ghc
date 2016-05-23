@@ -64,10 +64,10 @@ cgExpr (StgOpApp (StgPrimOp SeqOp) [StgVarArg a, _] _res_ty) =
   cgIdApp a []
 
 cgExpr (StgOpApp op args ty) = cgOpApp op args ty
-cgExpr (StgConApp con args)  = cgConApp con args
+cgExpr (StgConApp con args _)= cgConApp con args
 cgExpr (StgTick t e)         = cgTick t >> cgExpr e
 cgExpr (StgLit lit)       = do cmm_lit <- cgLit lit
-                               emitReturn [CmmLit cmm_lit]
+                               emitReturn [CmmExprArg (CmmLit cmm_lit)]
 
 cgExpr (StgLet binds expr)             = do { cgBind binds;     cgExpr expr }
 cgExpr (StgLetNoEscape binds expr) =
@@ -139,10 +139,10 @@ cgLetNoEscapeRhsBody
     -> Id
     -> StgRhs
     -> FCode (CgIdInfo, FCode ())
-cgLetNoEscapeRhsBody local_cc bndr (StgRhsClosure cc _bi _ _upd args body)
+cgLetNoEscapeRhsBody local_cc bndr (StgRhsClosure cc _bi _ _upd args body _)
   = cgLetNoEscapeClosure bndr local_cc cc (nonVoidIds args) body
-cgLetNoEscapeRhsBody local_cc bndr (StgRhsCon cc con args)
-  = cgLetNoEscapeClosure bndr local_cc cc [] (StgConApp con args)
+cgLetNoEscapeRhsBody local_cc bndr (StgRhsCon cc con args ty_args)
+  = cgLetNoEscapeClosure bndr local_cc cc [] (StgConApp con args ty_args)
         -- For a constructor RHS we want to generate a single chunk of
         -- code which can be jumped to from many places, which will
         -- return the constructor. It's easy; just behave as if it
@@ -306,7 +306,7 @@ cgCase (StgOpApp (StgPrimOp op) args _) bndr (AlgAlt tycon) alts
   where
     do_enum_primop :: PrimOp -> [StgArg] -> FCode CmmExpr
     do_enum_primop TagToEnumOp [arg]  -- No code!
-      = getArgAmode (NonVoid arg)
+      = getArgAmode_no_rubbish (NonVoid arg)
     do_enum_primop primop args
       = do dflags <- getDynFlags
            tmp <- newTemp (bWord dflags)
@@ -514,7 +514,7 @@ isSimpleOp :: StgOp -> [StgArg] -> FCode Bool
 -- True iff the op cannot block or allocate
 isSimpleOp (StgFCallOp (CCall (CCallSpec _ _ safe)) _) _ = return $! not (playSafe safe)
 isSimpleOp (StgPrimOp op) stg_args                  = do
-    arg_exprs <- getNonVoidArgAmodes stg_args
+    arg_exprs <- getNonVoidArgAmodes_no_rubbish stg_args
     dflags <- getDynFlags
     -- See Note [Inlining out-of-line primops and heap checks]
     return $! isJust $ shouldInlinePrimOp dflags op arg_exprs
@@ -528,8 +528,9 @@ chooseReturnBndrs :: Id -> AltType -> [StgAlt] -> [NonVoid Id]
 chooseReturnBndrs bndr (PrimAlt _) _alts
   = nonVoidIds [bndr]
 
-chooseReturnBndrs _bndr (UbxTupAlt _) [(_, ids, _)]
-  = nonVoidIds ids      -- 'bndr' is not assigned!
+chooseReturnBndrs _bndr (UbxTupAlt n) [(_, ids, _)]
+  = ASSERT2(n == length ids, ppr n $$ ppr ids $$ ppr _bndr)
+    nonVoidIds ids      -- 'bndr' is not assigned!
 
 chooseReturnBndrs bndr (AlgAlt _) _alts
   = nonVoidIds [bndr]   -- Only 'bndr' is assigned
@@ -680,7 +681,7 @@ cgConApp con stg_args
 
         ; emit =<< fcode_init
         ; tickyReturnNewCon (length stg_args)
-        ; emitReturn [idInfoToAmode idinfo] }
+        ; emitReturn [CmmExprArg (idInfoToAmode idinfo)] }
 
 cgIdApp :: Id -> [StgArg] -> FCode ReturnKind
 cgIdApp fun_id [] | isVoidTy (idType fun_id) = emitReturn []
@@ -703,7 +704,7 @@ cgIdApp fun_id args = do
     case getCallMethod dflags fun_name cg_fun_id lf_info n_args v_args (cg_loc fun_info) self_loop_info of
 
             -- A value in WHNF, so we can just return it.
-        ReturnIt -> emitReturn [fun]    -- ToDo: does ReturnIt guarantee tagged?
+        ReturnIt -> emitReturn [CmmExprArg fun] -- ToDo: does ReturnIt guarantee tagged?
 
         EnterIt -> ASSERT( null args )  -- Discarding arguments
                    emitEnter fun
@@ -853,7 +854,7 @@ emitEnter fun = do
       Return _ -> do
         { let entry = entryCode dflags $ closureInfoPtr dflags $ CmmReg nodeReg
         ; emit $ mkJump dflags NativeNodeCall entry
-                        [cmmUntag dflags fun] updfr_off
+                        [CmmExprArg (cmmUntag dflags fun)] updfr_off
         ; return AssignedDirectly
         }
 
@@ -889,7 +890,7 @@ emitEnter fun = do
        ; updfr_off <- getUpdFrameOff
        ; let area = Young lret
        ; let (outArgs, regs, copyout) = copyOutOflow dflags NativeNodeCall Call area
-                                          [fun] updfr_off []
+                                          [CmmExprArg fun] updfr_off []
          -- refer to fun via nodeReg after the copyout, to avoid having
          -- both live simultaneously; this sometimes enables fun to be
          -- inlined in the RHS of the R1 assignment.
