@@ -98,6 +98,7 @@ hsPatType (ListPat _ ty Nothing)      = mkListTy ty
 hsPatType (ListPat _ _ (Just (ty,_))) = ty
 hsPatType (PArrPat _ ty)              = mkPArrTy ty
 hsPatType (TuplePat _ bx tys)         = mkTupleTy bx tys
+hsPatType (SumPat _ _ _ tys)          = mkSumTy tys
 hsPatType (ConPatOut { pat_con = L _ con, pat_arg_tys = tys })
                                       = conLikeResTy con tys
 hsPatType (SigPatOut _ ty)            = ty
@@ -689,6 +690,11 @@ zonkExpr env (ExplicitTuple tup_args boxed)
     zonk_tup_arg (L l (Missing t)) = do { t' <- zonkTcTypeToType env t
                                         ; return (L l (Missing t')) }
 
+zonkExpr env (HsSum alt arity expr args)
+  = do new_args <- mapM (zonkTcTypeToType env) args
+       new_expr <- zonkLExpr env expr
+       return (HsSum alt arity new_expr new_args)
+
 zonkExpr env (HsCase expr ms)
   = do new_expr <- zonkLExpr env expr
        new_ms <- zonkMatchGroup env zonkLExpr ms
@@ -1212,6 +1218,11 @@ zonk_pat env (TuplePat pats boxed tys)
   = do  { tys' <- mapM (zonkTcTypeToType env) tys
         ; (env', pats') <- zonkPats env pats
         ; return (env', TuplePat pats' boxed tys') }
+
+zonk_pat env (SumPat pat alt arity tys)
+  = do  { tys' <- mapM (zonkTcTypeToType env) tys
+        ; (env', pat') <- zonkPat env pat
+        ; return (env', SumPat pat' alt arity tys') }
 
 zonk_pat env p@(ConPatOut { pat_arg_tys = tys, pat_tvs = tyvars
                           , pat_dicts = evs, pat_binds = binds
