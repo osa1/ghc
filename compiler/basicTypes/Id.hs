@@ -137,6 +137,7 @@ import UniqSupply
 import FastString
 import Util
 import StaticFlags
+import {-# SOURCE #-} RepType (typeRepArity)
 
 -- infixl so you can say (id `set` a `set` b)
 infixl  1 `setIdUnfoldingLazily`,

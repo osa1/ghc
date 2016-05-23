@@ -33,7 +33,7 @@ import HscTypes
 import CostCentre
 import Id
 import IdInfo
-import Type
+import RepType
 import DataCon
 import Name
 import TyCon
@@ -137,10 +137,10 @@ cgTopRhs :: DynFlags -> RecFlag -> Id -> StgRhs -> (CgIdInfo, FCode ())
         -- The Id is passed along for setting up a binding...
         -- It's already been externalised if necessary
 
-cgTopRhs dflags _rec bndr (StgRhsCon _cc con args)
+cgTopRhs dflags _rec bndr (StgRhsCon _cc con args _ty_args)
   = cgTopRhsCon dflags bndr con args
 
-cgTopRhs dflags rec bndr (StgRhsClosure cc bi fvs upd_flag args body)
+cgTopRhs dflags rec bndr (StgRhsClosure cc bi fvs upd_flag args body _)
   = ASSERT(null fvs)    -- There should be no free variables
     cgTopRhsClosure dflags rec bndr cc bi upd_flag args body
 
@@ -241,8 +241,7 @@ cgDataCon data_con
                 do { _ <- ticky_code
                    ; ldvEnter (CmmReg nodeReg)
                    ; tickyReturnOldCon (length arg_things)
-                   ; void $ emitReturn [cmmOffsetB dflags (CmmReg nodeReg)
-                                            (tagForCon dflags data_con)]
+                   ; void $ emitReturn [CmmExprArg (cmmOffsetB dflags (CmmReg nodeReg) (tagForCon dflags data_con))]
                    }
                         -- The case continuation code expects a tagged pointer
 

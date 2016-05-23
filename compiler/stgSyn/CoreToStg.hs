@@ -21,6 +21,7 @@ import CoreArity        ( manifestArity )
 import StgSyn
 
 import Type
+import RepType
 import TyCon
 import MkId             ( coercionTokenId )
 import Id
@@ -45,7 +46,7 @@ import Demand           ( isUsedOnce )
 import PrimOp           ( PrimCall(..) )
 import UniqFM
 
-import Data.Maybe    (isJust)
+import Data.Maybe    (isJust, fromMaybe)
 import Control.Monad (liftM, ap)
 
 -- Note [Live vs free]
@@ -267,7 +268,7 @@ coreToTopStgRhs
 coreToTopStgRhs dflags this_mod scope_fv_info (bndr, rhs)
   = do { (new_rhs, rhs_fvs, _) <- coreToStgExpr rhs
 
-       ; let stg_rhs   = mkTopStgRhs dflags this_mod rhs_fvs bndr bndr_info new_rhs
+       ; let stg_rhs   = mkTopStgRhs dflags this_mod rhs_fvs bndr bndr_info new_rhs (exprType rhs)
              stg_arity = stgRhsArity stg_rhs
        ; return (ASSERT2( arity_ok stg_arity, mk_arity_msg stg_arity) stg_rhs,
                  rhs_fvs) }
@@ -294,7 +295,7 @@ coreToTopStgRhs dflags this_mod scope_fv_info (bndr, rhs)
                 text "STG arity:" <+> ppr stg_arity]
 
 mkTopStgRhs :: DynFlags -> Module -> FreeVarsInfo
-            -> Id -> StgBinderInfo -> StgExpr
+            -> Id -> StgBinderInfo -> StgExpr -> Type
             -> StgRhs
 
 mkTopStgRhs dflags this_mod = mkStgRhs' con_updateable
@@ -337,6 +338,7 @@ coreToStgExpr expr@(Lam _ _)
   = let
         (args, body) = myCollectBinders expr
         args'        = filterStgBinders args
+        body_ty      = exprType body
     in
     extendVarEnvLne [ (a, LambdaBound) | a <- args' ] $ do
     (body, body_fvs, body_escs) <- coreToStgExpr body
@@ -344,7 +346,7 @@ coreToStgExpr expr@(Lam _ _)
         fvs             = args' `minusFVBinders` body_fvs
         escs            = body_escs `delVarSetList` args'
         result_expr | null args' = body
-                    | otherwise  = StgLam args' body
+                    | otherwise  = StgLam args' body body_ty
 
     return (result_expr, fvs, escs)
 
@@ -453,6 +455,7 @@ mkStgAltType bndr alts = case repType (idType bndr) of
         Nothing                      -> PolyAlt
     UbxTupleRep rep_tys -> UbxTupAlt (length rep_tys)
         -- UbxTupAlt includes nullary and and singleton unboxed tuples
+    UbxSumRep sum_rep -> UbxSumAlt sum_rep
   where
    _is_poly_alt_tycon tc
         =  isFunTyCon tc
@@ -537,7 +540,9 @@ coreToStgApp _ f args ticks = do
 
         res_ty = exprType (mkApps (Var f) args)
         app = case idDetails f of
-                DataConWorkId dc | saturated -> StgConApp dc args'
+                DataConWorkId dc
+                  | saturated    -> StgConApp dc args'
+                                      (dropRuntimeRepArgs (fromMaybe [] (tyConAppArgs_maybe res_ty)))
 
                 -- Some primitive operator that might be implemented as a library call.
                 PrimOpId op      -> ASSERT( saturated )
@@ -602,10 +607,10 @@ coreToStgArgs (arg : args) = do         -- Non-type argument
 
         (aticks, arg'') = stripStgTicksTop tickishFloatable arg'
         stg_arg = case arg'' of
-                       StgApp v []      -> StgVarArg v
-                       StgConApp con [] -> StgVarArg (dataConWorkId con)
-                       StgLit lit       -> StgLitArg lit
-                       _                -> pprPanic "coreToStgArgs" (ppr arg)
+                       StgApp v []        -> StgVarArg v
+                       StgConApp con [] _ -> StgVarArg (dataConWorkId con)
+                       StgLit lit         -> StgLitArg lit
+                       _                  -> pprPanic "coreToStgArgs" (ppr arg)
 
         -- WARNING: what if we have an argument like (v `cast` co)
         --          where 'co' changes the representation type?
@@ -752,30 +757,32 @@ coreToStgRhs :: FreeVarsInfo      -- Free var info for the scope of the binding
 
 coreToStgRhs scope_fv_info (bndr, rhs) = do
     (new_rhs, rhs_fvs, rhs_escs) <- coreToStgExpr rhs
-    return (mkStgRhs rhs_fvs bndr bndr_info new_rhs,
+    return (mkStgRhs rhs_fvs bndr bndr_info new_rhs (exprType rhs),
             rhs_fvs, rhs_escs)
   where
     bndr_info = lookupFVInfo scope_fv_info bndr
 
-mkStgRhs :: FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
+mkStgRhs :: FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> Type -> StgRhs
 mkStgRhs = mkStgRhs' con_updateable
   where con_updateable _ _ = False
 
 mkStgRhs' :: (DataCon -> [StgArg] -> Bool)
-            -> FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
-mkStgRhs' con_updateable rhs_fvs bndr binder_info rhs
-  | StgLam bndrs body <- rhs
+            -> FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> Type -> StgRhs
+mkStgRhs' con_updateable rhs_fvs bndr binder_info rhs rhs_ty
+  | StgLam bndrs body body_ty <- rhs
   = StgRhsClosure noCCS binder_info
                    (getFVs rhs_fvs)
                    ReEntrant
-                   bndrs body
-  | StgConApp con args <- unticked_rhs
+                   bndrs body body_ty
+  | StgConApp con args ty_args <- unticked_rhs
   , not (con_updateable con args)
-  = StgRhsCon noCCS con args
+  = -- CorePrep does this right, but just to make sure
+    ASSERT (not (isUnboxedTupleCon con || isUnboxedSumCon con))
+    StgRhsCon noCCS con args ty_args
   | otherwise
   = StgRhsClosure noCCS binder_info
                    (getFVs rhs_fvs)
-                   upd_flag [] rhs
+                   upd_flag [] rhs rhs_ty
  where
 
     (_, unticked_rhs) = stripStgTicksTop (not . tickishIsCode) rhs
