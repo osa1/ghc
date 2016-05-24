@@ -1,8 +1,5 @@
 {-# LANGUAGE UnboxedSums, MagicHash #-}
 
--- FIXME: We're getting a type error without this:
-{-# LANGUAGE UnboxedTuples #-}
-
 module Main where
 
 import GHC.Prim
