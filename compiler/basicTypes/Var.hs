@@ -45,7 +45,9 @@ module Var (
         updateVarTypeM,
 
         -- ** Constructing, taking apart, modifying 'Id's
-        mkGlobalVar, mkLocalVar, mkExportedLocalVar, mkCoVar,
+        mkGlobalVar, mkLocalVar,
+        mkExportedLocalVar, mkNonExportedLocalVar,
+        mkCoVar,
         idInfo, idDetails,
         lazySetIdInfo, setIdDetails, globaliseId,
         setIdExported, setIdNotExported,
@@ -397,6 +399,11 @@ mkCoVar name ty = mk_id name ty (LocalId NotExported) coVarDetails vanillaIdInfo
 mkExportedLocalVar :: IdDetails -> Name -> Type -> IdInfo -> Id
 mkExportedLocalVar details name ty info
   = mk_id name ty (LocalId Exported) details info
+
+-- | NonExported 'Var's mayb e removed as dead code
+mkNonExportedLocalVar :: IdDetails -> Name -> Type -> IdInfo -> Id
+mkNonExportedLocalVar details name ty info
+  = mk_id name ty (LocalId NotExported) details info
 
 mk_id :: Name -> Type -> IdScope -> IdDetails -> IdInfo -> Id
 mk_id name ty scope details info
