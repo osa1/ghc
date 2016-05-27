@@ -259,18 +259,18 @@ bindConArgs (DataAlt con) base args
 
            -- The binding below forces the masking out of the tag bits
            -- when accessing the constructor field.
-           bind_arg :: (NonVoid Id, VirtualHpOffset) -> FCode (Maybe LocalReg)
-           bind_arg (arg@(NonVoid b), offset)
+           bind_arg :: ((NonVoid Id, VirtualHpOffset), StrictnessMark) -> FCode (Maybe LocalReg)
+           bind_arg ((arg@(NonVoid b), offset), str)
              | isDeadBinder b =
                  -- Do not load unused fields from objects to local variables.
                  -- (CmmSink can optimize this, but it's cheap and common enough
                  -- to handle here)
                  return Nothing
-             | otherwise      = do
+             | otherwise = do
                  emit $ mkTaggedObjectLoad dflags (idToReg dflags arg) base offset tag
-                 Just <$> bindArgToReg arg
+                 Just <$> bindConArgToReg b str
 
-       mapMaybeM bind_arg args_w_offsets
+       mapMaybeM bind_arg (zipEqual "bindConArgs" args_w_offsets (dataConRepStrictness con))
 
 bindConArgs _other_con _base args
   = ASSERT( null args ) return []

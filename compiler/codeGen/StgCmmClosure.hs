@@ -162,8 +162,8 @@ data LambdaFormInfo
   | LFCon               -- A saturated constructor application
         DataCon         -- The constructor
 
-  | LFUnknown           -- Used for function arguments and imported things.
-                        -- We know nothing about this closure.
+  | LFUnknown           -- Used for function arguments, DataCon fields, and
+                        -- imported things. We know nothing about this closure.
                         -- Treat like updatable "LFThunk"...
                         -- Imported things which we *do* know something about use
                         -- one of the other LF constructors (eg LFReEntrant for
@@ -172,6 +172,7 @@ data LambdaFormInfo
                         --      The False case is good when we want to enter it,
                         --        because then we know the entry code will do
                         --        For a function, the entry code is the fast entry point
+        !Bool           -- True <=> already forced, no need to enter
 
   | LFUnlifted          -- A value of unboxed type;
                         -- always a value, needs evaluation
@@ -209,11 +210,11 @@ data StandardFormInfo
 --                Building LambdaFormInfo
 ------------------------------------------------------
 
-mkLFArgument :: Id -> LambdaFormInfo
-mkLFArgument id
+mkLFArgument :: Id -> Bool -> LambdaFormInfo
+mkLFArgument id str
   | isUnliftedType ty      = LFUnlifted
-  | might_be_a_function ty = LFUnknown True
-  | otherwise              = LFUnknown False
+  | might_be_a_function ty = LFUnknown True  str
+  | otherwise              = LFUnknown False str
   where
     ty = idType id
 
@@ -284,7 +285,7 @@ mkLFImported id
   = LFReEntrant TopLevel noOneShotInfo arity True (panic "arg_descr")
 
   | otherwise
-  = mkLFArgument id -- Not sure of exact arity
+  = mkLFArgument id False -- Not sure of exact arity
   where
     arity = idRepArity id
 
@@ -423,7 +424,7 @@ nodeMustPointToIt _ (LFCon _) = True
         -- having Node point to the result of an update.  SLPJ
         -- 27/11/92.
 
-nodeMustPointToIt _ (LFUnknown _)   = True
+nodeMustPointToIt _ LFUnknown{}     = True
 nodeMustPointToIt _ LFUnlifted      = False
 nodeMustPointToIt _ LFLetNoEscape   = False
 
@@ -568,12 +569,13 @@ getCallMethod dflags name id (LFThunk _ _ updatable std_form_info is_fun)
     DirectEntry (thunkEntryLabel dflags name (idCafInfo id) std_form_info
                 updatable) 0
 
-getCallMethod _ _name _ (LFUnknown True) _n_arg _v_args _cg_locs _self_loop_info
+getCallMethod _ _name _ (LFUnknown True _) _n_arg _v_args _cg_locs _self_loop_info
   = SlowCall -- might be a function
 
-getCallMethod _ name _ (LFUnknown False) n_args _v_args _cg_loc _self_loop_info
+getCallMethod _ name _ (LFUnknown False forced) n_args _v_args _cg_loc _self_loop_info
   = ASSERT2( n_args == 0, ppr name <+> ppr n_args )
-    EnterIt -- Not a function
+    -- Not a function
+    if forced then ReturnIt else EnterIt
 
 getCallMethod _ _name _ LFLetNoEscape _n_args _v_args (LneLoc blk_id lne_regs)
               _self_loop_info

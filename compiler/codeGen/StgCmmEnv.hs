@@ -18,7 +18,7 @@ module StgCmmEnv (
         addBindC, addBindsC,
 
         bindArgsToRegs, bindToReg, rebindToReg,
-        bindArgToReg, idToReg,
+        bindArgToReg, bindConArgToReg, idToReg,
         getArgAmode, getNonVoidArgAmodes,
         getCgIdInfo,
         maybeLetNoEscape,
@@ -38,6 +38,7 @@ import MkGraph
 import BlockId
 import CmmExpr
 import CmmUtils
+import DataCon (StrictnessMark (..))
 import Id
 import VarEnv
 import Control.Monad
@@ -200,7 +201,12 @@ rebindToReg nvid@(NonVoid id)
         ; bindToReg nvid (cg_lf info) }
 
 bindArgToReg :: NonVoid Id -> FCode LocalReg
-bindArgToReg nvid@(NonVoid id) = bindToReg nvid (mkLFArgument id)
+bindArgToReg nvid@(NonVoid id) = bindToReg nvid (mkLFArgument id False)
+
+bindConArgToReg :: Id -> StrictnessMark -> FCode LocalReg
+bindConArgToReg id str = bindToReg (NonVoid id) (mkLFArgument id str')
+  where
+    str' = case str of MarkedStrict -> True; NotMarkedStrict -> False
 
 bindArgsToRegs :: [NonVoid Id] -> FCode [LocalReg]
 bindArgsToRegs args = mapM bindArgToReg args
