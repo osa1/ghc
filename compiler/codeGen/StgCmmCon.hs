@@ -47,6 +47,7 @@ import MonadUtils (mapMaybeM)
 
 import Control.Monad
 import Data.Char
+import Data.Maybe (fromJust)
 
 
 
@@ -254,13 +255,30 @@ bindConArgs :: AltCon -> LocalReg -> [Id] -> FCode [LocalReg]
 bindConArgs (DataAlt con) base args
   = ASSERT(not (isUnboxedTupleCon con))
     do dflags <- getDynFlags
-       let (_, _, args_w_offsets) = mkVirtConstrOffsets dflags (addIdReps args)
+
+       when (length args /= length (dataConRepStrictness con)) $
+         pprPanic "bindConArgs" (text "DataCon:" <+> ppr con $$
+                                 text "args:" <+> ppr args $$
+                                 text "dataConRepStrictness:" <+> ppr (dataConRepStrictness con))
+
+       let con_arg_strs :: [(Id, StrictnessMark)]
+           con_arg_strs = zip args (dataConRepStrictness con)
+
+           args_w_offsets :: [(NonVoid Id, ByteOff)]
+           (_, _, args_w_offsets) = mkVirtConstrOffsets dflags (addIdReps args)
+
+           args_w_strs :: [(NonVoid Id, ByteOff, StrictnessMark)]
+           args_w_strs =
+             map (\(arg@(NonVoid b), byteOff) ->
+                   (arg, byteOff, fromJust (lookup b con_arg_strs)))
+                 args_w_offsets
+
            tag = tagForCon dflags con
 
            -- The binding below forces the masking out of the tag bits
            -- when accessing the constructor field.
-           bind_arg :: ((NonVoid Id, VirtualHpOffset), StrictnessMark) -> FCode (Maybe LocalReg)
-           bind_arg ((arg@(NonVoid b), offset), str)
+           bind_arg :: (NonVoid Id, VirtualHpOffset, StrictnessMark) -> FCode (Maybe LocalReg)
+           bind_arg (arg@(NonVoid b), offset, str)
              | isDeadBinder b =
                  -- Do not load unused fields from objects to local variables.
                  -- (CmmSink can optimize this, but it's cheap and common enough
@@ -270,7 +288,7 @@ bindConArgs (DataAlt con) base args
                  emit $ mkTaggedObjectLoad dflags (idToReg dflags arg) base offset tag
                  Just <$> bindConArgToReg b str
 
-       mapMaybeM bind_arg (zipEqual "bindConArgs" args_w_offsets (dataConRepStrictness con))
+       mapMaybeM bind_arg args_w_strs
 
 bindConArgs _other_con _base args
   = ASSERT( null args ) return []
