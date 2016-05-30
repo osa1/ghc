@@ -1415,7 +1415,7 @@ mkSumTyCon name binders res_kind arity tyvars cons parent
         algTcGadtSyntax  = False,
         algTcStupidTheta = [],
         algTcRhs         = SumTyCon { data_cons = cons },
-        algTcFields      = emptyFsEnv,
+        algTcFields      = emptyDFsEnv,
         algTcRec         = NonRecursive,
         algTcParent      = parent
     }
