@@ -994,7 +994,7 @@ reportCCS(CostCentreStack *ccs)
 
     max_label_len = 11; // no shorter than "COST CENTRE" header
     max_module_len = 6; // no shorter than "MODULE" header
-    max_src_len = 3; // no shorted than "SRC" header
+    max_src_len = 3; // no shorter than "SRC" header
     max_id_len = 3; // no shorter than "no." header
 
     findCCSMaxLens(ccs, 0,
