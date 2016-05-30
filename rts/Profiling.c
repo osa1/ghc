@@ -832,9 +832,10 @@ static void
 fprintHeader( uint32_t max_label_len, uint32_t max_module_len,
                 uint32_t max_src_len, uint32_t max_id_len )
 {
-    fprintf(prof_file, "%-*s %-*s %-*s %11s  %12s   %12s\n",
+    fprintf(prof_file, "%-*s %-*s %-*s %-*s %11s  %12s   %12s\n",
             max_label_len, "",
             max_module_len, "",
+            max_src_len, "",
             max_id_len, "",
             "", "individual", "inherited");
 
