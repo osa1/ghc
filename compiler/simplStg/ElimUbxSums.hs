@@ -1,8 +1,7 @@
 {-# LANGUAGE CPP, TupleSections #-}
 
 module ElimUbxSums
-  ( typeUnboxedSumRep
-  , unboxedSumTyConFields
+  ( unboxedSumTyConFields
   , unboxedSumRepTypes
   , mkUbxSumAltTy
   ) where
@@ -27,18 +26,6 @@ import Data.Maybe (mapMaybe)
 
 --------------------------------------------------------------------------------
 
--- | Returns unboxed sum representation of a type. The list of cons must have
--- all data cons of the type, and should have more than one DataCon. (otherwise
--- it wouldn't be a sum type)
-typeUnboxedSumRep :: [DataCon] -> [Type]
-typeUnboxedSumRep cons =
-    unboxedSumRepTypes (mapMaybe (mk_tup . dataConRepArgTys) cons)
-  where
-    mk_tup :: [Type] -> Maybe Type
-    mk_tup []   = Nothing
-    mk_tup [ty] = Just ty
-    mk_tup tys  = Just (mkTupleTy Unboxed tys)
-
 -- INVARIANT: Returned list doesn't have unboxed tuples or sums.
 -- Includes the tag field.
 unboxedSumRepTypes :: [Type] -> [Type]
@@ -61,9 +48,6 @@ unboxedSumRepTypes alts =
         | Just (tc, args) <- splitTyConApp_maybe ty
         , isUnboxedSumTyCon tc
         = concatMap go (unboxedSumRepTypes (dropRuntimeRepArgs args))
-
-        -- | isVoidTy ty -- FIXME(osa): This seems wrong.
-        -- = []
 
         | otherwise
         = [ty]
@@ -96,7 +80,7 @@ unboxedSumTyConFields alts =
 -- tuple when necessary, to be used in unboxed sum alts.
 mkUbxSumAltTy :: [Type] -> Type
 mkUbxSumAltTy [ty] = ty
-mkUbxSumAltTy tys  = mkTupleTy Unboxed tys -- FIXME: nullary tuples are OK?
+mkUbxSumAltTy tys  = mkTupleTy Unboxed tys
 
 --------------------------------------------------------------------------------
 

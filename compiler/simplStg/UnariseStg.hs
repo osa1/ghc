@@ -349,4 +349,4 @@ mkTagArg = StgLitArg . MachInt . fromIntegral
 
 isNullaryTupleArg :: StgArg -> Bool
 isNullaryTupleArg StgLitArg{}   = False
-isNullaryTupleArg (StgVarArg v) = v == voidPrimId
+isNullaryTupleArg (StgVarArg v) = v == dataConWorkId unboxedUnitDataCon
