@@ -1736,15 +1736,22 @@ type UnaryType = Type
 data RepType
   = UbxTupleRep [UnaryType] -- Represented by multiple values
                             -- Can be zero, one, or more
+                            -- INVARIANT: never an empty list
+                            -- (see Note [Nullary unboxed tuple])
+  | UbxSumRep [UnaryType] [UnaryType]
+    -- ^ Unlifted fields, lifted fields
+    -- INVARIANT: Unlifted fields list only contains an 'Int#' for the tag.
   | UnaryRep UnaryType      -- Represented by a single value
 
 instance Outputable RepType where
   ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
-  ppr (UnaryRep ty)     = text "UnaryRep"    <+> ppr ty
+  ppr (UbxSumRep ubx_tys bx_tys) = text "UbxSumRep" <+> ppr ubx_tys <+> ppr bx_tys
+  ppr (UnaryRep ty) = text "UnaryRep" <+> ppr ty
 
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (UbxTupleRep tys) = tys
-flattenRepType (UnaryRep ty)     = [ty]
+flattenRepType (UbxSumRep ubx_tys bx_tys) = ubx_tys ++ bx_tys
+flattenRepType (UnaryRep ty) = [ty]
 
 -- | 'repType' figure out how a type will be represented
 --   at runtime.  It looks through
@@ -1775,6 +1782,12 @@ repType ty
 
       | isUnboxedTupleTyCon tc
       = UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
+
+      | isUnboxedSumTyCon tc
+      , let (ubx_fields, bx_fields) = unboxedSumTyConFields non_rr_tys
+      = -- TODO: Currently all unlifted types are held as 'Int#'.
+        UbxSumRep (intPrimTy : replicate (ubx_fields - 1) intPrimTy)
+                  (replicate bx_fields (anyTypeOfKind liftedTypeKind))
       where
           -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
         non_rr_tys = dropRuntimeRepArgs tys

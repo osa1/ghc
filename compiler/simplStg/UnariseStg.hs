@@ -100,7 +100,7 @@ import CoreSyn
 import DataCon
 import FastString (FastString, mkFastString)
 import Id
-import MkId ( voidPrimId, voidArgId )
+import MkId ( voidPrimId )
 import Literal (Literal (..))
 import MkCore (rUNTIME_ERROR_ID)
 import MonadUtils (mapAccumLM)
@@ -129,7 +129,7 @@ import ElimUbxSums
 type UnariseEnv = VarEnv [Id]
 
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
-unarise us binds = zipWith (\us -> unariseBinding us init_env) (listSplitUniqSupply us) binds
+unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
   where
      -- See Note [Unarisation and nullary tuples]
      nullary_tup = dataConWorkId unboxedUnitDataCon
@@ -364,5 +364,5 @@ mkTagArg :: Int -> StgArg
 mkTagArg = StgLitArg . MachInt . fromIntegral
 
 isNullaryTupleArg :: StgArg -> Bool
-isNullaryTupleArg StgLitArg{} = False
-isNullaryTupleArg (StgVarArg v) = v == ubxTupleId0
+isNullaryTupleArg StgLitArg{}   = False
+isNullaryTupleArg (StgVarArg v) = v == voidPrimId
