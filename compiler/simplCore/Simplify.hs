@@ -1868,11 +1868,29 @@ rebuildCase env scrut case_bndr alts cont
                                                 case_bndr bs rhs cont
         }
   where
-    simple_rhs bs rhs = ASSERT( null bs )
-                        do { env' <- simplNonRecX env case_bndr scrut
-                               -- scrut is a constructor application,
-                               -- hence satisfies let/app invariant
-                           ; simplExprF env' rhs cont }
+    -- We should check if the scrutinee is in head-normal form, otherwise we
+    -- transform
+    --
+    --   case unpackCString# "str" as r of
+    --     _ => ...
+    --
+    -- to
+    --
+    --   let r = unpackCString# "str" in ...
+    --
+    -- Which means generating a thunk instead of a value. See also Note
+    -- [exprIsConApp_maybe on literal strings] for why we do this
+    -- transformation.
+    simple_rhs bs rhs
+      | exprIsHNF scrut
+      = ASSERT( null bs )
+        do { env' <- simplNonRecX env case_bndr scrut
+               -- scrut is a constructor application,
+               -- hence satisfies let/app invariant
+           ; simplExprF env' rhs cont }
+
+      | otherwise
+      = reallyRebuildCase env scrut case_bndr alts cont
 
 
 --------------------------------------------------
