@@ -352,17 +352,17 @@ void checkFPUStack(void)
 #endif
 }
 
-#ifdef DEBUG
 // This is called from generated code
 void assertTagged(const StgClosure *clo)
 {
-    if (GET_CLOSURE_TAG(clo) == 0)
+    StgWord tag = GET_CLOSURE_TAG(clo);
+
+    if (tag == 0)
     {
         StgHalfWord type = get_ret_itbl(UNTAG_CONST_CLOSURE(clo))->i.type;
-        errorBelch("assertNotIndirection fails. found a thunk %d (%s)\n",
+        errorBelch("assertTagged fails: found a thunk %d (%s)\n",
                    type, closure_type_names[type]);
-        errorBelch("closure at %ul\n", (StgWord)clo);
-        // abort();
+        errorBelch("closure at %" FMT_Word "\n", (StgWord)clo);
+        abort();
     }
 }
-#endif

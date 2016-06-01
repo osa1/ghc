@@ -33,6 +33,7 @@ import StgCmmProf (profDynAlloc, dynProfHdr, staticProfHdr)
 import StgCmmTicky
 import StgCmmClosure
 import StgCmmEnv
+import StgCmmForeign (emitCCall)
 
 import MkGraph
 
@@ -47,10 +48,12 @@ import Module
 import DynFlags
 import FastString( mkFastString, fsLit )
 import Panic( sorry )
+import DataCon ( StrictnessMark (..), isMarkedStrict )
+import BasicTypes
 
 import Prelude hiding ((<*>))
 
-import Control.Monad (when)
+import Control.Monad (when,forM_)
 import Data.Maybe (isJust)
 
 -----------------------------------------------------------
@@ -65,14 +68,15 @@ allocDynClosure
         -> CmmExpr              -- Cost Centre to blame for this alloc
                                 -- (usually the same; sometimes "OVERHEAD")
 
-        -> [(NonVoid StgArg, VirtualHpOffset)]  -- Offsets from start of object
+        -> [(NonVoid (StgArg, StrictnessMark), VirtualHpOffset)]
+                                                -- Offsets from start of object
                                                 -- ie Info ptr has offset zero.
                                                 -- No void args in here
         -> FCode CmmExpr -- returns Hp+n
 
 allocDynClosureCmm
         :: Maybe Id -> CmmInfoTable -> LambdaFormInfo -> CmmExpr -> CmmExpr
-        -> [(CmmExpr, ByteOff)]
+        -> [(CmmExpr, StrictnessMark, ByteOff)]
         -> FCode CmmExpr -- returns Hp+n
 
 -- allocDynClosure returns an (Hp+8) CmmExpr, and hence the result is
@@ -88,10 +92,11 @@ allocDynClosureCmm
 
 
 allocDynClosure mb_id info_tbl lf_info use_cc _blame_cc args_w_offsets = do
-  let (args, offsets) = unzip args_w_offsets
-  cmm_args <- mapM getArgAmode args     -- No void args
+  let (args_w_strs, offsets) = unzip args_w_offsets
+      (args, strs)           = unzip (map unsafe_stripNV args_w_strs)
+  cmm_args <- mapM (getArgAmode . NonVoid) args     -- No void args
   allocDynClosureCmm mb_id info_tbl lf_info
-                     use_cc _blame_cc (zip cmm_args offsets)
+                     use_cc _blame_cc (zip3 cmm_args strs offsets)
 
 
 allocDynClosureCmm mb_id info_tbl lf_info use_cc _blame_cc amodes_w_offsets = do
@@ -107,7 +112,7 @@ allocHeapClosure
   :: SMRep                            -- ^ representation of the object
   -> CmmExpr                          -- ^ info pointer
   -> CmmExpr                          -- ^ cost centre
-  -> [(CmmExpr,ByteOff)]              -- ^ payload
+  -> [(CmmExpr, StrictnessMark, ByteOff)] -- ^ payload
   -> FCode CmmExpr                    -- ^ returns the address of the object
 allocHeapClosure rep info_ptr use_cc payload = do
   profDynAlloc rep use_cc
@@ -125,8 +130,18 @@ allocHeapClosure rep info_ptr use_cc payload = do
   emitComment $ mkFastString "allocHeapClosure"
   emitSetDynHdr base info_ptr use_cc
 
+  forM_ payload $ \(arg, str, _) ->
+    when (isMarkedStrict str) $
+      emitCCall []
+                (CmmLit (CmmLabel (mkForeignLabel
+                                     (fsLit "assertTagged")
+                                     Nothing
+                                     ForeignLabelInExternalPackage
+                                     IsFunction)))
+                [(arg, NoHint)]
+
   -- Fill in the fields
-  hpStore base payload
+  hpStore base (map (\(a, _, b) -> (a, b)) payload)
 
   -- Bump the virtual heap pointer
   dflags <- getDynFlags

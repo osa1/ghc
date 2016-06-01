@@ -49,8 +49,6 @@ void checkFPUStack(void);
 
 #include "EndPrivate.h"
 
-#ifdef DEBUG
 void assertTagged(const StgClosure*);
-#endif
 
 #endif /* RTSUTILS_H */

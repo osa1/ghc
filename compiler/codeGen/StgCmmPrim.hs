@@ -42,6 +42,7 @@ import SMRep
 import FastString
 import Outputable
 import Util
+import DataCon (StrictnessMark (..))
 
 import Prelude hiding ((<*>))
 
@@ -1655,6 +1656,7 @@ doNewByteArrayOp res_r n = do
 
     base <- allocHeapClosure rep info_ptr curCCS
                      [ (mkIntExpr dflags n,
+                        NotMarkedStrict,
                         hdr_size + oFFSET_StgArrBytes_bytes dflags)
                      ]
 
@@ -1767,7 +1769,8 @@ doNewArrayOp res_r rep info payload n init = do
         (mkIntExpr dflags (nonHdrSize dflags rep))
         (zeroExpr dflags)
 
-    base <- allocHeapClosure rep info_ptr curCCS payload
+    base <- allocHeapClosure rep info_ptr curCCS
+              (map (\(expr, off) -> (expr, NotMarkedStrict, off)) payload)
 
     arr <- CmmLocal `fmap` newTemp (bWord dflags)
     emit $ mkAssign arr base
@@ -1951,8 +1954,10 @@ emitCloneArray info_p res_r src src_off n = do
 
     base <- allocHeapClosure rep info_ptr curCCS
                      [ (mkIntExpr dflags n,
+                        NotMarkedStrict,
                         hdr_size + oFFSET_StgMutArrPtrs_ptrs dflags)
                      , (mkIntExpr dflags (nonHdrSizeW rep),
+                        NotMarkedStrict,
                         hdr_size + oFFSET_StgMutArrPtrs_size dflags)
                      ]
 
@@ -1990,6 +1995,7 @@ emitCloneSmallArray info_p res_r src src_off n = do
 
     base <- allocHeapClosure rep info_ptr curCCS
                      [ (mkIntExpr dflags n,
+                        NotMarkedStrict,
                         hdr_size + oFFSET_StgSmallMutArrPtrs_ptrs dflags)
                      ]
 

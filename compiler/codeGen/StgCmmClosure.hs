@@ -16,6 +16,7 @@ module StgCmmClosure (
         ConTagZ, dataConTagZ,
 
         idPrimRep, isVoidRep, isGcPtrRep, addIdReps, addArgReps,
+        addArgRepsNotStrict,
         argPrimRep,
 
         -- * LambdaFormInfo
@@ -135,6 +136,9 @@ addIdReps ids = [(idPrimRep id, id) | id <- ids]
 
 addArgReps :: [StgArg] -> [(PrimRep, StgArg)]
 addArgReps args = [(argPrimRep arg, arg) | arg <- args]
+
+addArgRepsNotStrict :: [StgArg] -> [(PrimRep, (StgArg, StrictnessMark))]
+addArgRepsNotStrict args = [(argPrimRep arg, (arg, NotMarkedStrict)) | arg <- args]
 
 argPrimRep :: StgArg -> PrimRep
 argPrimRep arg = typePrimRep (stgArgType arg)

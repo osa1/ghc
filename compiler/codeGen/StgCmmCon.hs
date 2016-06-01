@@ -49,7 +49,6 @@ import MonadUtils (mapMaybeM)
 
 import Control.Monad
 import Data.Char
-import Data.Maybe (fromJust)
 
 
 
@@ -226,7 +225,11 @@ buildDynCon' dflags _ binder actually_bound ccs con args
 
   gen_code reg
     = do  { let (tot_wds, ptr_wds, args_w_offsets)
-                  = mkVirtConstrOffsets dflags (addArgReps args)
+                  = mkVirtConstrOffsets dflags $
+                      zipWith (\(rep, arg) str -> (rep, (arg, str)))
+                        (addArgReps args)
+                        (dataConRepStrictness con)
+
                   -- No void args in args_w_offsets
                 nonptr_wds = tot_wds - ptr_wds
                 info_tbl = mkDataConInfoTable dflags con False
@@ -258,39 +261,46 @@ bindConArgs (DataAlt con) base args
   = ASSERT(not (isUnboxedTupleCon con))
     do dflags <- getDynFlags
 
-       when (debugIsOn && length args /= length (dataConRepStrictness con)) $
+#ifdef DEBUG
+#endif
+       when (length args /= length (dataConRepStrictness con)) $
          pprPanic "bindConArgs1" (text "DataCon:" <+> ppr con $$
                                   text "args:" <+> ppr args $$
                                   text "dataConRepStrictness:" <+> ppr (dataConRepStrictness con))
 
-       let con_arg_strs :: [(Id, StrictnessMark)]
-           con_arg_strs = zip args (dataConRepStrictness con)
-
-           args_w_offsets :: [(NonVoid Id, ByteOff)]
-           (_, _, args_w_offsets) = mkVirtConstrOffsets dflags (addIdReps args)
-
-           args_w_strs :: [(NonVoid Id, ByteOff, StrictnessMark)]
-           args_w_strs =
-             map (\(arg@(NonVoid b), byteOff) ->
-                   (arg, byteOff, fromJust (lookup b con_arg_strs)))
-                 args_w_offsets
+       let args_w_offsets :: [(NonVoid (Id, StrictnessMark), ByteOff)]
+           (_, _, args_w_offsets) =
+             mkVirtConstrOffsets dflags $
+               zipWith (\(rep, id) str -> (rep, (id, str)))
+                 (addIdReps args)
+                 (dataConRepStrictness con)
 
            tag = tagForCon dflags con
 
            -- The binding below forces the masking out of the tag bits
            -- when accessing the constructor field.
-           bind_arg :: (NonVoid Id, VirtualHpOffset, StrictnessMark) -> FCode (Maybe LocalReg)
-           bind_arg (arg@(NonVoid b), offset, str)
+           bind_arg :: (NonVoid (Id, StrictnessMark), VirtualHpOffset) -> FCode (Maybe LocalReg)
+           bind_arg (NonVoid (b, str), offset)
              | isDeadBinder b =
                  -- Do not load unused fields from objects to local variables.
                  -- (CmmSink can optimize this, but it's cheap and common enough
                  -- to handle here)
                  return Nothing
              | otherwise = do
-                 let field_reg = idToReg dflags arg
+                 let field_reg = idToReg dflags (NonVoid b)
                  emit $ mkTaggedObjectLoad dflags field_reg base offset tag
 
-                 when (debugIsOn && isStrictUnknown (mkLFArgument b (isMarkedStrict str))) $
+                 -- TODO: We either need to keep "assertTagged" in all RTS
+                 -- builds, or not generate this at all. Only generating in
+                 -- WayDebug doesn't work as the compiled file may be linked
+                 -- with non-debug RTS.
+                 --
+                 when (isStrictUnknown (mkLFArgument b (isMarkedStrict str))) $
+                   pprTrace "bind_arg"
+                     (text "generating assertion" $$
+                      text "arg:" <+> ppr b $$
+                      text "arg_ty:" <+> ppr (idType b)) $
+
                    -- at this point the field is loaded into `field_reg`
                    emitCCall
                      [] -- ret
@@ -303,7 +313,7 @@ bindConArgs (DataAlt con) base args
 
                  Just <$> bindConArgToReg b str
 
-       mapMaybeM bind_arg args_w_strs
+       mapMaybeM bind_arg args_w_offsets
 
 bindConArgs _other_con _base args
   = ASSERT( null args ) return []

@@ -49,6 +49,7 @@ import BasicTypes
 import Outputable
 import FastString
 import DynFlags
+import DataCon ( StrictnessMark (..) )
 
 import Control.Monad
 
@@ -365,10 +366,10 @@ mkRhsClosure dflags bndr cc _ fvs upd_flag args body
 --      ; (use_cc, blame_cc) <- chooseDynCostCentres cc args body
         ; let use_cc = curCCS; blame_cc = curCCS
         ; emit (mkComment $ mkFastString "calling allocDynClosure")
-        ; let toVarArg (NonVoid a, off) = (NonVoid (StgVarArg a), off)
+        ; let toVarArg (NonVoid a, off) = (NonVoid ((StgVarArg a), NotMarkedStrict), off)
         ; let info_tbl = mkCmmInfo closure_info
         ; hp_plus_n <- allocDynClosure (Just bndr) info_tbl lf_info use_cc blame_cc
-                                         (map toVarArg fv_details)
+                         (map toVarArg fv_details)
 
         -- RETURN
         ; return (mkRhsInit dflags reg lf_info hp_plus_n) }
@@ -392,7 +393,7 @@ cgRhsStdThunk bndr lf_info payload
     mod_name <- getModuleName
   ; dflags <- getDynFlags
   ; let (tot_wds, ptr_wds, payload_w_offsets)
-            = mkVirtHeapOffsets dflags (isLFThunk lf_info) (addArgReps payload)
+            = mkVirtHeapOffsets dflags (isLFThunk lf_info) (addArgRepsNotStrict payload)
 
         descr = closureDescription dflags mod_name (idName bndr)
         closure_info = mkClosureInfo dflags False       -- Not static
