@@ -27,7 +27,9 @@ import StgCmmLayout
 import StgCmmUtils
 import StgCmmClosure
 import StgCmmProf ( curCCS )
+import StgCmmForeign ( emitCCall )
 
+import BasicTypes (FunctionOrData (IsFunction))
 import CmmExpr
 import CLabel
 import MkGraph
@@ -256,10 +258,10 @@ bindConArgs (DataAlt con) base args
   = ASSERT(not (isUnboxedTupleCon con))
     do dflags <- getDynFlags
 
-       when (length args /= length (dataConRepStrictness con)) $
-         pprPanic "bindConArgs" (text "DataCon:" <+> ppr con $$
-                                 text "args:" <+> ppr args $$
-                                 text "dataConRepStrictness:" <+> ppr (dataConRepStrictness con))
+       when (debugIsOn && length args /= length (dataConRepStrictness con)) $
+         pprPanic "bindConArgs1" (text "DataCon:" <+> ppr con $$
+                                  text "args:" <+> ppr args $$
+                                  text "dataConRepStrictness:" <+> ppr (dataConRepStrictness con))
 
        let con_arg_strs :: [(Id, StrictnessMark)]
            con_arg_strs = zip args (dataConRepStrictness con)
@@ -285,7 +287,21 @@ bindConArgs (DataAlt con) base args
                  -- to handle here)
                  return Nothing
              | otherwise = do
-                 emit $ mkTaggedObjectLoad dflags (idToReg dflags arg) base offset tag
+                 let field_reg = idToReg dflags arg
+                 emit $ mkTaggedObjectLoad dflags field_reg base offset tag
+
+                 -- at this point the field is loaded into `field_reg`
+                 when (isStrictUnknown (mkLFArgument b
+                                         (case str of { MarkedStrict -> True; _ -> False }))) $
+                   emitCCall
+                     [] -- ret
+                     (CmmLit (CmmLabel (mkForeignLabel
+                                          (fsLit "assertTagged")
+                                          Nothing
+                                          ForeignLabelInExternalPackage
+                                          IsFunction))) -- function
+                     [(CmmReg (CmmLocal field_reg), NoHint)] --args
+
                  Just <$> bindConArgToReg b str
 
        mapMaybeM bind_arg args_w_strs

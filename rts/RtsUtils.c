@@ -14,6 +14,7 @@
 #include "Ticky.h"
 #include "Schedule.h"
 #include "RtsFlags.h"
+#include "Printer.h"
 
 #ifdef HAVE_TIME_H
 #include <time.h>
@@ -351,3 +352,15 @@ void checkFPUStack(void)
 #endif
 }
 
+// This is called from generated code
+void assertTagged(const StgClosure *clo)
+{
+    if (GET_CLOSURE_TAG(clo) == 0)
+    {
+        StgHalfWord type = get_ret_itbl(UNTAG_CONST_CLOSURE(clo))->i.type;
+        errorBelch("assertNotIndirection fails. found a thunk %d (%s)\n",
+                   type, closure_type_names[type]);
+        errorBelch("closure at %ul\n", (StgWord)clo);
+        // abort();
+    }
+}
