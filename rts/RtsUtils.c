@@ -352,6 +352,7 @@ void checkFPUStack(void)
 #endif
 }
 
+#ifdef DEBUG
 // This is called from generated code
 void assertTagged(const StgClosure *clo)
 {
@@ -364,3 +365,4 @@ void assertTagged(const StgClosure *clo)
         // abort();
     }
 }
+#endif

@@ -38,7 +38,7 @@ import MkGraph
 import BlockId
 import CmmExpr
 import CmmUtils
-import DataCon (StrictnessMark (..))
+import DataCon
 import Id
 import VarEnv
 import Control.Monad
@@ -204,9 +204,8 @@ bindArgToReg :: NonVoid Id -> FCode LocalReg
 bindArgToReg nvid@(NonVoid id) = bindToReg nvid (mkLFArgument id False)
 
 bindConArgToReg :: Id -> StrictnessMark -> FCode LocalReg
-bindConArgToReg id str = bindToReg (NonVoid id) (mkLFArgument id str')
-  where
-    str' = case str of MarkedStrict -> True; NotMarkedStrict -> False
+bindConArgToReg id str
+  = bindToReg (NonVoid id) (mkLFArgument id (isMarkedStrict str))
 
 bindArgsToRegs :: [NonVoid Id] -> FCode [LocalReg]
 bindArgsToRegs args = mapM bindArgToReg args

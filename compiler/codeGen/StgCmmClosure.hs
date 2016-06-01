@@ -25,6 +25,7 @@ module StgCmmClosure (
         mkApLFInfo, mkLFImported, mkLFArgument, mkLFLetNoEscape,
         lfDynTag,
         maybeIsLFCon, isLFThunk, isLFReEntrant, lfUpdatable,
+        isStrictUnknown,
 
         -- * Used by other modules
         CgLoc(..), SelfLoopInfo, CallMethod(..),
@@ -112,6 +113,10 @@ isKnownFun :: LambdaFormInfo -> Bool
 isKnownFun LFReEntrant{} = True
 isKnownFun LFLetNoEscape = True
 isKnownFun _             = False
+
+isStrictUnknown :: LambdaFormInfo -> Bool
+isStrictUnknown (LFUnknown _ s) = s
+isStrictUnknown _               = False
 
 
 -----------------------------------------------------------------------------

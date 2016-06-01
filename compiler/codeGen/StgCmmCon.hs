@@ -290,9 +290,8 @@ bindConArgs (DataAlt con) base args
                  let field_reg = idToReg dflags arg
                  emit $ mkTaggedObjectLoad dflags field_reg base offset tag
 
-                 -- at this point the field is loaded into `field_reg`
-                 when (isStrictUnknown (mkLFArgument b
-                                         (case str of { MarkedStrict -> True; _ -> False }))) $
+                 when (debugIsOn && isStrictUnknown (mkLFArgument b (isMarkedStrict str))) $
+                   -- at this point the field is loaded into `field_reg`
                    emitCCall
                      [] -- ret
                      (CmmLit (CmmLabel (mkForeignLabel
