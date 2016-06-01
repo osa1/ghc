@@ -75,12 +75,6 @@ allocDynClosureCmm
         -> [(CmmExpr, ByteOff)]
         -> FCode CmmExpr -- returns Hp+n
 
--- allocDynClosure allocates the thing in the heap,
--- and modifies the virtual Hp to account for this.
--- The second return value is the graph that sets the value of the
--- returned LocalReg, which should point to the closure after executing
--- the graph.
-
 -- allocDynClosure returns an (Hp+8) CmmExpr, and hence the result is
 -- only valid until Hp is changed.  The caller should assign the
 -- result to a LocalReg if it is required to remain live.
