@@ -1753,32 +1753,31 @@ def normalise_prof (str):
 
     # We have somthing like this:
     #
-    # MAIN          MAIN <built-in>      124  0    0.0    0.0   100.0  100.0
-    #  CAF          Main <entire-module> 247  0    0.0    0.5   100.0   85.0
-    #   readPrec    Main Main_1.hs:7:13  251  1    0.0    0.3     0.0    0.3
-    #   readPrec    Main Main_1.hs:4:13  249  1    0.0    0.3     0.0    0.3
-    #   main        Main Main_1.hs:10:1  248  1  100.0   50.7   100.0   84.0
-    #    ==         Main Main_1.hs:7:25  256  1    0.0    0.0     0.0    0.0
-    #    ==         Main Main_1.hs:4:25  255  1    0.0    0.0     0.0    0.0
-    #    showsPrec  Main Main_1.hs:7:19  254  2    0.0    0.4     0.0    0.4
-    #    showsPrec  Main Main_1.hs:4:19  253  2    0.0    0.3     0.0    0.3
-    #    readPrec   Main Main_1.hs:7:13  252  0    0.0   16.2     0.0   16.2
-    #    readPrec   Main Main_1.hs:4:13  250  0    0.0   16.3     0.0   16.3
+    # MAIN         MAIN  <built-in>                 53  0  0.0   0.2  0.0  100.0
+    #  CAF         Main  <entire-module>           105  0  0.0   0.3  0.0   62.5
+    #   readPrec   Main  Main_1.hs:7:13-16         109  1  0.0   0.6  0.0    0.6
+    #   readPrec   Main  Main_1.hs:4:13-16         107  1  0.0   0.6  0.0    0.6
+    #   main       Main  Main_1.hs:(10,1)-(20,20)  106  1  0.0  20.2  0.0   61.0
+    #    ==        Main  Main_1.hs:7:25-26         114  1  0.0   0.0  0.0    0.0
+    #    ==        Main  Main_1.hs:4:25-26         113  1  0.0   0.0  0.0    0.0
+    #    showsPrec Main  Main_1.hs:7:19-22         112  2  0.0   1.2  0.0    1.2
+    #    showsPrec Main  Main_1.hs:4:19-22         111  2  0.0   0.9  0.0    0.9
+    #    readPrec  Main  Main_1.hs:7:13-16         110  0  0.0  18.8  0.0   18.8
+    #    readPrec  Main  Main_1.hs:4:13-16         108  0  0.0  19.9  0.0   19.9
     #
     # then we remove all the specific profiling data, leaving only the cost
     # centre name, module, src, and entries, to end up with this: (modulo
     # whitespace between columns)
     #
-    # MAIN      MAIN <built-in>      0
-    # readPrec  Main Main_1.hs:7:13  1
-    # readPrec  Main Main_1.hs:4:13  1
-    # main      Main Main_1.hs:10:1  1
-    # ==        Main Main_1.hs:7:25  1
-    # ==        Main Main_1.hs:4:25  1
-    # showsPrec Main Main_1.hs:7:19  2
-    # showsPrec Main Main_1.hs:4:19  2
-    # readPrec  Main Main_1.hs:7:13  0
-    # readPrec  Main Main_1.hs:4:13  0
+    # MAIN      MAIN <built-in>         0
+    # readPrec  Main Main_1.hs:7:13-16  1
+    # readPrec  Main Main_1.hs:4:13-16  1
+    # ==        Main Main_1.hs:7:25-26  1
+    # ==        Main Main_1.hs:4:25-26  1
+    # showsPrec Main Main_1.hs:7:19-22  2
+    # showsPrec Main Main_1.hs:4:19-22  2
+    # readPrec  Main Main_1.hs:7:13-16  0
+    # readPrec  Main Main_1.hs:4:13-16  0
 
     # Split 9 whitespace-separated groups, take columns 1 (cost-centre), 2
     # (module), 3 (src), and 5 (entries). SCC names can't have whitespace, so

@@ -225,13 +225,8 @@ emitCostCentreDecl cc = do
   ; modl  <- newByteStringCLit (bytesFS $ Module.moduleNameFS
                                         $ Module.moduleName
                                         $ cc_mod cc)
-  ; loc <- newByteStringCLit $ bytesFS $ mkFastString $ showSDoc dflags $
-             case costCentreSrcSpan cc of
-               UnhelpfulSpan fs ->
-                 ftext fs
-               RealSrcSpan span ->
-                 ftext (srcSpanFile span) <> colon <>
-                 ppr (srcSpanStartLine span) <> colon <> ppr (srcSpanStartCol span)
+  ; loc <- newByteStringCLit $ bytesFS $ mkFastString $
+                   showPpr dflags (costCentreSrcSpan cc)
            -- XXX going via FastString to get UTF-8 encoding is silly
   ; let
      lits = [ zero dflags,           -- StgInt ccID,
