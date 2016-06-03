@@ -1766,7 +1766,10 @@ def normalise_prof (str):
     #    foo              Main            1
     #     foo.bar         Main            1
 
-    str = re.sub('\n([ \t]*[^ \t]+)([ \t]+[^ \t]+)([ \t]+\\d+)([ \t]+\\d+)[ \t]+([\\d\\.]+)[ \t]+([\\d\\.]+)[ \t]+([\\d\\.]+)[ \t]+([\\d\\.]+)','\n\\1 \\2 \\4',str)
+    # Split 8 whitespace-separated groups, take columns 1, 2, and 4.
+    # SCC names can't have whitespace, so this works fine.
+    str = re.sub(r'\s*(\S+)\s*(\S+)\s*(\S+)\s*(\S+)\s*(\S+)\s*(\S+)\s*(\S+)\s*(\S+)',
+            '\\1 \\2 \\4\n', str)
     return str
 
 def normalise_slashes_( str ):
