@@ -1097,7 +1097,7 @@ insertIndexTableInSortedList(IndexTable* tbl, IndexTable* sortedList)
         char*   cursor_label = cursor->ccs->cc->label;
 
         if (tbl_ticks > cursor_ticks ||
-                (tbl_ticks == cursor_ticks && strcmp(tbl_label, cursor_label) > 0)) {
+                (tbl_ticks == cursor_ticks && strcmp(tbl_label, cursor_label) < 0)) {
             if (prev == NULL) {
                 tbl->next = sortedList;
                 return tbl;
