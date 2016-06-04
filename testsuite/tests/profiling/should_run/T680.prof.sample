@@ -1,4 +1,4 @@
-	Sat Jun  4 11:41 2016 Time and Allocation Profiling Report  (Final)
+	Sat Jun  4 11:51 2016 Time and Allocation Profiling Report  (Final)
 
 	   T680 +RTS -hc -p -RTS
 
@@ -23,11 +23,11 @@ MAIN                 MAIN                  <built-in>             46          0 
   r                  Main                  T680.hs:18:1-26        94          1    0.0    0.0     0.0   93.5
    k                 Main                  T680.hs:12:1-17        97          0    0.0    0.0     0.0   93.5
     foo              Main                  T680.hs:(2,1)-(9,38)   98          0    0.0    0.0     0.0   93.5
+     foo.\           Main                  T680.hs:3:12-40        99       4001    0.0   25.5     0.0   25.5
      foo.bar         Main                  T680.hs:(5,3)-(9,38)  101          0    0.0   29.8     0.0   68.0
-      foo.bar.k'     Main                  T680.hs:6:9-34        106          0    0.0    0.0     0.0    0.0
       foo.bar.\      Main                  T680.hs:(8,11)-(9,38) 102       4001    0.0   38.2     0.0   38.2
        foo.bar.\.k'' Main                  T680.hs:8:15-27       103       4000    0.0    0.0     0.0    0.0
-     foo.\           Main                  T680.hs:3:12-40        99       4001    0.0   25.5     0.0   25.5
+      foo.bar.k'     Main                  T680.hs:6:9-34        106          0    0.0    0.0     0.0    0.0
   main               Main                  T680.hs:20:1-14        92          1    0.0    0.0     0.0    0.0
   k                  Main                  T680.hs:12:1-17        95          1    0.0    0.0     0.0    0.0
    foo               Main                  T680.hs:(2,1)-(9,38)   96          1    0.0    0.0     0.0    0.0
