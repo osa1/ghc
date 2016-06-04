@@ -43,7 +43,6 @@ import DynFlags
 import FastString
 import Module
 import Outputable
-import SrcLoc
 
 import Control.Monad
 import Data.Char (ord)
