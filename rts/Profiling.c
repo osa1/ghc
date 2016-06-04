@@ -131,6 +131,7 @@ static  void              reportCCS       ( CostCentreStack *ccs );
 static  CostCentreStack * checkLoop       ( CostCentreStack *ccs,
                                             CostCentre *cc );
 static  CostCentreStack * pruneCCSTree    ( CostCentreStack *ccs );
+static  void              sortCCSTree     ( CostCentreStack *ccs );
 static  CostCentreStack * actualPush      ( CostCentreStack *, CostCentre * );
 static  CostCentreStack * isInIndexTable  ( IndexTable *, CostCentre * );
 static  IndexTable *      addToIndexTable ( IndexTable *, CostCentreStack *,
@@ -899,7 +900,9 @@ reportCCSProfiling( void )
 
     inheritCosts(CCS_MAIN);
 
-    reportCCS(pruneCCSTree(CCS_MAIN));
+    CostCentreStack *stack = pruneCCSTree(CCS_MAIN);
+    sortCCSTree(stack);
+    reportCCS(stack);
 }
 
 static uint32_t
@@ -1078,6 +1081,63 @@ pruneCCSTree (CostCentreStack *ccs)
     } else {
         return NULL;
     }
+}
+
+static IndexTable*
+insertIndexTableInSortedList(IndexTable* tbl, IndexTable* sortedList)
+{
+    StgWord tbl_ticks = tbl->cc->time_ticks;
+    char*   tbl_label = tbl->cc->label;
+
+    IndexTable *prev   = NULL;
+    IndexTable *cursor = sortedList;
+
+    while (cursor != NULL) {
+        StgWord cursor_ticks = cursor->cc->time_ticks;
+        char*   cursor_label = cursor->cc->label;
+
+        if (tbl_ticks > cursor_ticks ||
+                (tbl_ticks == cursor_ticks && strcmp(tbl_label, cursor_label) > 0)) {
+            if (prev == NULL) {
+                tbl->next = sortedList;
+                return tbl;
+            } else {
+                prev->next = tbl;
+                tbl->next = cursor;
+                return sortedList;
+            }
+        } else {
+            prev   = cursor;
+            cursor = cursor->next;
+        }
+    }
+
+    prev->next = tbl;
+    return sortedList;
+}
+
+static void
+sortCCSTree(CostCentreStack *ccs)
+{
+    if (ccs->indexTable == NULL) return;
+
+    for (IndexTable *tbl = ccs->indexTable; tbl != NULL; tbl = tbl->next)
+        if (!tbl->back_edge)
+            sortCCSTree(tbl->ccs);
+
+    IndexTable *sortedList    = ccs->indexTable;
+    IndexTable *nonSortedList = sortedList->next;
+    sortedList->next = NULL;
+
+    while (nonSortedList != NULL)
+    {
+        IndexTable *nonSortedTail = nonSortedList->next;
+        nonSortedList->next = NULL;
+        sortedList = insertIndexTableInSortedList(nonSortedList, sortedList);
+        nonSortedList = nonSortedTail;
+    }
+
+    ccs->indexTable = sortedList;
 }
 
 void
