@@ -1086,15 +1086,15 @@ pruneCCSTree (CostCentreStack *ccs)
 static IndexTable*
 insertIndexTableInSortedList(IndexTable* tbl, IndexTable* sortedList)
 {
-    StgWord tbl_ticks = tbl->cc->time_ticks;
-    char*   tbl_label = tbl->cc->label;
+    StgWord tbl_ticks = tbl->ccs->time_ticks;
+    char*   tbl_label = tbl->ccs->cc->label;
 
     IndexTable *prev   = NULL;
     IndexTable *cursor = sortedList;
 
     while (cursor != NULL) {
-        StgWord cursor_ticks = cursor->cc->time_ticks;
-        char*   cursor_label = cursor->cc->label;
+        StgWord cursor_ticks = cursor->ccs->time_ticks;
+        char*   cursor_label = cursor->ccs->cc->label;
 
         if (tbl_ticks > cursor_ticks ||
                 (tbl_ticks == cursor_ticks && strcmp(tbl_label, cursor_label) > 0)) {
