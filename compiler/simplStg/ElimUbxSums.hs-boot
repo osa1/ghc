@@ -1,5 +1,10 @@
 module ElimUbxSums where
 
 import {-# SOURCE #-} TyCoRep (Type)
+import {-# SOURCE #-} Type (RepType)
+import Outputable (Outputable)
 
-unboxedSumTyConFields :: [Type] -> (Int, Int)
+data UbxSumRepTy
+instance Outputable UbxSumRepTy
+ubxSumRepType :: [Type] -> RepType
+flattenSumRep :: UbxSumRepTy -> [Type]

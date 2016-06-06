@@ -19,3 +19,5 @@ partitionInvisibles :: TyCon -> (a -> Type) -> [a] -> ([a], [a])
 coreView :: Type -> Maybe Type
 
 tyCoVarsOfTypesWellScoped :: [Type] -> [TyVar]
+
+data RepType

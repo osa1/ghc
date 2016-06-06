@@ -84,22 +84,21 @@ import CoreSyn
 import DataCon
 import FastString (FastString, mkFastString)
 import Id
-import MkId ( voidPrimId )
 import Literal (Literal (..))
 import MkCore (rUNTIME_ERROR_ID)
+import MkId (voidPrimId)
 import MonadUtils (mapAccumLM)
 import Outputable
 import StgSyn
 import TyCon
 import Type
-import TysPrim (intPrimTy, intPrimTyCon)
+import TysPrim (intPrimTyCon)
 import TysWiredIn
 import UniqSupply
 import Util
 import VarEnv
 
 import Data.Bifunctor (second)
-import Data.List (partition)
 import Data.Maybe (fromMaybe)
 
 import ElimUbxSums
@@ -145,15 +144,10 @@ unariseExpr rho (StgApp f args) ty
                       (map StgVarArg (unariseId rho f)))
 
   | null args
-  , Just (tycon, ty_args) <- splitTyConApp_maybe ty
-  , isUnboxedSumTyCon tycon
-  , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropRuntimeRepArgs ty_args)
-  , (ubx_args, bx_args) <- partition (isUnliftedType . idType) (unariseId rho f)
-  = return (StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
-                      (map StgVarArg ubx_args ++
-                       replicate (ubx_fields - length ubx_args) uBX_DUMMY_ARG ++
-                       map StgVarArg bx_args ++
-                       replicate (bx_fields - length bx_args) bX_DUMMY_ARG))
+  , isUnboxedSumType ty
+  , as <- unariseId rho f
+    -- An Id bound to a unboxed sum
+  = return (StgConApp (tupleDataCon Unboxed (length as)) (map StgVarArg as))
 
   -- We now use rho for renaming too
   | Just [f'] <- lookupVarEnv rho f
@@ -174,14 +168,12 @@ unariseExpr rho (StgConApp dc args) ty
   , ASSERT2(isUnboxedSumType ty, ppr ty $$ ppr dc) True
   , (tycon, ty_args) <- splitTyConApp ty
   , ASSERT2(isUnboxedSumTyCon tycon, ppr ty $$ ppr tycon $$ ppr dc) True
-  , (ubx_fields, bx_fields) <- unboxedSumTyConFields (dropRuntimeRepArgs ty_args)
-  , let args' = unariseArgs rho (filter (not . isNullaryTupleArg) args)
-  , (ubx_args, bx_args) <- partition (isUnliftedType . stgArgType) args'
-  , let tag = dataConTag dc
-  = return (StgConApp (tupleDataCon Unboxed (ubx_fields + bx_fields))
-                      (mkTagArg tag :
-                       ubx_args ++ replicate (ubx_fields - length ubx_args - 1) uBX_DUMMY_ARG ++
-                       bx_args ++ replicate (bx_fields - length bx_args) bX_DUMMY_ARG))
+  = let
+      sum_rep = mkUbxSumRepTy (map return (dropRuntimeRepArgs ty_args))
+      args'   = unariseArgs rho (filter (not . isNullaryTupleArg) args)
+      tag     = dataConTag dc
+    in
+      return (mkUbxSum sum_rep tag (map stgArgType args') args')
 
   | otherwise
   = return (StgConApp dc (unariseArgs rho args))
@@ -198,7 +190,7 @@ unariseExpr rho (StgCase e bndr alt_ty alts) ty
        return (StgCase e' bndr alt_ty' alts')
  where
     alt_ty' = case alt_ty of
-                UbxSumAlt ubx_fields bx_fields -> UbxTupAlt (ubx_fields + bx_fields)
+                UbxSumAlt sum_rep -> UbxTupAlt (length (flattenSumRep sum_rep))
                 _ -> alt_ty
 
 unariseExpr rho (StgLet bind e) ty
@@ -226,12 +218,11 @@ unariseAlts rho (UbxTupAlt n) bndr [(DataAlt _, ys, e)] ty
 unariseAlts _ (UbxTupAlt _) _ alts _
   = pprPanic "unariseExpr: strange unboxed tuple alts" (ppr alts)
 
-unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
-  = do (rho_sum_bndrs, ys) <- unariseIdBinder rho bndr
-       ASSERT(length ys == ubx_fields + bx_fields) (return ())
+unariseAlts rho (UbxSumAlt _) bndr alts ty
+  = do (rho_sum_bndrs, tag_bndr : ys) <- unariseIdBinder rho bndr
+       -- At this point ys will have variables with different types. We need to
+       -- map our DataAlt binders to these variables.
        let
-         (tag_bndr : ubx_ys, bx_ys) = splitAt ubx_fields ys
-
          mkAlt :: StgAlt -> UniqSM StgAlt
          mkAlt (DEFAULT, _, e) =
            ( DEFAULT, [], ) <$> unariseExpr rho_sum_bndrs e ty
@@ -239,8 +230,21 @@ unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
          mkAlt (DataAlt sumCon, bs, e) = do
            (rho_alt_bndrs, bs') <- unariseIdBinders rho_sum_bndrs bs
            let
-             (ubx_bs, bx_bs) = partition (isUnliftedType . idType) bs'
-             rns = zip ubx_bs ubx_ys ++ zip bx_bs bx_ys
+             ys_types = map (\y -> (typePrimRep (idType y), y)) ys
+             bs_types = map (\b -> (typePrimRep (idType b), b)) bs'
+
+             map_bs :: [(PrimRep, Id)] -> [(PrimRep, Id)] -> [(Id, Id)]
+             map_bs [] _ = []
+             map_bs _ [] = pprPanic "mkAlt.map_bs - 1" (ppr ys_types $$ ppr bs_types)
+             map_bs bs0@((b_rep, b) : bs) ((y_rep, y) : ys)
+               | b_rep == y_rep
+               = (b, y) : map_bs bs ys
+               | y_rep < b_rep
+               = map_bs bs0 ys
+               | otherwise
+               = pprPanic "mkAlt.map_bs - 2" (ppr ys_types $$ ppr bs_types)
+
+             rns = map_bs bs_types ys_types
 
              rho_alt_bndrs_renamed =
                flip mapVarEnv rho_alt_bndrs $ \vals ->
@@ -259,7 +263,7 @@ unariseAlts rho (UbxSumAlt ubx_fields bx_fields) bndr alts ty
          StgCase (StgApp tag_bndr []) tag_bndr
                  (PrimAlt intPrimTyCon) . mkDefaultAlt <$> mapM mkAlt alts
 
-       return [(DataAlt (tupleDataCon Unboxed (ubx_fields + bx_fields)), ys, inner_case)]
+       return [(DataAlt (tupleDataCon Unboxed (1 + length ys)), tag_bndr : ys, inner_case)]
 
 unariseAlts rho _ _ alts ty
   = mapM (\alt -> unariseAlt rho alt ty) alts
@@ -312,28 +316,15 @@ unariseIdBinder rho x =
         let rho' = extendVarEnv rho x ys
         return (rho', ys)
 
-    UbxSumRep ubx_fields bx_fields -> do
-      ASSERT(length ubx_fields > 0) (return ())
-      tag <- mkSysLocalOrCoVarM (mkFastString "tag") intPrimTy
-      ys1 <- mkIds (mkFastString "ubx") (replicate (length ubx_fields - 1) intPrimTy)
-      ys2 <- mkIds (mkFastString "bx")  (replicate (length bx_fields) liftedAny)
-      let ys = tag : ys1 ++ ys2
-          rho' = extendVarEnv rho x ys
+    UbxSumRep sumRep -> do
+      ys <- mkIds (mkFastString "sumf") (ubxSumFieldTypes sumRep)
+      let rho' = extendVarEnv rho x ys
       return (rho', ys)
 
 mkIds :: FastString -> [UnaryType] -> UniqSM [Id]
 mkIds fs tys = mapM (mkSysLocalOrCoVarM fs) tys
 
 --------------------------------------------------------------------------------
-
-liftedAny :: Type
-liftedAny = anyTypeOfKind liftedTypeKind
-
-uBX_DUMMY_ARG :: StgArg
-uBX_DUMMY_ARG = StgLitArg (MachWord 0)
-
-bX_DUMMY_ARG :: StgArg
-bX_DUMMY_ARG = StgVarArg rUNTIME_ERROR_ID
 
 mkDefaultAlt :: [StgAlt] -> [StgAlt]
 mkDefaultAlt [] = pprPanic "elimUbxSumExpr.mkDefaultAlt" (text "Empty alts")
@@ -343,9 +334,6 @@ mkDefaultAlt alts = dummyDefaultAlt : alts
 
 dummyDefaultAlt :: StgAlt
 dummyDefaultAlt = (DEFAULT, [], StgApp rUNTIME_ERROR_ID [])
-
-mkTagArg :: Int -> StgArg
-mkTagArg = StgLitArg . MachInt . fromIntegral
 
 isNullaryTupleArg :: StgArg -> Bool
 isNullaryTupleArg StgLitArg{}   = False
