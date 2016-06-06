@@ -1,88 +1,140 @@
 {-# LANGUAGE CPP, TupleSections #-}
 
+-- | Here we implement all the tools we need to
+--
+--   1. Generate unboxed sum type of a sum type. (to be used in e.g.
+--      implementation of UNPACK for sum types)
+--
+--   2. Translate unboxed sums to unboxed tuples in stg2stg.
+--
 module ElimUbxSums
-  ( unboxedSumTyConFields
-  , unboxedSumRepTypes
-  , mkUbxSumAltTy
+  ( mkUbxSumRepTy
+  , mkUbxSum
+  , ubxSumRepType
+  , UbxSumRepTy
+  , ubxSumFieldTypes
+  , flattenSumRep
   ) where
 
 #include "HsVersions.h"
 
 import BasicTypes
-import DataCon
+import Literal
+import MkCore (rUNTIME_ERROR_ID)
 import Outputable
+import StgSyn
 import TyCon
 import Type
 import TysPrim
 import TysWiredIn
-import Util
+import Util (debugIsOn, zipEqual)
 
-#if __GLASGOW_HASKELL__ < 709
-import Control.Applicative
-#endif
-
-import Data.List (partition)
-import Data.Maybe (mapMaybe)
+import Data.List (foldl', sort, sortOn)
 
 --------------------------------------------------------------------------------
 
--- INVARIANT: Returned list doesn't have unboxed tuples or sums.
--- Includes the tag field.
-unboxedSumRepTypes :: [Type] -> [Type]
-unboxedSumRepTypes alts =
-    let
-      alt_tys = map go alts
+-- | An unboxed sum is represented as its slots. Includes the tag.
+-- INVARIANT: List is sorted.
+newtype UbxSumRepTy = UbxSumRepTy { ubxSumSlots :: [PrimRep] }
 
-      con_rep_tys_parts :: [([Type], [Type])]
-      con_rep_tys_parts = map (partition isUnliftedType) alt_tys
+ubxSumFieldTypes :: UbxSumRepTy -> [Type]
+ubxSumFieldTypes = map primRepType . ubxSumSlots
 
-      fields_unboxed = maximum (0 : map (length . fst) con_rep_tys_parts)
-      fields_boxed   = maximum (0 : map (length . snd) con_rep_tys_parts)
+instance Outputable UbxSumRepTy where
+  ppr (UbxSumRepTy slots) = text "UbxSumRepTy" <+> ppr slots
 
-      go :: Type -> [Type]
-      go ty
-        | Just (tc, args) <- splitTyConApp_maybe ty
-        , isUnboxedTupleTyCon tc
-        = concatMap go (dropRuntimeRepArgs args)
+-- | Given types of constructor arguments, return the unboxed sum type.
+mkUbxSumRepTy :: [[Type]] -> UbxSumRepTy
+mkUbxSumRepTy constrs =
+  ASSERT( length constrs > 1 ) -- otherwise it isn't a sum type
+  let
+    combine_alts
+      :: [[PrimRep]]  -- constructors
+      -> [PrimRep]    -- final slots
+    combine_alts constrs = foldl' constr_reps [] constrs
 
-        | Just (tc, args) <- splitTyConApp_maybe ty
-        , isUnboxedSumTyCon tc
-        = concatMap go (unboxedSumRepTypes (dropRuntimeRepArgs args))
+    constr_reps :: [PrimRep] -> [PrimRep] -> [PrimRep]
+    constr_reps existing_reps [] = existing_reps
+    constr_reps existing_reps (r : rs)
+      | Just existing_reps' <- consume_rep_slot r existing_reps
+      = r : constr_reps existing_reps' rs
+      | otherwise
+      = r : constr_reps existing_reps rs
 
-        | otherwise
-        = [ty]
+    -- | TODO: document me
+    consume_rep_slot :: PrimRep -> [PrimRep] -> Maybe [PrimRep]
+    consume_rep_slot r (r' : rs)
+      | r == r'
+      = Just rs -- found a slot, use it and return the rest
+      | otherwise
+      = (r' :) <$> consume_rep_slot r rs -- keep searching for a slot
+    consume_rep_slot _ []
+      = Nothing -- couldn't find a slot for this rep
 
-      ret = intPrimTy :
-            replicate fields_unboxed intPrimTy ++
-            replicate fields_boxed liftedAny
-    in
-      ASSERT(not (any isUnboxedSumType ret) && not (any isUnboxedTupleType ret))
-      -- pprTrace "unboxedSumRetTypes"
-      --   (text "input:" <+> ppr alts $$
-      --    text "con_rep_tys_parts:" <+> ppr con_rep_tys_parts $$
-      --    text "output:" <+> ppr ret) $
-        ret
+    -- nesting unboxed tuples and sums is OK, so we need to flatten first
+    constr_flat_ty :: [Type] -> [Type]
+    constr_flat_ty fields = concatMap (flattenRepType . repType) fields
+  in
+    UbxSumRepTy (IntRep : sort (combine_alts (map (map typePrimRep . constr_flat_ty) constrs)))
 
--- | Returns (# unboxed fields, # boxed fields) for a UnboxedSum TyCon
--- application. NOTE: Tag field is included.
-unboxedSumTyConFields :: [Type] -> (Int, Int)
-unboxedSumTyConFields alts =
-    let
-      rep_tys = unboxedSumRepTypes alts
-      (ubx_tys, bx_tys) = partition isUnliftedType rep_tys
-    in
-      (length ubx_tys, length bx_tys)
+mkUbxSum :: UbxSumRepTy -> ConTag -> [Type] -> [StgArg] -> StgExpr
+mkUbxSum sumTy tag field_tys fields =
+  let
+    field_rep_tys = map typePrimRep field_tys
+    sorted_fields = sortOn fst (zipEqual "mkUbxSum" field_rep_tys fields)
+
+    bindFields :: [PrimRep] -> [(PrimRep, StgArg)] -> [StgArg]
+    bindFields reps []
+      = -- arguments are bound, fill rest of the slots with dummy values
+        map repDummyArg reps
+    bindFields [] args
+      = -- we still have arguments to bind, but run out of slots
+        pprPanic "mkUbxSum" (text "Run out of slots. Args left to bind:" <+> ppr args)
+    bindFields reps0@(rep : reps) args0@((arg_rep, arg) : args)
+      | rep == arg_rep
+      = arg : bindFields reps args
+      | rep < arg_rep
+      = repDummyArg rep : bindFields reps args0
+      | otherwise
+      = pprPanic "mkUbxSum" (text "Can't bind arg with rep" <+> ppr arg_rep $$
+                             text "Slots left:" <+> ppr reps0 $$
+                             text "sum ty:" <+> ppr sumTy $$
+                             text "tag:" <+> ppr tag $$
+                             text "field_tys:" <+> ppr field_tys $$
+                             text "fields:" <+> ppr fields)
+  in
+    StgConApp (tupleDataCon Unboxed (length (ubxSumSlots sumTy)))
+              (StgLitArg (MachInt (fromIntegral tag))
+                : (bindFields (tail (ubxSumSlots sumTy)) sorted_fields))
+
+primRepType :: PrimRep -> Type
+primRepType VoidRep   = voidPrimTy
+primRepType PtrRep    = anyTypeOfKind liftedTypeKind
+primRepType IntRep    = intPrimTy
+primRepType WordRep   = wordPrimTy
+primRepType Int64Rep  = int64PrimTy
+primRepType Word64Rep = word64PrimTy
+primRepType AddrRep   = error "primRepType: Not sure what AddrRep is for"
+primRepType FloatRep  = floatPrimTy
+primRepType DoubleRep = doublePrimTy
+primRepType VecRep{}  = error "primRepType: VecRep not supported yet"
+
+repDummyArg :: PrimRep -> StgArg
+repDummyArg VoidRep   = error "repDummyArg: VoidRep"
+repDummyArg PtrRep    = StgVarArg rUNTIME_ERROR_ID
+repDummyArg IntRep    = StgLitArg (MachInt 0)
+repDummyArg WordRep   = StgLitArg (MachWord 0)
+repDummyArg Int64Rep  = StgLitArg (MachInt64 0)
+repDummyArg Word64Rep = StgLitArg (MachWord64 0)
+repDummyArg AddrRep   = error "repDummyArg: Not sure what AddrRep is"
+repDummyArg FloatRep  = StgLitArg (MachFloat 0.0)
+repDummyArg DoubleRep = StgLitArg (MachDouble 0.0)
+repDummyArg VecRep{}  = error "repDummyArg: Found VecRep"
 
 --------------------------------------------------------------------------------
 
--- | Every alternative of an unboxed sum has exactly one field, and we use
--- unboxed tuples when we need more than one fields. This generates an unboxed
--- tuple when necessary, to be used in unboxed sum alts.
-mkUbxSumAltTy :: [Type] -> Type
-mkUbxSumAltTy [ty] = ty
-mkUbxSumAltTy tys  = mkTupleTy Unboxed tys
+ubxSumRepType :: [Type] -> RepType
+ubxSumRepType = UbxSumRep . mkUbxSumRepTy . map return
 
---------------------------------------------------------------------------------
-
-liftedAny :: Type
-liftedAny = anyTypeOfKind liftedTypeKind
+flattenSumRep :: UbxSumRepTy -> [UnaryType]
+flattenSumRep = map primRepType . ubxSumSlots

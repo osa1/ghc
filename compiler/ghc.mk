@@ -523,6 +523,7 @@ compiler_stage2_dll0_MODULES = \
 	SrcLoc \
 	StaticFlags \
 	StringBuffer \
+	StgSyn \
 	TcEvidence \
 	TcRnTypes \
 	TcType \

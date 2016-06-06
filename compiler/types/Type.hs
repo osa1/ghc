@@ -214,8 +214,7 @@ import Class
 import TyCon
 import TysPrim
 import {-# SOURCE #-} TysWiredIn ( listTyCon, typeNatKind
-                                 , typeSymbolKind, liftedTypeKind
-                                 , anyTypeOfKind )
+                                 , typeSymbolKind, liftedTypeKind )
 import PrelNames
 import CoAxiom
 import {-# SOURCE #-} Coercion
@@ -229,7 +228,7 @@ import Pair
 import ListSetOps
 import Digraph
 import Unique ( nonDetCmpUnique )
-import {-# SOURCE #-} ElimUbxSums ( unboxedSumTyConFields )
+import {-# SOURCE #-} ElimUbxSums ( ubxSumRepType, UbxSumRepTy, flattenSumRep )
 
 import Maybes           ( orElse )
 import Data.Maybe       ( isJust, mapMaybe )
@@ -1738,19 +1737,17 @@ data RepType
                             -- Can be zero, one, or more
                             -- INVARIANT: never an empty list
                             -- (see Note [Nullary unboxed tuple])
-  | UbxSumRep [UnaryType] [UnaryType]
-    -- ^ Unlifted fields, lifted fields
-    -- INVARIANT: Unlifted fields list only contains an 'Int#' for the tag.
+  | UbxSumRep UbxSumRepTy
   | UnaryRep UnaryType      -- Represented by a single value
 
 instance Outputable RepType where
   ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
-  ppr (UbxSumRep ubx_tys bx_tys) = text "UbxSumRep" <+> ppr ubx_tys <+> ppr bx_tys
+  ppr (UbxSumRep rep) = text "UbxSumRep" <+> ppr rep
   ppr (UnaryRep ty) = text "UnaryRep" <+> ppr ty
 
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (UbxTupleRep tys) = tys
-flattenRepType (UbxSumRep ubx_tys bx_tys) = ubx_tys ++ bx_tys
+flattenRepType (UbxSumRep sum_rep) = flattenSumRep sum_rep
 flattenRepType (UnaryRep ty) = [ty]
 
 -- | 'repType' figure out how a type will be represented
@@ -1784,10 +1781,7 @@ repType ty
       = UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
 
       | isUnboxedSumTyCon tc
-      , let (ubx_fields, bx_fields) = unboxedSumTyConFields non_rr_tys
-      = -- TODO: Currently all unlifted types are held as 'Int#'.
-        UbxSumRep (intPrimTy : replicate (ubx_fields - 1) intPrimTy)
-                  (replicate bx_fields (anyTypeOfKind liftedTypeKind))
+      = ubxSumRepType non_rr_tys
       where
           -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
         non_rr_tys = dropRuntimeRepArgs tys
