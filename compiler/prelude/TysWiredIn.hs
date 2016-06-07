@@ -853,7 +853,7 @@ sumTyCon :: Arity -> TyCon
 sumTyCon n | n > mAX_SUM_SIZE = fst (mk_sum n)  -- Build one specially
 sumTyCon n = fst (unboxedSumArr ! n)
 
--- | Data constructor for i:th alternative of a n-ary unboxed sum.
+-- | Data constructor for i-th alternative of a n-ary unboxed sum.
 sumDataCon :: ConTag -- Alternative
            -> Arity  -- Arity
            -> DataCon
