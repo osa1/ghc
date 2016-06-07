@@ -868,8 +868,9 @@ checkAPat msg loc e0 = do
                                    return (TuplePat ps b [])
      | otherwise -> parseErrorSDoc loc (text "Illegal tuple section in pattern:" $$ ppr e0)
 
-   HsSum alt arity expr _ -> do p <- checkLPat msg expr
-                                return (SumPat p alt arity placeHolderType)
+   ExplicitSum alt arity expr _ -> do
+     p <- checkLPat msg expr
+     return (SumPat p alt arity placeHolderType)
 
    RecordCon { rcon_con_name = c, rcon_flds = HsRecFields fs dd }
                         -> do fs <- mapM (checkPatField msg) fs
@@ -1484,7 +1485,7 @@ parseErrorSDoc span s = failSpanMsgP span s
 -- TODO: Get the exact source loc of the whole experssion.
 mkSumOrTuple :: Boxity -> Either (Int, Int, LHsExpr RdrName) [LHsTupArg RdrName]
              -> P (HsExpr RdrName)
-mkSumOrTuple Unboxed (Left (alt, arity, e)) = return $ HsSum alt arity e PlaceHolder
+mkSumOrTuple Unboxed (Left (alt, arity, e)) = return $ ExplicitSum alt arity e PlaceHolder
 mkSumOrTuple boxity (Right es) = return $ ExplicitTuple es boxity
 mkSumOrTuple Boxed (Left (_, _, (L l e))) =
     parseErrorSDoc l $

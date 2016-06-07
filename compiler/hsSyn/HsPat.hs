@@ -136,11 +136,12 @@ data Pat id
     --            'ApiAnnotation.AnnOpen' @'('@ or @'(#'@,
     --            'ApiAnnotation.AnnClose' @')'@ or  @'#)'@
 
-  | SumPat      (LPat id)          -- ^ Sum sub-pattern
-                Int                -- ^ Alternative (one-based)
-                Arity              -- ^ Arity
-                (PostTc id [Type]) -- ^ PlaceHolder before typechecker, filled in afterwards
-                                   -- with the types of the alternative
+  | SumPat      (LPat id)          -- Sum sub-pattern
+                ConTag             -- Alternative (one-based)
+                Arity              -- Arity
+                (PostTc id [Type]) -- PlaceHolder before typechecker, filled in
+                                   -- afterwards with the types of the
+                                   -- alternative
     -- ^ - 'ApiAnnotation.AnnKeywordId' :
     --            'ApiAnnotation.AnnOpen' @'(#'@,
     --            'ApiAnnotation.AnnClose' @'#)'@

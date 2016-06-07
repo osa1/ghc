@@ -350,7 +350,8 @@ data HsExpr id
         [LHsTupArg id]
         Boxity
 
-  | HsSum Int    -- Alternative (one-based)
+  | ExplicitSum
+          ConTag -- Alternative (one-based)
           Arity  -- Sum arity
           (LHsExpr id)
           (PostTc id [Type])   -- the type arguments
@@ -847,7 +848,7 @@ ppr_expr (ExplicitTuple exprs boxity)
     punc (Missing {} : _) = comma
     punc []               = empty
 
-ppr_expr (HsSum alt arity expr _)
+ppr_expr (ExplicitSum alt arity expr _)
   = text "(#" <+> ppr_bars (alt - 1) <+> ppr expr <+> ppr_bars (arity - alt) <+> text "#)"
   where
     ppr_bars n = hsep (replicate n (char '|'))

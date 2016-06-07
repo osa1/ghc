@@ -10,6 +10,7 @@
 module ElimUbxSums
   ( mkUbxSumRepTy
   , mkUbxSum
+  , ubxSumSlots
   , ubxSumRepType
   , UbxSumRepTy
   , ubxSumFieldTypes
@@ -27,7 +28,7 @@ import TyCon
 import Type
 import TysPrim
 import TysWiredIn
-import Util (debugIsOn, zipEqual)
+import Util (debugIsOn)
 
 import Data.List (foldl', sort, sortOn)
 
@@ -85,11 +86,10 @@ mkUbxSumRepTy constrs =
   in
     UbxSumRepTy (IntRep : sort (combine_alts (map constr_rep_tys constrs)))
 
-mkUbxSum :: UbxSumRepTy -> ConTag -> [Type] -> [StgArg] -> StgExpr
-mkUbxSum sumTy tag field_tys fields =
+mkUbxSum :: UbxSumRepTy -> ConTag -> [(PrimRep, StgArg)] -> StgExpr
+mkUbxSum sumTy tag fields =
   let
-    field_rep_tys = map typePrimRep field_tys
-    sorted_fields = sortOn fst (zipEqual "mkUbxSum" field_rep_tys fields)
+    sorted_fields = sortOn fst fields
 
     bindFields :: [PrimRep] -> [(PrimRep, StgArg)] -> [StgArg]
     bindFields reps []
@@ -108,7 +108,6 @@ mkUbxSum sumTy tag field_tys fields =
                              text "Slots left:" <+> ppr reps0 $$
                              text "sum ty:" <+> ppr sumTy $$
                              text "tag:" <+> ppr tag $$
-                             text "field_tys:" <+> ppr field_tys $$
                              text "fields:" <+> ppr fields)
   in
     StgConApp (tupleDataCon Unboxed (length (ubxSumSlots sumTy)))

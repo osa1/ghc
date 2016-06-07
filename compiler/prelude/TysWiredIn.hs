@@ -78,7 +78,7 @@ module TysWiredIn (
         anyTyCon, anyTy, anyTypeOfKind,
 
         -- * Sums
-        mkSumTy, sumTyCon, sumDataCon, AltIx,
+        mkSumTy, sumTyCon, sumDataCon,
 
         -- * Kinds
         typeNatKindCon, typeNatKind, typeSymbolKindCon, typeSymbolKind,
@@ -841,7 +841,7 @@ mkSumTyConOcc n = mkOccName tcName str
     bars = concat $ replicate (n-1) "|"
 
 -- | OccName for i-th alternative of n-ary unboxed sum data constructor.
-mkSumDataConOcc :: AltIx -> Arity -> OccName
+mkSumDataConOcc :: ConTag -> Arity -> OccName
 mkSumDataConOcc alt n = mkOccName dataName str
   where
     -- No need to cache these, the caching is done in mk_sum
@@ -853,12 +853,9 @@ sumTyCon :: Arity -> TyCon
 sumTyCon n | n > mAX_SUM_SIZE = fst (mk_sum n)  -- Build one specially
 sumTyCon n = fst (unboxedSumArr ! n)
 
--- | The zero-based of alternatives in a sum.
-type AltIx = Int  -- TODO: Change to ConTag
-
 -- | Data constructor for i:th alternative of a n-ary unboxed sum.
-sumDataCon :: AltIx  -- ^ Alternative
-           -> Arity  -- ^ Arity
+sumDataCon :: ConTag -- Alternative
+           -> Arity  -- Arity
            -> DataCon
 sumDataCon alt arity
   | alt > arity
