@@ -173,7 +173,7 @@ unariseExpr rho (StgConApp dc args) ty
       args'   = unariseArgs rho (filter (not . isNullaryTupleArg) args)
       tag     = dataConTag dc
     in
-      return (mkUbxSum sum_rep tag (map stgArgType args') args')
+      return (mkUbxSum sum_rep tag (map (\a -> (typePrimRep (stgArgType a), a)) args'))
 
   | otherwise
   = return (StgConApp dc (unariseArgs rho args))

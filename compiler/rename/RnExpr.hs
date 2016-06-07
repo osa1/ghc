@@ -271,9 +271,9 @@ rnExpr (ExplicitTuple tup_args boxity)
     rnTupArg (L l (Missing _)) = return (L l (Missing placeHolderType)
                                         , emptyFVs)
 
-rnExpr (HsSum alt arity expr _)
+rnExpr (ExplicitSum alt arity expr _)
   = do { (expr', fvs) <- rnLExpr expr
-       ; return (HsSum alt arity expr' PlaceHolder, fvs) }
+       ; return (ExplicitSum alt arity expr' PlaceHolder, fvs) }
 
 rnExpr (RecordCon { rcon_con_name = con_id
                   , rcon_flds = rec_binds@(HsRecFields { rec_dotdot = dd }) })

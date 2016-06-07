@@ -831,7 +831,7 @@ tcPatToExpr args pat = go pat
                                          ; return $ ExplicitTuple
                                               (map (noLoc . Present) exprs) box }
     go1 (SumPat pat alt arity _)    = do { expr <- go1 (unLoc pat)
-                                         ; return $ HsSum alt arity (noLoc expr) PlaceHolder
+                                         ; return $ ExplicitSum alt arity (noLoc expr) PlaceHolder
                                          }
     go1 (LitPat lit)                = return $ HsLit lit
     go1 (NPat (L _ n) mb_neg _ _)
