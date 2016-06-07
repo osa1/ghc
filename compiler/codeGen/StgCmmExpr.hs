@@ -399,10 +399,7 @@ cgCase (StgApp v []) bndr alt_type@(PrimAlt _) alts
   = -- assignment suffices for unlifted types
     do { dflags <- getDynFlags
        ; unless reps_compatible $
-       -- ; unless (sizes_compatible dflags) $
-           pprPanic "cgCase: reps do not match, perhaps a dodgy unsafeCoerce?"
-             (text "v:" <+> ppr v <> parens (ppr (idType v)) $$
-              text "bndr:" <+> ppr bndr <> parens (ppr (idType bndr)))
+           panic "cgCase: reps do not match, perhaps a dodgy unsafeCoerce?"
        ; v_info <- getCgIdInfo v
        ; emitAssign (CmmLocal (idToReg dflags (NonVoid bndr)))
                     (idInfoToAmode v_info)
@@ -410,8 +407,6 @@ cgCase (StgApp v []) bndr alt_type@(PrimAlt _) alts
        ; cgAlts (NoGcInAlts,AssignedDirectly) (NonVoid bndr) alt_type alts }
   where
     reps_compatible = idPrimRep v == idPrimRep bndr
-    -- sizes_compatible dflags =
-    --   primRepSizeW dflags (idPrimRep v) <= primRepSizeW dflags (idPrimRep bndr)
 
 {- Note [Dodgy unsafeCoerce 2, #3132]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
