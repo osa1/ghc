@@ -115,6 +115,7 @@ import Util
 import VarEnv
 
 import Data.Bifunctor (second)
+import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 
 import ElimUbxSums
@@ -246,14 +247,17 @@ unariseAlts rho (UbxSumAlt _) bndr alts ty
          mkAlt (DataAlt sumCon, bs, e) = do
            (rho_alt_bndrs, bs') <- unariseIdBinders rho_sum_bndrs bs
            let
-             ys_types = map (\y -> (typePrimRep (idType y), y)) ys
+             ys_types =
+               sortOn fst $ map (\y -> (typePrimRep (idType y), y)) ys
 
                 -- this filter is annoying .. the problem is when we allocate
                 -- slots for "flattened" types of a unboxed sum, we skip
                 -- VoidReps. so here we should ignore VoidRep binders because
                 -- they have no slots allocated.
-             bs_types = filter (not . isVoidRep . fst) $
-                          map (\b -> (typePrimRep (idType b), b)) bs'
+             bs_types =
+               sortOn fst $
+                 filter (not . isVoidRep . fst) $
+                   map (\b -> (typePrimRep (idType b), b)) bs'
 
              map_bs :: [(PrimRep, Id)] -> [(PrimRep, Id)] -> [(Id, Id)]
              map_bs [] _ = []
