@@ -19,7 +19,7 @@ types that
 module BasicTypes(
         Version, bumpVersion, initialVersion,
 
-        ConTag, fIRST_TAG,
+        ConTag, ConTagZ, fIRST_TAG,
 
         Arity, RepArity,
 
@@ -132,6 +132,9 @@ type RepArity = Int
 -- | Type of the tags associated with each constructor possibility
 --   or superclass selector
 type ConTag = Int
+
+-- | A *zero-indexed* constructor tag
+type ConTagZ = Int
 
 fIRST_TAG :: ConTag
 -- ^ Tags are allocated from here for real constructors

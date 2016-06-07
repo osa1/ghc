@@ -140,7 +140,7 @@ import RdrName
 import Name
 import NameSet          ( NameSet, mkNameSet, elemNameSet )
 import BasicTypes       ( Arity, RecFlag(..), Boxity(..),
-                          TupleSort(..) )
+                          TupleSort(..), ConTagZ )
 import ForeignCall
 import SrcLoc           ( noSrcSpan )
 import Unique
@@ -867,7 +867,7 @@ unboxedSumArr :: Array Int (TyCon, Array Int DataCon)
 unboxedSumArr = listArray (0,mAX_SUM_SIZE) [mk_sum i | i <- [0..mAX_SUM_SIZE]]
 
 -- | Create type constructor and data constructors for n-ary unboxed sum.
-mk_sum :: Int -> (TyCon, Array Int DataCon)
+mk_sum :: Arity -> (TyCon, Array ConTagZ DataCon)
 mk_sum arity = (tycon, sum_cons)
   where
     tycon   = mkSumTyCon tc_name tc_binders tc_res_kind (arity * 2) tyvars (elems sum_cons)
