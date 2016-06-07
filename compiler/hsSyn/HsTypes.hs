@@ -463,7 +463,7 @@ data HsType name
 
     -- For details on above see note [Api annotations] in ApiAnnotation
 
-  | HsUSumTy           [LHsType name]  -- Element types (length gives arity)
+  | HsSumTy             [LHsType name]  -- Element types (length gives arity)
     -- ^ - 'ApiAnnotation.AnnKeywordId' : 'ApiAnnotation.AnnOpen' @'(#'@,
     --         'ApiAnnotation.AnnClose' '#)'@
 
@@ -1237,7 +1237,7 @@ ppr_mono_ty _    (HsTupleTy con tys) = tupleParens std_con (pprWithCommas ppr ty
   where std_con = case con of
                     HsUnboxedTuple -> UnboxedTuple
                     _              -> BoxedTuple
-ppr_mono_ty _    (HsUSumTy tys)      = tupleParens UnboxedTuple (pprWithBars ppr tys)
+ppr_mono_ty _    (HsSumTy tys)       = tupleParens UnboxedTuple (pprWithBars ppr tys)
 ppr_mono_ty _    (HsKindSig ty kind) = parens (ppr_mono_lty TopPrec ty <+> dcolon <+> ppr kind)
 ppr_mono_ty _    (HsListTy ty)       = brackets (ppr_mono_lty TopPrec ty)
 ppr_mono_ty _    (HsPArrTy ty)       = paBrackets (ppr_mono_lty TopPrec ty)
