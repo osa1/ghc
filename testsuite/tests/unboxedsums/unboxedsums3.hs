@@ -13,7 +13,7 @@ showAlt0 (# | | () #) = "(# | | () #)"
 
 showAlt1 :: (# Void | Float# #) -> String
 showAlt1 (# _ | #) = "(# Void | #)"
-showAlt1 (# | f #) = show (F# f)
+showAlt1 (# | f #) = "(# | " ++ show (F# f) ++ "# #)"
 
 data D = D { f1 :: (# Void# | (# #) | () #)
            , f2 :: (# Void | Float# #)

@@ -28,7 +28,7 @@ showEither4 (# | | s | | | | #) = "Alt2: " ++ show s
 showEither4 (# | | | c | | | #) = "Alt3: " ++ show c
 showEither4 (# | | | | e | | #) = "Alt4: " ++ show e
 showEither4 (# | | | | | i | #) = "Alt5: " ++ show (I# i)
-showEither4 (# | | | | | | f #) = "Alt5: " ++ show (F# f)
+showEither4 (# | | | | | | f #) = "Alt6: " ++ show (F# f)
 
 main :: IO ()
 main = do
