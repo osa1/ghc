@@ -71,11 +71,19 @@ mkUbxSumRepTy constrs =
     consume_rep_slot _ []
       = Nothing -- couldn't find a slot for this rep
 
-    -- nesting unboxed tuples and sums is OK, so we need to flatten first
-    constr_flat_ty :: [Type] -> [Type]
-    constr_flat_ty fields = concatMap (flattenRepType . repType) fields
+    -- Nesting unboxed tuples and sums is OK, so we need to flatten first.
+    constr_flatten_tys :: [Type] -> [Type]
+    constr_flatten_tys fields = concatMap (flattenRepType . repType) fields
+
+    -- No need to allocate VoidRep slots as those types are simply not available
+    -- in runtime.
+    filter_voids :: [PrimRep] -> [PrimRep]
+    filter_voids = filter (not . isVoidRep)
+
+    constr_rep_tys :: [Type] -> [PrimRep]
+    constr_rep_tys = filter_voids . map typePrimRep . constr_flatten_tys
   in
-    UbxSumRepTy (IntRep : sort (combine_alts (map (map typePrimRep . constr_flat_ty) constrs)))
+    UbxSumRepTy (IntRep : sort (combine_alts (map constr_rep_tys constrs)))
 
 mkUbxSum :: UbxSumRepTy -> ConTag -> [Type] -> [StgArg] -> StgExpr
 mkUbxSum sumTy tag field_tys fields =

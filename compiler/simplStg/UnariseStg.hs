@@ -247,7 +247,13 @@ unariseAlts rho (UbxSumAlt _) bndr alts ty
            (rho_alt_bndrs, bs') <- unariseIdBinders rho_sum_bndrs bs
            let
              ys_types = map (\y -> (typePrimRep (idType y), y)) ys
-             bs_types = map (\b -> (typePrimRep (idType b), b)) bs'
+
+                -- this filter is annoying .. the problem is when we allocate
+                -- slots for "flattened" types of a unboxed sum, we skip
+                -- VoidReps. so here we should ignore VoidRep binders because
+                -- they have no slots allocated.
+             bs_types = filter (not . isVoidRep . fst) $
+                          map (\b -> (typePrimRep (idType b), b)) bs'
 
              map_bs :: [(PrimRep, Id)] -> [(PrimRep, Id)] -> [(Id, Id)]
              map_bs [] _ = []
