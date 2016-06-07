@@ -5,7 +5,7 @@ module Main where
 import GHC.Prim
 import GHC.Types
 
--- This fails with:
+-- This used to fail with:
 --
 --   [1 of 1] Compiling Main             ( illegal_instr.hs, illegal_instr.o )
 --   /tmp/ghc26928_0/ghc_2.s: Assembler messages:
@@ -22,12 +22,17 @@ import GHC.Types
 --         _gRg::I64 = _sQU::F32;   // CmmAssign
 --         Reg ty: I64
 --         Rhs ty: F32
+--
+-- We either need to use some primops for properly moving a machine float from
+-- floating point registers to general purpose registers, or use separate slots
+-- for machine integers and floats. Currently the latter is implemented.
+-- (TODO: Need to update this comment once I implement the former)
 
 data D = D (# Int# | Float# #)
 
 instance Show D where
-  show (D (# _ | #)) = "left"
-  show (D (# | _ #)) = "right"
+  show (D (# i | #)) = "left " ++ show (I# i)
+  show (D (# | f #)) = "right " ++ show (F# f)
 
 main :: IO ()
 main = do
