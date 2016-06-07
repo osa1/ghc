@@ -1482,12 +1482,22 @@ mkImpExpSubSpec xs =
 parseErrorSDoc :: SrcSpan -> SDoc -> P a
 parseErrorSDoc span s = failSpanMsgP span s
 
--- TODO: Get the exact source loc of the whole experssion.
-mkSumOrTuple :: Boxity -> Either (Int, Int, LHsExpr RdrName) [LHsTupArg RdrName]
+mkSumOrTuple :: Boxity
+             -> SrcSpan
+             -> Either (ConTag, Arity, LHsExpr RdrName) [LHsTupArg RdrName]
              -> P (HsExpr RdrName)
-mkSumOrTuple Unboxed (Left (alt, arity, e)) = return $ ExplicitSum alt arity e PlaceHolder
-mkSumOrTuple boxity (Right es) = return $ ExplicitTuple es boxity
-mkSumOrTuple Boxed (Left (_, _, (L l e))) =
-    parseErrorSDoc l $
-    hang (text "Boxed sums not supported:")
-    2 (ppr e)
+
+-- Tuple
+mkSumOrTuple boxity _ (Right es) = return (ExplicitTuple es boxity)
+
+-- Sum
+mkSumOrTuple Unboxed _ (Left (alt, arity, e)) =
+    return (ExplicitSum alt arity e PlaceHolder)
+mkSumOrTuple Boxed l (Left (alt, arity, L _ e)) =
+    parseErrorSDoc l (hang (text "Boxed sums not supported:") 2 (ppr_boxed_sum alt arity e))
+  where
+    ppr_boxed_sum :: ConTag -> Arity -> HsExpr RdrName -> SDoc
+    ppr_boxed_sum alt arity e =
+      text "(" <+> ppr_bars (alt - 1) <+> ppr e <+> ppr_bars (arity - alt) <+> text ")"
+
+    ppr_bars n = hsep (replicate n (Outputable.char '|'))

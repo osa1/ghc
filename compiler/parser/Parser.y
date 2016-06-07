@@ -2281,13 +2281,13 @@ aexp2   :: { LHsExpr RdrName }
         -- correct Haskell (you'd have to write '((+ 3), (4 -))')
         -- but the less cluttered version fell out of having texps.
         | '(' texp ')'                  {% ams (sLL $1 $> (HsPar $2)) [mop $1,mcp $3] }
-        | '(' tup_exprs ')'             {% do { e <- mkSumOrTuple Boxed $2
+        | '(' tup_exprs ')'             {% do { e <- mkSumOrTuple Boxed (comb2 $1 $3) $2
                                               ; ams (sLL $1 $> e) [mop $1,mcp $3] } }
 
         | '(#' texp '#)'                {% ams (sLL $1 $> (ExplicitTuple [L (gl $2)
                                                          (Present $2)] Unboxed))
                                                [mo $1,mc $3] }
-        | '(#' tup_exprs '#)'           {% do { e <- mkSumOrTuple Unboxed $2
+        | '(#' tup_exprs '#)'           {% do { e <- mkSumOrTuple Unboxed (comb2 $1 $3) $2
                                               ; ams (sLL $1 $> e) [mo $1,mc $3] } }
 
         | '[' list ']'      {% ams (sLL $1 $> (snd $2)) (mos $1:mcs $3:(fst $2)) }
