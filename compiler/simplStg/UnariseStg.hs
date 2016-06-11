@@ -99,7 +99,6 @@ import Util
 import VarEnv
 
 import Data.Bifunctor (second)
-import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 
 import ElimUbxSums
@@ -174,7 +173,7 @@ unariseExpr rho (StgConApp dc args) ty
       args'   = unariseArgs rho (filter (not . isNullaryTupleArg) args)
       tag     = dataConTag dc
     in
-      return (mkUbxSum sum_rep tag (map (\a -> (typePrimRep (stgArgType a), a)) args'))
+      return (mkUbxSum sum_rep tag (map (\a -> (stgArgType a, a)) args'))
 
   | otherwise
   = return (StgConApp dc (unariseArgs rho args))
@@ -231,30 +230,10 @@ unariseAlts rho (UbxSumAlt _) bndr alts ty
          mkAlt (DataAlt sumCon, bs, e) = do
            (rho_alt_bndrs, bs') <- unariseIdBinders rho_sum_bndrs bs
            let
-             ys_types =
-               sortOn fst $ map (\y -> (typePrimRep (idType y), y)) ys
+             ys_types = map (\y -> (idType y, y)) ys
+             bs_types = map (\b -> (idType b, b)) bs'
 
-                -- this filter is annoying .. the problem is when we allocate
-                -- slots for "flattened" types of a unboxed sum, we skip
-                -- VoidReps. so here we should ignore VoidRep binders because
-                -- they have no slots allocated.
-             bs_types =
-               sortOn fst $
-                 filter (not . isVoidRep . fst) $
-                   map (\b -> (typePrimRep (idType b), b)) bs'
-
-             map_bs :: [(PrimRep, Id)] -> [(PrimRep, Id)] -> [(Id, Id)]
-             map_bs [] _ = []
-             map_bs _ [] = pprPanic "mkAlt.map_bs - 1" (ppr ys_types $$ ppr bs_types)
-             map_bs bs0@((b_rep, b) : bs) ((y_rep, y) : ys)
-               | b_rep == y_rep
-               = (b, y) : map_bs bs ys
-               | y_rep < b_rep
-               = map_bs bs0 ys
-               | otherwise
-               = pprPanic "mkAlt.map_bs - 2" (ppr ys_types $$ ppr bs_types)
-
-             rns = map_bs bs_types ys_types
+             rns = rnUbxSumBndrs ys_types bs_types
 
              rho_alt_bndrs_renamed =
                flip mapVarEnv rho_alt_bndrs $ \vals ->
