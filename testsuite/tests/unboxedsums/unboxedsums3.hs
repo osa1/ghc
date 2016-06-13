@@ -6,6 +6,7 @@ import GHC.Prim
 import GHC.Types
 
 import Data.Void (Void)
+import System.Mem (performMajorGC)
 
 showAlt0 :: (# Void# | (# #) | () #) -> String
 showAlt0 (# | (# #) | #) = "(# | (# #) | #)"
@@ -29,3 +30,4 @@ main = do
     putStrLn (showAlt1 (# undefined | #))
     putStrLn (showAlt1 (# | 8.1# #))
     putStrLn (showD (D (# | (# #) | #) (# | 1.2# #)))
+    performMajorGC

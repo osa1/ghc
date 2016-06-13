@@ -7,6 +7,8 @@ module Main where
 import GHC.Prim
 import GHC.Types
 
+import System.Mem (performMajorGC)
+
 type S_T_T a b c d = (# (# a , b #) | (# c , d #) #)
 type S_S_S a b c d = (# (# a | b #) | (# c | d #) #)
 
@@ -24,6 +26,7 @@ main :: IO ()
 main = do
     putStrLn (show_stt stt)
     putStrLn (show_sss sss)
+    performMajorGC
   where
     stt :: S_T_T Int Bool Float String
     stt = (# (# 123, True #) | #)

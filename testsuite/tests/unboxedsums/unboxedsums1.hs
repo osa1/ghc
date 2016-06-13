@@ -5,6 +5,8 @@ module Main where
 import GHC.Prim
 import GHC.Types
 
+import System.Mem (performMajorGC)
+
 type Either1 a b = (# a | b #)
 
 showEither1 :: (Show a, Show b) => Either1 a b -> String
@@ -46,6 +48,14 @@ main = do
     putStrLn (showEither4 e4_5)
     putStrLn (showEither4 e4_6)
     putStrLn (showEither4 e4_7)
+
+    -- make sure we don't put pointers to non-pointer slots
+    performMajorGC
+
+    -- make sure pointers in unboxed sums are really roots
+    -- (FIXME: I need RTS to clear old fromspace/new tospace to make sure this
+    -- is working as intended)
+    putStrLn (showEither1 e1_1)
   where
     -- boxed types only
     e1_1, e1_2 :: Either1 String Int
