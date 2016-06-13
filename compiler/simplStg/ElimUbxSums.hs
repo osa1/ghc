@@ -24,6 +24,7 @@ module ElimUbxSums
 import BasicTypes
 import Id
 import Literal
+import MkCore (rUNTIME_ERROR_ID)
 import Outputable
 import StgSyn
 import TyCon
@@ -158,10 +159,11 @@ rnUbxSumBndrs ubx_sum_bndrs alt_bndrs =
 --     always smaller than integer slots. In the same category we compare sizes.
 --     (e.g. DoubleRep is greater than FloatRep)
 
-data SlotTy = WordSlot | Word64Slot | FloatSlot | DoubleSlot
+data SlotTy = PtrSlot | WordSlot | Word64Slot | FloatSlot | DoubleSlot
   deriving (Eq, Ord) -- Constructor order is important!
 
 instance Outputable SlotTy where
+  ppr PtrSlot    = text "PtrSlot"
   ppr Word64Slot = text "Word64Slot"
   ppr WordSlot   = text "WordSlot"
   ppr DoubleSlot = text "DoubleSlot"
@@ -179,7 +181,7 @@ mkSlots = reverse . sortOn fst . mapMaybe (\(ty, bndr) -> (,bndr) <$> typeSlotTy
 
 primRepSlot :: PrimRep -> SlotTy
 primRepSlot VoidRep     = pprPanic "primRepSlot" (text "No slot for VoidRep")
-primRepSlot PtrRep      = WordSlot
+primRepSlot PtrRep      = PtrSlot
 primRepSlot IntRep      = WordSlot
 primRepSlot WordRep     = WordSlot
 primRepSlot Int64Rep    = Word64Slot
@@ -190,10 +192,15 @@ primRepSlot DoubleRep   = DoubleSlot
 primRepSlot VecRep{}    = pprPanic "primRepSlot" (text "No slot for VecRep")
 
 slotTyToType :: SlotTy -> Type
+slotTyToType PtrSlot    = anyTypeOfKind liftedTypeKind
 slotTyToType Word64Slot = word64PrimTy
 slotTyToType WordSlot   = wordPrimTy
 slotTyToType DoubleSlot = doublePrimTy
 slotTyToType FloatSlot  = floatPrimTy
+
+isPtrSlot :: SlotTy -> Bool
+isPtrSlot PtrSlot = True
+isPtrSlot _       = False
 
 isWordSlot :: SlotTy -> Bool
 isWordSlot Word64Slot = True
@@ -213,12 +220,16 @@ fitsIn ty1 ty2
   | isFloatSlot ty1 && isFloatSlot ty2
   = Just (max ty1 ty2)
 
+  | isPtrSlot ty1 && isPtrSlot ty2
+  = Just PtrSlot
+
   | otherwise
   = Nothing
 
 --------------------------------------------------------------------------------
 
 slotDummyArg :: SlotTy -> StgArg
+slotDummyArg PtrSlot    = StgVarArg rUNTIME_ERROR_ID -- TODO: We want a special id here
 slotDummyArg Word64Slot = StgLitArg (MachWord64 0)
 slotDummyArg WordSlot   = StgLitArg (MachWord 0)
 slotDummyArg DoubleSlot = StgLitArg (MachDouble 0.0)
