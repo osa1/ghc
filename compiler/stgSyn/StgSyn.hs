@@ -98,6 +98,11 @@ data GenStgBinding bndr occ
 data GenStgArg occ
   = StgVarArg  occ
   | StgLitArg  Literal
+  | StgRubbishArg
+               Type -- This is needed to be able to implement `stgArgType`. We
+                    -- actually only need to know whether this is a boxed or
+                    -- unboxed argument. (i.e. whether this is a GC root or not)
+
 
 -- | Does this constructor application refer to
 -- anything in a different *Windows* DLL?
@@ -140,6 +145,7 @@ isAddrRep _       = False
 stgArgType :: StgArg -> Type
 stgArgType (StgVarArg v)   = idType v
 stgArgType (StgLitArg lit) = literalType lit
+stgArgType (StgRubbishArg ty) = ty
 
 
 -- | Strip ticks of a given type from an STG expression
@@ -200,7 +206,7 @@ primitives, and literals.
                 [GenStgArg occ] -- Saturated
 
   | StgOpApp    StgOp           -- Primitive op or foreign call
-                [GenStgArg occ] -- Saturated
+                [GenStgArg occ] -- Saturated. Not rubbish.
                 Type            -- Result type
                                 -- We need to know this so that we can
                                 -- assign result registers
@@ -666,6 +672,7 @@ instance (OutputableBndr bndr, Outputable bdee, Ord bdee)
 pprStgArg :: (Outputable bdee) => GenStgArg bdee -> SDoc
 pprStgArg (StgVarArg var) = ppr var
 pprStgArg (StgLitArg con) = ppr con
+pprStgArg (StgRubbishArg ty) = text "StgRubbishArg" <> dcolon <> ppr ty
 
 pprStgExpr :: (OutputableBndr bndr, Outputable bdee, Ord bdee)
            => GenStgExpr bndr bdee -> SDoc

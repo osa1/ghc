@@ -24,7 +24,6 @@ module ElimUbxSums
 import BasicTypes
 import Id
 import Literal
-import MkCore (rUNTIME_ERROR_ID)
 import Outputable
 import StgSyn
 import TyCon
@@ -229,11 +228,7 @@ fitsIn ty1 ty2
 --------------------------------------------------------------------------------
 
 slotDummyArg :: SlotTy -> StgArg
-slotDummyArg PtrSlot    = StgVarArg rUNTIME_ERROR_ID -- TODO: We want a special id here
-slotDummyArg Word64Slot = StgLitArg (MachWord64 0)
-slotDummyArg WordSlot   = StgLitArg (MachWord 0)
-slotDummyArg DoubleSlot = StgLitArg (MachDouble 0.0)
-slotDummyArg FloatSlot  = StgLitArg (MachFloat 0.0)
+slotDummyArg = StgRubbishArg . slotTyToType
 
 --------------------------------------------------------------------------------
 

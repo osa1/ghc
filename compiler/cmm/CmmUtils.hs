@@ -10,7 +10,7 @@
 
 module CmmUtils(
         -- CmmType
-        primRepCmmType, primRepForeignHint,
+        primRepCmmType, primRepForeignHint, cmmArgType,
         typeCmmType, typeForeignHint,
 
         -- CmmLit
@@ -119,6 +119,10 @@ primElemRepCmmType DoubleElemRep = f64
 
 typeCmmType :: DynFlags -> UnaryType -> CmmType
 typeCmmType dflags ty = primRepCmmType dflags (typePrimRep ty)
+
+cmmArgType :: DynFlags -> CmmArg -> CmmType
+cmmArgType dflags (CmmExprArg e)     = cmmExprType dflags e
+cmmArgType dflags (CmmRubbishArg ty) = typeCmmType dflags ty
 
 primRepForeignHint :: PrimRep -> ForeignHint
 primRepForeignHint VoidRep      = panic "primRepForeignHint:VoidRep"
