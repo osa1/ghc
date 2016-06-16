@@ -87,7 +87,8 @@ cgTopRhsCon dflags id con args =
              -- needs to poke around inside it.
             info_tbl = mkDataConInfoTable dflags con True ptr_wds nonptr_wds
 
-            get_lit (arg, _offset) = do { CmmLit lit <- getArgAmode arg
+            get_lit (arg, _offset) = do {   -- TODO (osa): Think this part is slightly wrong ...
+                                          CmmExprArg (CmmLit lit) <- getArgAmode arg
                                         ; return lit }
 
         ; payload <- mapM get_lit nv_args_w_offsets

@@ -285,7 +285,7 @@ unariseArgs rho = concatMap (unariseArg rho)
 
 unariseArg :: UnariseEnv -> StgArg -> [StgArg]
 unariseArg rho (StgVarArg x) = map StgVarArg (unariseId rho x)
-unariseArg _   (StgLitArg l) = [StgLitArg l]
+unariseArg _   arg           = [arg]
 
 unariseIds :: UnariseEnv -> [Id] -> [Id]
 unariseIds rho = concatMap (unariseId rho)
@@ -341,5 +341,5 @@ dummyDefaultAlt :: StgAlt
 dummyDefaultAlt = (DEFAULT, [], StgApp rUNTIME_ERROR_ID [])
 
 isNullaryTupleArg :: StgArg -> Bool
-isNullaryTupleArg StgLitArg{}   = False
 isNullaryTupleArg (StgVarArg v) = v == dataConWorkId unboxedUnitDataCon
+isNullaryTupleArg _             = False
