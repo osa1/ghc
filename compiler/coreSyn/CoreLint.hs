@@ -8,16 +8,7 @@ A ``lint'' pass to check for Core correctness
 
 {-# LANGUAGE CPP #-}
 
-module CoreLint (
-    lintCoreBindings, lintUnfolding,
-    lintPassResult, lintInteractiveExpr, lintExpr,
-    lintAnnots,
-
-    -- ** Debug output
-    endPass, endPassIO,
-    dumpPassResult,
-    CoreLint.dumpIfSet,
- ) where
+module CoreLint where
 
 #include "HsVersions.h"
 
@@ -371,7 +362,7 @@ lintCoreBindings dflags pass local_in_scope binds
         -- into use 'unexpectedly'
     do { checkL (null dups) (dupVars dups)
        ; checkL (null ext_dups) (dupExtVars ext_dups)
-       ; mapM lint_bind binds }
+       ; mapM_ lint_bind binds }
   where
     flags = LF { lf_check_global_ids = check_globals
                , lf_check_inline_loop_breakers = check_lbs
@@ -819,7 +810,7 @@ lintAltBinders scrut_ty con_ty (bndr:bndrs)
   = do { con_ty' <- lintTyApp con_ty (mkTyVarTy bndr)
        ; lintAltBinders scrut_ty con_ty' bndrs }
   | otherwise
-  = do { con_ty' <- lintValApp (Var bndr) con_ty (idType bndr)
+  = do { con_ty' <- lintValApp (Var bndr :: CoreExpr) con_ty (idType bndr)
        ; lintAltBinders scrut_ty con_ty' bndrs }
 
 -----------------
@@ -837,7 +828,7 @@ lintTyApp fun_ty arg_ty
   = failWithL (mkTyAppMsg fun_ty arg_ty)
 
 -----------------
-lintValApp :: CoreExpr -> OutType -> OutType -> LintM OutType
+lintValApp :: Outputable a => a -> OutType -> OutType -> LintM OutType
 lintValApp arg fun_ty arg_ty
   | Just (arg,res) <- splitFunTy_maybe fun_ty
   = do { ensureEqTys arg arg_ty err1
@@ -1961,14 +1952,14 @@ mkNewTyDataConAltMsg scrut_ty alt
 ------------------------------------------------------
 --      Other error messages
 
-mkAppMsg :: Type -> Type -> CoreExpr -> MsgDoc
+mkAppMsg :: Outputable a => Type -> Type -> a -> MsgDoc
 mkAppMsg fun_ty arg_ty arg
   = vcat [text "Argument value doesn't match argument type:",
               hang (text "Fun type:") 4 (ppr fun_ty),
               hang (text "Arg type:") 4 (ppr arg_ty),
               hang (text "Arg:") 4 (ppr arg)]
 
-mkNonFunAppMsg :: Type -> Type -> CoreExpr -> MsgDoc
+mkNonFunAppMsg :: Outputable a => Type -> Type -> a -> MsgDoc
 mkNonFunAppMsg fun_ty arg_ty arg
   = vcat [text "Non-function type in function position",
               hang (text "Fun type:") 4 (ppr fun_ty),
