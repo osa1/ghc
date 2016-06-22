@@ -115,7 +115,6 @@ import Util
 import VarEnv
 
 import Data.Bifunctor (second)
-import Data.Maybe (fromMaybe)
 
 import ElimUbxSums
 
@@ -125,14 +124,14 @@ import ElimUbxSums
 --
 -- Those in-scope variables without unboxed-tuple types are not present in
 -- the domain of the mapping at all.
-type UnariseEnv = VarEnv [Id]
+type UnariseEnv = VarEnv [StgArg]
 
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
 unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
   where
      -- See Note [Unarisation and nullary tuples]
      nullary_tup = dataConWorkId unboxedUnitDataCon
-     init_env = unitVarEnv nullary_tup [voidPrimId]
+     init_env = unitVarEnv nullary_tup [StgVarArg voidPrimId]
 
 unariseBinding :: UnariseEnv -> StgBinding -> UniqSM StgBinding
 unariseBinding rho (StgNonRec x rhs) =
@@ -144,7 +143,7 @@ unariseRhs :: UnariseEnv -> StgRhs -> UniqSM StgRhs
 unariseRhs rho (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
   = do (rho', args') <- unariseIdBinders rho args
        expr' <- unariseExpr rho' expr body_ty
-       return (StgRhsClosure ccs b_info (unariseIds rho fvs) update_flag args' expr' body_ty)
+       return (StgRhsClosure ccs b_info (filterIdArgs (unariseIds rho fvs)) update_flag args' expr' body_ty)
 
 unariseRhs rho (StgRhsCon ccs con args)
   = return (StgRhsCon ccs con (unariseArgs rho args))
@@ -157,17 +156,22 @@ unariseExpr rho (StgApp f args) ty
   =  -- Particularly important where (##) is concerned
      -- See Note [Nullary unboxed tuple]
     return (StgConApp (tupleDataCon Unboxed (length tys))
-                      (map StgVarArg (unariseId rho f)))
+                      (unariseId rho f))
 
   | null args
   , isUnboxedSumType ty
   , as <- unariseId rho f
     -- An Id bound to a unboxed sum
-  = return (StgConApp (tupleDataCon Unboxed (length as)) (map StgVarArg as))
+  = return (StgConApp (tupleDataCon Unboxed (length as)) as)
 
   -- We now use rho for renaming too
-  | Just [f'] <- lookupVarEnv rho f
+  | Just [StgVarArg f'] <- lookupVarEnv rho f
   = return (StgApp f' (unariseArgs rho args))
+
+  -- Constant propagation, usually replaces sum tag binders with actual tags
+  | Just [StgLitArg l] <- lookupVarEnv rho f
+  , null args
+  = return (StgLit l)
 
   | otherwise
   = return (StgApp f (unariseArgs rho args))
@@ -203,7 +207,52 @@ unariseExpr _ e@StgLam{} _
 unariseExpr rho (StgCase e bndr alt_ty alts) ty
   = do e' <- unariseExpr rho e (idType bndr)
        alts' <- unariseAlts rho alt_ty bndr alts ty
-       return (StgCase e' bndr alt_ty' alts')
+       case (e', alts') of
+         -- Remove redundant case expressions like
+         --
+         --   case (# x, y #) of
+         --     (# z, t #) -> ...
+         --
+         -- Why are these being generated? Suppose we're passing an unboxed sum
+         -- to a function:
+         --
+         --   f (# x | #)
+         --
+         -- This becomes:
+         --
+         --   case (# x | #) of
+         --     y -> f y
+         --
+         -- During CoreToStg. Then we unarise it to:
+         --
+         --   case (#,#) 1# x of
+         --     (#,#) y1 y2 -> f y1 y2
+         --
+         -- So this can now be simplified into
+         --
+         --   f 1# x
+         --
+         -- This is where we do that.
+         (StgConApp dc args, [(DataAlt _, bndrs, rhs)])
+           | isUnboxedTupleCon dc
+           , ASSERT (length args == length bndrs) True
+           -> do
+            let rho' =
+                  extendVarEnv
+                    (extendVarEnvList rho (zipWith (\bndr arg -> (bndr, [arg])) bndrs args))
+                    bndr args
+            ret <- unariseExpr rho' rhs ty
+              -- things become unbound: bndrs, bndr.
+
+            -- pprTrace "unariseExpr" (text "Removing a case expression." $$
+            --                         text "before:" <+> ppr (StgCase e' bndr alt_ty' alts') $$
+            --                         text "orig_env:" <+> ppr rho $$
+            --                         text "env:   " <+> ppr rho' $$
+            --                         text "after: " <+> ppr ret) (return ret)
+            return ret
+
+         _ -> return (StgCase e' bndr alt_ty' alts')
+       -- return (StgCase e' bndr alt_ty' alts')
  where
     alt_ty' = case alt_ty of
                 UbxSumAlt sum_rep -> UbxTupAlt (length (flattenSumRep sum_rep))
@@ -227,12 +276,18 @@ unariseAlts rho (UbxTupAlt n) bndr [(DEFAULT, [], e)] ty
 
 unariseAlts rho (UbxTupAlt n) bndr [(DataAlt _, ys, e)] ty
   = do (rho', ys') <- unariseIdBinders rho ys
-       let rho'' = extendVarEnv rho' bndr ys'
+       let rho'' = extendVarEnv rho' bndr (map StgVarArg ys')
        e' <- unariseExpr rho'' e ty
        return [(DataAlt (tupleDataCon Unboxed n), ys', e')]
 
 unariseAlts _ (UbxTupAlt _) _ alts _
   = pprPanic "unariseExpr: strange unboxed tuple alts" (ppr alts)
+
+-- In this case we don't need to scrutinize the tag bit
+unariseAlts rho (UbxSumAlt _) bndr [(DEFAULT, _, rhs)] ty
+  = do (rho_sum_bndrs, sum_bndrs) <- unariseIdBinder rho bndr
+       rhs' <- unariseExpr rho_sum_bndrs rhs ty
+       return [(DataAlt (tupleDataCon Unboxed (length sum_bndrs)), sum_bndrs, rhs')]
 
 unariseAlts rho (UbxSumAlt _) bndr alts ty
   = do (rho_sum_bndrs, tag_bndr : ys) <- unariseIdBinder rho bndr
@@ -251,12 +306,16 @@ unariseAlts rho (UbxSumAlt _) bndr alts ty
 
              rns = rnUbxSumBndrs ys_types bs_types
 
+             rho_alt_bndrs_renamed :: UnariseEnv
              rho_alt_bndrs_renamed =
                flip mapVarEnv rho_alt_bndrs $ \vals ->
-                 map (\val -> fromMaybe val (lookup val rns)) vals
+                 map (\val -> case val of
+                                StgVarArg val' -> maybe val StgVarArg (lookup val' rns)
+                                _ -> val) vals
 
+             rho_alt_bndrs_orig_bndr_added :: UnariseEnv
              rho_alt_bndrs_orig_bndr_added =
-               extendVarEnvList rho_alt_bndrs_renamed (map (second (:[])) rns)
+               extendVarEnvList rho_alt_bndrs_renamed (map (second ((:[]) . StgVarArg)) rns)
 
            ret <- unariseExpr rho_alt_bndrs_orig_bndr_added e ty
 
@@ -284,13 +343,16 @@ unariseArgs :: UnariseEnv -> [StgArg] -> [StgArg]
 unariseArgs rho = concatMap (unariseArg rho)
 
 unariseArg :: UnariseEnv -> StgArg -> [StgArg]
-unariseArg rho (StgVarArg x) = map StgVarArg (unariseId rho x)
+unariseArg rho (StgVarArg x) = unariseId rho x
 unariseArg _   arg           = [arg]
 
-unariseIds :: UnariseEnv -> [Id] -> [Id]
+unariseIds :: UnariseEnv -> [Id] -> [StgArg]
 unariseIds rho = concatMap (unariseId rho)
 
-unariseId :: UnariseEnv -> Id -> [Id]
+filterIdArgs :: [StgArg] -> [Id]
+filterIdArgs args = [ var | StgVarArg var <- args ]
+
+unariseId :: UnariseEnv -> Id -> [StgArg]
 unariseId rho x
   | Just ys <- lookupVarEnv rho x
   = -- Disabling the assertion as we also use the env for renaming now.
@@ -301,7 +363,7 @@ unariseId rho x
   | otherwise
   = -- ASSERT2( case repType (idType x) of UbxTupleRep{} -> False; UbxSumRep{} -> False; _ -> True
     --        , text "unariseId: was unboxed tuple or sum" <+> ppr x )
-    [x]
+    [StgVarArg x]
 
 unariseIdBinders :: UnariseEnv -> [Id] -> UniqSM (UnariseEnv, [Id])
 unariseIdBinders rho xs = second concat <$> mapAccumLM unariseIdBinder rho xs
@@ -314,16 +376,16 @@ unariseIdBinder rho x =
     UbxTupleRep tys
       | null tys -> do -- See Note [Unarisation and nullary tuples]
         let ys   = [voidPrimId]
-            rho' = extendVarEnv rho x [voidPrimId]
+            rho' = extendVarEnv rho x [StgVarArg voidPrimId]
         return (rho', ys)
       | otherwise -> do
         ys <- mkIds (mkFastString "tup") tys
-        let rho' = extendVarEnv rho x ys
+        let rho' = extendVarEnv rho x (map StgVarArg ys)
         return (rho', ys)
 
     UbxSumRep sumRep -> do
       ys <- mkIds (mkFastString "sumf") (ubxSumFieldTypes sumRep)
-      let rho' = extendVarEnv rho x ys
+      let rho' = extendVarEnv rho x (map StgVarArg ys)
       return (rho', ys)
 
 mkIds :: FastString -> [UnaryType] -> UniqSM [Id]
