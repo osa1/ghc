@@ -176,7 +176,7 @@ typeSlotTy ty =
     primRep = typePrimRep ty
 
 mkSlots :: [(Type, a)] -> [(SlotTy, a)]
-mkSlots = reverse . sortOn fst . mapMaybe (\(ty, bndr) -> (,bndr) <$> typeSlotTy ty)
+mkSlots = sortOn fst . mapMaybe (\(ty, bndr) -> (,bndr) <$> typeSlotTy ty)
 
 primRepSlot :: PrimRep -> SlotTy
 primRepSlot VoidRep     = pprPanic "primRepSlot" (text "No slot for VoidRep")
