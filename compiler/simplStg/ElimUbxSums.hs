@@ -114,21 +114,21 @@ mkUbxSum sumTy tag fields =
 
 -- | Given binders for an unboxed sum and binders for an alternative, return
 -- renamings of binders of the alternative, so that they point to their slots.
-rnUbxSumBndrs :: [(Type, Id)] -> [(Type, Id)] -> [(Id, Id)]
-rnUbxSumBndrs ubx_sum_bndrs alt_bndrs =
+rnUbxSumBndrs :: [(Type, Id)] -> [(Type, StgArg)] -> [(Id, StgArg)]
+rnUbxSumBndrs alt_bndrs ubx_sum_args =
   let
-    ubx_sum_slots = mkSlots ubx_sum_bndrs
+    ubx_sum_slots = mkSlots ubx_sum_args
     alt_slots     = mkSlots alt_bndrs
 
-    mapBinders :: [(SlotTy, Id)] -> [(SlotTy, Id)] -> [(Id, Id)]
+    mapBinders :: [(SlotTy, StgArg)] -> [(SlotTy, Id)] -> [(Id, StgArg)]
     mapBinders _ []
       = []
     mapBinders [] _
       = pprPanic "rnUbxSumBndrs.mapBinders"
-          (text "Run out of slots but still have fields to bind." $$ ppr ubx_sum_bndrs $$ ppr alt_bndrs)
-    mapBinders ((sum_slot_ty, sum_slot_id) : sum_slots) alt_ss@((alt_slot_ty, alt_slot_id) : alt_slots)
+          (text "Run out of slots but still have fields to bind." $$ ppr ubx_sum_args $$ ppr alt_bndrs)
+    mapBinders ((sum_slot_ty, sum_slot_arg) : sum_slots) alt_ss@((alt_slot_ty, alt_slot_id) : alt_slots)
       | Just sum_slot_ty == (alt_slot_ty `fitsIn` sum_slot_ty)
-      = (alt_slot_id, sum_slot_id) : mapBinders sum_slots alt_slots
+      = (alt_slot_id, sum_slot_arg) : mapBinders sum_slots alt_slots
 
       | otherwise
       = mapBinders sum_slots alt_ss
