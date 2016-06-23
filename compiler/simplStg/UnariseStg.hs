@@ -29,43 +29,104 @@ Suppose that a variable x : (# t1, t2 #).
   * Extend the UnariseEnv   x :-> [x1,x2]
 
   * Replace the binding with a curried binding for x1,x2
+
        Lambda:   \x.e                ==>   \x1 x2. e
        Case alt: MkT a b x c d -> e  ==>   MkT a b x1 x2 c d -> e
 
-  * Replace argument occurrences with a sequence of args
-    via a lookup in UnariseEnv
+  * Replace argument occurrences with a sequence of args via a lookup in
+    UnariseEnv
+
        f a b x c d   ==>   f a b x1 x2 c d
 
-  * Replace tail-call occurrences with an unboxed tuple
-    via a lookup in UnariseEnv
+  * Replace tail-call occurrences with an unboxed tuple via a lookup in
+    UnariseEnv
+
        x  ==>  (# x1, x2 #)
+
     So, for example
+
        f x = x    ==>   f x1 x2 = (# x1, x2 #)
 
     This applies to case scrutinees too
+
        case x of (# a,b #) -> e   ==>   case (# x1, x2 #) of (# a, b #) -> e
 
-Of course all this applies recursively, so that we flatten out nested tuples and
-sums.
+    Now the case expression is redundant. When a case scrutinee becomes an
+    explicit tuple after unarise, we eliminate the case expression altogether.
+    So in the example above, we extend the UnariseEnv so that
 
-Note that the last case needs attention. When we have an unboxed tuple in
-scrutinee position, we can can remove the case expression, and "unarise" the
-binders (i.e. the case expression binder and binders in patterns). So in the
-example above:
+      x :-> [x1,x2], a :-> x1, b :-> [x2]
 
-  case x of (# a, b #) -> e
+    and then unarise the right hand side.
 
-UnariseEnv must have a binding for x, and x must be expanded into two variables
-(as the tuple arity is 2, otherwise the program would be ill-typed). Say it's
-expanded into x1 and x2. We extend the UnariseEnv so that
+    Note that simplifier already simplifies case expressions with known
+    constructors, either by choosing a case alternative, or by binding scrutinee
+    in a let (this is possible because DataCon applications are OK for
+    speculation). So here we only simplify cases on tuples that we introduce as
+    a result of unarisation.
 
-  x :-> [x1,x2], a :-> x1, b :-> [x2]
+    In general, we can always eliminate a case expression when scrutinee is an
+    explicit tuple. When scrutinee is an unboxed tuple, left-hand side of case
+    alts can be one of these two things:
 
-and then unarise the right hand side.
+      - An unboxed tuple pattern. (note that number of binders in the pattern
+        will be the same as number of arguments in the scrutinee) e.g.
+
+          (# x1, x2, x3 #) -> ...
+
+        Scrutinee has to be in form `(# t1, t2, t3 #)` so we just extend the
+        environment with
+
+          x1 :-> [t1], x2 :-> [t2], x3 :-> [t3]
+
+      - A variable. e.g.
+
+          x :-> ...
+
+        In this case we extend the environment with
+
+          x :-> scrutinee's arguments
+
+By the end of this pass, we only have unboxed tuples in return positions.
+
+Note [Translating unboxed sums to unboxed tuples]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+TODO
+
+Note [Case of known con tag]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+We need to be careful with the literal substitutions. Suppose we have:
+
+  Main.main6 :: GHC.Base.String
+  [GblId] =
+      \u [] (-> GHC.Base.String)
+          case (#|_#) [8.1#] of sat_s75B {
+            __DEFAULT -> Main.showAlt1 sat_s75B;
+          };
+
+After unarising scrutinee, this becomes:
+
+  Main.main6 :: GHC.Base.String
+  [GblId] =
+      \u [] (-> GHC.Base.String)
+          case (#,#) [2#, 8.1#] of sat_s75B {
+            __DEFAULT -> Main.showAlt1 sat_s75B;
+          };
+
+Then we expand and rename the binder, and replace case expression with another
+case, but one that has the tag as scrutinee:
+
+  Main.main6 :: GHC.Base.String
+  [GblId] =
+      \u [] (-> GHC.Base.String)
+          case 2# of x, y {
+            __DEFAULT -> Main.showAlt1 2# 8.1#;
+          };
+
+This case expression is now redundant.
 
 Note [UnariseEnv can map to literals]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 To avoid redundant case expressions when unarising unboxed sums, UnariseEnv
 needs to map variables to literals too. Suppose we have this Core:
 
@@ -74,42 +135,18 @@ needs to map variables to literals too. Suppose we have this Core:
   ==> (CorePrep)
 
   case (# x | #) of
-    (# x1, x2 #) -> f x1 x2
+    y -> f y
 
   ==> (Unarise)
 
   case (# 1#, x #) of
     (# x1, x2 #) -> f x1 x2
 
-If UnariseEnv only maps variables to a list of variables, we can't eliminate
-this case expression. So instead we map variables to [StgArg] in UnariseEnv, and
-extend the environment with
+To eliminate this case expression we need to map x1 to 1# in UnariseEnv:
 
   x1 :-> [1#], x2 :-> [x]
 
-and unarise `f x1 x2`, which gives us `f 1# x`.
-
-In general, we can always eliminate a case expression when scrutinee is an
-explicit tuple. When scrutinee is an unboxed tuple, left-hand side of case alts
-can be one of these two things:
-
-  - An unboxed tuple pattern. (note that number of binders in the pattern will
-    be the same as number of arguments in the scrutinee) e.g.
-
-      (# x1, x2, x3 #) -> ...
-
-    Scrutinee has to be in form `(# t1, t2, t3 #)` so we just extend the
-    environment with
-
-      x1 :-> [t1], x2 :-> [t2], x3 :-> [t3]
-
-  - A variable. e.g.
-
-      x :-> ...
-
-    In this case we extend the environment with
-
-      x :-> scrutinee's arguments
+so that `f x1 x2` becomes `f 1# x`.
 
 Note [Unarisation and nullary tuples]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -294,39 +331,9 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts) ty
 
                  alts' <- mapM (\alt -> unariseSumAlt rho' real_args alt ty) alts
 
-                 -- We need to be careful with the literal substitutions here.
-                 -- Suppose we have:
-                 --
-                 --   Main.main6 :: GHC.Base.String
-                 --   [GblId] =
-                 --       \u [] (-> GHC.Base.String)
-                 --           case (#|_#) [8.1#] of sat_s75B {
-                 --             __DEFAULT -> Main.showAlt1 sat_s75B;
-                 --           };
-                 --
-                 -- After unarising scrutinee, this becomes:
-                 --
-                 --   Main.main6 :: GHC.Base.String
-                 --   [GblId] =
-                 --       \u [] (-> GHC.Base.String)
-                 --           case (#,#) [2#, 8.1#] of sat_s75B {
-                 --             __DEFAULT -> Main.showAlt1 sat_s75B;
-                 --           };
-                 --
-                 -- Then we expand and rename the binder, and replace case
-                 -- expression with another case, but one that has the tag as
-                 -- scrutinee:
-                 --
-                 --   Main.main6 :: GHC.Base.String
-                 --   [GblId] =
-                 --       \u [] (-> GHC.Base.String)
-                 --           case 2# of x, y {
-                 --             __DEFAULT -> Main.showAlt1 2# 8.1#;
-                 --           };
-                 --
-                 -- This case expression is now redundant.
                  return $ case tag_arg of
                    StgLitArg l ->
+                     -- See Note [Case of known con tag]
                      selectLitAlt l (reverse (mkDefaultAlt alts'))
                    StgVarArg v ->
                      StgCase (StgApp v []) tag_bndr (PrimAlt intPrimTyCon) (mkDefaultAlt alts')
