@@ -212,6 +212,8 @@ unariseRhs rho (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
   = do (rho', args') <- unariseIdBinders rho args
        expr' <- unariseExpr rho' expr body_ty
        let fvs' = filterIdArgs (unariseIds rho fvs) -- TODO (osa): Not sure about this
+                  -- I think this makes sense. if a free variable became a
+                  -- literal then it's not a free variable anymore.
        return (StgRhsClosure ccs b_info fvs' update_flag args' expr' body_ty)
 
 unariseRhs rho (StgRhsCon ccs con args)
@@ -219,36 +221,21 @@ unariseRhs rho (StgRhsCon ccs con args)
 
 ------------------------
 unariseExpr :: UnariseEnv -> StgExpr -> Type -> UniqSM StgExpr
-unariseExpr rho expr@(StgApp f args) ty
-  | null args
-  , UbxTupleRep tys <- repType (idType f)
-  =  -- Particularly important where (##) is concerned
-     -- See Note [Nullary unboxed tuple]
-    return (StgConApp (tupleDataCon Unboxed (length tys))
-                      (unariseId rho f))
+unariseExpr rho (StgApp f []) _
+  = case unariseId rho f of
+      [StgVarArg v] -> return (StgApp v []) -- renaming
+      [StgLitArg l] -> return (StgLit l)    -- constant propagation. usually just for unboxed sum tags.
+      args          -> return (StgConApp (tupleDataCon Unboxed (length args)) args)
+                                            -- actual unarisation
 
-  | null args
-  , isUnboxedSumType ty
-  , as <- unariseId rho f
-  = -- An Id bound to an unboxed sum
-    return (StgConApp (tupleDataCon Unboxed (length as)) as)
-
-  -- Renaming
-  | Just [StgVarArg f'] <- lookupVarEnv rho f
+unariseExpr rho (StgApp f args) _
+  | [StgVarArg f'] <- unariseId rho f
   = return (StgApp f' (unariseArgs rho args))
 
-  -- Constant propagation, usually replaces sum tag binders with actual tags
-  | Just [StgLitArg l] <- lookupVarEnv rho f
-  , null args
-  = return (StgLit l)
-
-  | Just as <- lookupVarEnv rho f
-  = pprPanic "unariseExpr" (text "Non-tuple or sum id mapped to multiple args:" $$
-                            text "in:" <+> ppr expr $$
-                            text "function is mapped to:" <+> ppr as)
-
-  | otherwise
-  = return (StgApp f (unariseArgs rho args))
+unariseExpr rho expr@(StgApp f _) _
+  = pprPanic "unariseExpr" (text "Tuple applied to arguments." $$
+                            text "expr:" <+> ppr expr $$
+                            text "unarised fun:" <+> ppr (unariseId rho f))
 
 unariseExpr _ (StgLit l) _
   = return (StgLit l)
@@ -287,25 +274,20 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts) ty
            | isUnboxedTupleCon dc
            -> unariseExpr (extendVarEnv rho bndr args) rhs ty
 
+           -- TODO: This is slightly wrong. In theory, GHC can prove that some
+           -- cases are not reachable and remove those. So this may be for a
+           -- sum, actually.
          (StgConApp dc args, [(DataAlt _, arg_bndrs, rhs)])
            | isUnboxedTupleCon dc
-           -> do (rho', arg_bndrs') <- unariseIdBinders rho arg_bndrs
-                 let
-                   -- renamings: we apply these to range of the rho too
-                   rns :: [(Id, StgArg)]
-                   rns = zipEqual "unariseExpr.rns" arg_bndrs' args
-
-                   rho'' = extendVarEnvList (renameRhoRange rns rho') $
-                             (bndr, args) : map (second return) rns
-
-                 unariseExpr rho'' rhs ty
+           -> do let rho' = mapTupleIdBinders rho arg_bndrs args
+                 unariseExpr rho' rhs ty
 
          -- Explicit unboxed sum. Case expression can be eliminated with a
          -- little bit extra work.
-         (StgConApp dc args, alts)
+         (StgConApp dc args@(tag_arg : real_args), alts)
            | isUnboxedTupleCon dc
            -> do -- this won't be used but we need a scrutinee binder anyway
-                 tag_bndr <- mkId (mkFastString "tag") (stgArgType (head args))
+                 tag_bndr <- mkId (mkFastString "tag") (stgArgType tag_arg)
                  let rho' = extendVarEnv rho bndr args
 
                      rubbishFail = pprPanic "unariseExpr"
@@ -313,8 +295,8 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts) ty
                                       text "expr:" <+> ppr expr $$
                                       text "unarised scrutinee:" <+> ppr e')
 
-                 alts' <- mapM (\alt -> mkSumAlt rho' args alt ty) alts
-                 return $ StgCase (case head args of
+                 alts' <- mapM (\alt -> unariseSumAlt rho' real_args alt ty) alts
+                 return $ StgCase (case tag_arg of
                                      StgVarArg v -> StgApp v []
                                      StgLitArg l -> StgLit l
                                      StgRubbishArg _ -> rubbishFail)
@@ -361,8 +343,8 @@ unariseAlts rho (UbxSumAlt _) bndr [(DEFAULT, _, rhs)] ty
        return [(DataAlt (tupleDataCon Unboxed (length sum_bndrs)), sum_bndrs, rhs')]
 
 unariseAlts rho (UbxSumAlt _) bndr alts ty
-  = do (rho_sum_bndrs, scrt_bndrs@(tag_bndr : _)) <- unariseIdBinder rho bndr
-       alts' <- mapM (\alt -> mkSumAlt rho_sum_bndrs (map StgVarArg scrt_bndrs) alt ty) alts
+  = do (rho_sum_bndrs, scrt_bndrs@(tag_bndr : real_bndrs)) <- unariseIdBinder rho bndr
+       alts' <- mapM (\alt -> unariseSumAlt rho_sum_bndrs (map StgVarArg real_bndrs) alt ty) alts
        let inner_case =
              StgCase (StgApp tag_bndr []) tag_bndr
                      (PrimAlt intPrimTyCon) (mkDefaultAlt alts')
@@ -374,27 +356,28 @@ unariseAlts rho _ _ alts ty
   = mapM (\alt -> unariseAlt rho alt ty) alts
 
 -- | Make alternatives that match on the tag of a sum.
-mkSumAlt :: UnariseEnv
-         -> [StgArg] -- ^ sum components. should at least have the tag argument,
-                     --   which always comes first.
-         -> StgAlt   -- ^ original alternative with sum LHS
-         -> Type     -- ^ type of RHS
-         -> UniqSM StgAlt
-mkSumAlt rho _ (DEFAULT, _, e) ty
+unariseSumAlt :: UnariseEnv
+              -> [StgArg] -- ^ sum components _excluding_ the tag bit.
+              -> StgAlt   -- ^ original alternative with sum LHS
+              -> Type     -- ^ type of RHS
+              -> UniqSM StgAlt
+unariseSumAlt rho _ (DEFAULT, _, e) ty
   = ( DEFAULT, [], ) <$> unariseExpr rho e ty
 
-mkSumAlt rho (_ : real_args) (DataAlt sumCon, bs, e) ty
+unariseSumAlt rho args (DataAlt sumCon, bs, e) ty
   = do (rho', bs') <- unariseIdBinders rho bs
        let
-         ys_types = map (\y -> (stgArgType y, y)) real_args
-         bs_types = map (\b -> (idType b, b)) bs'
-         rns = rnUbxSumBndrs bs_types ys_types
+         scrt_arg_tys = map (\y -> (stgArgType y, y)) args
+         bs_types     = map (\b -> (idType b, b)) bs'
+
+         rns = rnUbxSumBndrs bs_types scrt_arg_tys
+
          rho'' = extendVarEnvList (renameRhoRange rns rho') (map (second return) rns)
        e' <- unariseExpr rho'' e ty
        return ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], e' )
 
-mkSumAlt _ scrt alt _
-  = pprPanic "mkSumAlt" (ppr scrt $$ ppr alt)
+unariseSumAlt _ scrt alt _
+  = pprPanic "unariseSumAlt" (ppr scrt $$ ppr alt)
 
 --------------------------
 unariseAlt :: UnariseEnv -> StgAlt -> Type -> UniqSM StgAlt
@@ -403,21 +386,21 @@ unariseAlt rho (con, xs, e) ty
        (con, xs',) <$> unariseExpr rho' e ty
 
 ------------------------
-unariseArgs :: UnariseEnv -> [StgArg] -> [StgArg]
-unariseArgs rho = concatMap (unariseArg rho)
-
 unariseArg :: UnariseEnv -> StgArg -> [StgArg]
 unariseArg rho (StgVarArg x) = unariseId rho x
 unariseArg _   arg           = [arg]
 
-unariseIds :: UnariseEnv -> [Id] -> [StgArg]
-unariseIds rho = concatMap (unariseId rho)
+unariseArgs :: UnariseEnv -> [StgArg] -> [StgArg]
+unariseArgs rho = concatMap (unariseArg rho)
 
 filterIdArgs :: [StgArg] -> [Id]
 filterIdArgs args = [ var | StgVarArg var <- args ]
 
 unariseId :: UnariseEnv -> Id -> [StgArg]
 unariseId rho x = fromMaybe [StgVarArg x] (lookupVarEnv rho x)
+
+unariseIds :: UnariseEnv -> [Id] -> [StgArg]
+unariseIds rho = concatMap (unariseId rho)
 
 unariseIdBinders :: UnariseEnv -> [Id] -> UniqSM (UnariseEnv, [Id])
 unariseIdBinders rho xs = second concat <$> mapAccumLM unariseIdBinder rho xs
@@ -441,6 +424,22 @@ unariseIdBinder rho x =
       ys <- mkIds (mkFastString "sumf") (ubxSumFieldTypes sumRep)
       let rho' = extendVarEnv rho x (map StgVarArg ys)
       return (rho', ys)
+
+mapTupleIdBinders :: UnariseEnv -> [Id] -> [StgArg] -> UnariseEnv
+mapTupleIdBinders rho0 ids args
+  = let
+      id_arities = map (\id -> (id, length (flattenRepType (repType (idType id))))) ids
+
+      map_ids :: UnariseEnv -> [(Id, Int)] -> [StgArg] -> UnariseEnv
+      map_ids rho [] []   = rho
+      map_ids _   [] _    = pprPanic "mapTupleIdBinders - 1" (ppr ids $$ ppr args)
+      map_ids _   _  []   = pprPanic "mapTupleIdBinders - 2" (ppr ids $$ ppr args)
+      map_ids rho ((x, x_arity) : xs) args =
+        let (x_args, args') = splitAt x_arity args
+         in map_ids (extendVarEnv rho x x_args) xs args'
+    in
+      ASSERT (sum (map snd id_arities) == length args)
+      map_ids rho0 id_arities args
 
 mkIds :: FastString -> [UnaryType] -> UniqSM [Id]
 mkIds fs tys = mapM (mkId fs) tys
