@@ -1394,7 +1394,7 @@ mkTupleTyCon name binders res_kind arity con sort parent
     }
 
 mkSumTyCon :: Name
-             -> [TyBinder]
+             -> [TyConBinder]
              -> Kind    -- ^ Kind of the resulting 'TyCon'
              -> Arity   -- ^ Arity of the sum
              -> [TyVar] -- ^ 'TyVar's scoped over: see 'tyConTyVars'
@@ -1407,7 +1407,7 @@ mkSumTyCon name binders res_kind arity tyvars cons parent
         tyConName        = name,
         tyConBinders     = binders,
         tyConResKind     = res_kind,
-        tyConKind        = mkForAllTys binders res_kind,
+        tyConKind        = mkTyConKind binders res_kind,
         tyConArity       = arity,
         tyConTyVars      = tyvars,
         tcRoles          = replicate arity Representational,

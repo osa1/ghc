@@ -885,17 +885,15 @@ mk_sum arity = (tycon, sum_cons)
     tycon   = mkSumTyCon tc_name tc_binders tc_res_kind (arity * 2) tyvars (elems sum_cons)
                          UnboxedAlgTyCon
 
-    tc_binders =
-              map (mkNamedBinder Specified) rr_tvs ++
-              map (mkAnonBinder . tyVarKind) open_tvs
+    tc_binders = mkTemplateTyConBinders (nOfThem arity runtimeRepTy)
+                                        (\ks -> map tYPE ks)
 
     tyvars = mkTemplateTyVars (replicate arity runtimeRepTy ++
                                map (tYPE . mkTyVarTy) (take arity tyvars))
-      -- Same as unboxed tuples: This must be one call to mkTemplateTyVars
 
     tc_res_kind = tYPE unboxedSumRepDataConTy
 
-    (rr_tvs, open_tvs) = splitAt arity tyvars
+    open_tvs = drop arity tyvars
 
     tc_name = mkWiredInName gHC_PRIM (mkSumTyConOcc arity) tc_uniq
                             (ATyCon tycon) BuiltInSyntax

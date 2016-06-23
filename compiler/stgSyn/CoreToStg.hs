@@ -453,7 +453,6 @@ mkStgAltType bndr alts = case repType (idType bndr) of
         Nothing                      -> PolyAlt
     UbxTupleRep rep_tys -> UbxTupAlt (length rep_tys)
         -- UbxTupAlt includes nullary and and singleton unboxed tuples
-    UbxSumRep ubx_fields bx_fields -> UbxSumAlt (length ubx_fields) (length bx_fields)
     UbxSumRep sum_rep -> UbxSumAlt sum_rep
   where
    _is_poly_alt_tycon tc
