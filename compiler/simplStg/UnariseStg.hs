@@ -270,22 +270,19 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts) ty
        case (e', alts) of
          -- Special cases when scrutinee is an explicit unboxed tuple (i.e. tuple
          -- con app). See Note [Unarisation].
-         (StgConApp dc args, [(DEFAULT, [], rhs)])
-           | isUnboxedTupleCon dc
+         (StgConApp _ args, [(DEFAULT, [], rhs)])
+           | UbxTupAlt _ <- alt_ty
            -> unariseExpr (extendVarEnv rho bndr args) rhs ty
 
-           -- TODO: This is slightly wrong. In theory, GHC can prove that some
-           -- cases are not reachable and remove those. So this may be for a
-           -- sum, actually.
-         (StgConApp dc args, [(DataAlt _, arg_bndrs, rhs)])
-           | isUnboxedTupleCon dc
+         (StgConApp _ args, [(DataAlt _, arg_bndrs, rhs)])
+           | UbxTupAlt _ <- alt_ty
            -> do let rho' = mapTupleIdBinders rho arg_bndrs args
                  unariseExpr rho' rhs ty
 
          -- Explicit unboxed sum. Case expression can be eliminated with a
          -- little bit extra work.
-         (StgConApp dc args@(tag_arg : real_args), alts)
-           | isUnboxedTupleCon dc
+         (StgConApp _ args@(tag_arg : real_args), alts)
+           | UbxSumAlt _ <- alt_ty
            -> do -- this won't be used but we need a scrutinee binder anyway
                  tag_bndr <- mkId (mkFastString "tag") (stgArgType tag_arg)
                  let rho' = extendVarEnv rho bndr args
@@ -296,11 +293,45 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts) ty
                                       text "unarised scrutinee:" <+> ppr e')
 
                  alts' <- mapM (\alt -> unariseSumAlt rho' real_args alt ty) alts
-                 return $ StgCase (case tag_arg of
-                                     StgVarArg v -> StgApp v []
-                                     StgLitArg l -> StgLit l
-                                     StgRubbishArg _ -> rubbishFail)
-                                  tag_bndr (PrimAlt intPrimTyCon) (mkDefaultAlt alts')
+
+                 -- We need to be careful with the literal substitutions here.
+                 -- Suppose we have:
+                 --
+                 --   Main.main6 :: GHC.Base.String
+                 --   [GblId] =
+                 --       \u [] (-> GHC.Base.String)
+                 --           case (#|_#) [8.1#] of sat_s75B {
+                 --             __DEFAULT -> Main.showAlt1 sat_s75B;
+                 --           };
+                 --
+                 -- After unarising scrutinee, this becomes:
+                 --
+                 --   Main.main6 :: GHC.Base.String
+                 --   [GblId] =
+                 --       \u [] (-> GHC.Base.String)
+                 --           case (#,#) [2#, 8.1#] of sat_s75B {
+                 --             __DEFAULT -> Main.showAlt1 sat_s75B;
+                 --           };
+                 --
+                 -- Then we expand and rename the binder, and replace case
+                 -- expression with another case, but one that has the tag as
+                 -- scrutinee:
+                 --
+                 --   Main.main6 :: GHC.Base.String
+                 --   [GblId] =
+                 --       \u [] (-> GHC.Base.String)
+                 --           case 2# of x, y {
+                 --             __DEFAULT -> Main.showAlt1 2# 8.1#;
+                 --           };
+                 --
+                 -- This case expression is now redundant.
+                 return $ case tag_arg of
+                   StgLitArg l ->
+                     selectLitAlt l (reverse (mkDefaultAlt alts'))
+                   StgVarArg v ->
+                     StgCase (StgApp v []) tag_bndr (PrimAlt intPrimTyCon) (mkDefaultAlt alts')
+                   StgRubbishArg _ ->
+                     rubbishFail
 
          -- General case
          _ -> do alts' <- unariseAlts rho alt_ty bndr alts ty
@@ -431,9 +462,8 @@ mapTupleIdBinders rho0 ids args
       id_arities = map (\id -> (id, length (flattenRepType (repType (idType id))))) ids
 
       map_ids :: UnariseEnv -> [(Id, Int)] -> [StgArg] -> UnariseEnv
-      map_ids rho [] []   = rho
-      map_ids _   [] _    = pprPanic "mapTupleIdBinders - 1" (ppr ids $$ ppr args)
-      map_ids _   _  []   = pprPanic "mapTupleIdBinders - 2" (ppr ids $$ ppr args)
+      map_ids rho [] _  = rho
+      map_ids _   _  [] = pprPanic "mapTupleIdBinders" (ppr ids $$ ppr args)
       map_ids rho ((x, x_arity) : xs) args =
         let (x_args, args') = splitAt x_arity args
          in map_ids (extendVarEnv rho x x_args) xs args'
@@ -470,3 +500,14 @@ dummyDefaultAlt = (DEFAULT, [], StgApp rUNTIME_ERROR_ID [])
 isNullaryTupleArg :: StgArg -> Bool
 isNullaryTupleArg (StgVarArg v) = v == dataConWorkId unboxedUnitDataCon
 isNullaryTupleArg _             = False
+
+selectLitAlt :: Literal -> [StgAlt] -> StgExpr
+selectLitAlt l []
+  = pprPanic "selectLitAlt" (ppr l)
+selectLitAlt l ((LitAlt l', _, rhs) : alts)
+  | l == l'   = rhs
+  | otherwise = selectLitAlt l alts
+selectLitAlt _ ((DEFAULT, _, rhs) : _)
+  = rhs
+selectLitAlt _ (alt@(DataAlt _, _, _) : _)
+  = pprPanic "selectLitAlt" (text "Found DataAlt:" <+> ppr alt)
