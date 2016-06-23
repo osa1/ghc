@@ -45,7 +45,8 @@ Suppose that a variable x : (# t1, t2 #).
     This applies to case scrutinees too
        case x of (# a,b #) -> e   ==>   case (# x1, x2 #) of (# a, b #) -> e
 
-Of course all this applies recursively, so that we flatten out nested tuples.
+Of course all this applies recursively, so that we flatten out nested tuples and
+sums.
 
 Note that the last case needs attention. When we have an unboxed tuple in
 scrutinee position, we can can remove the case expression, and "unarise" the
@@ -58,7 +59,7 @@ UnariseEnv must have a binding for x, and x must be expanded into two variables
 (as the tuple arity is 2, otherwise the program would be ill-typed). Say it's
 expanded into x1 and x2. We extend the UnariseEnv so that
 
-  x :-> [x1,x2], a :-> x1, b :-> x2
+  x :-> [x1,x2], a :-> x1, b :-> [x2]
 
 and then unarise the right hand side.
 
@@ -84,13 +85,13 @@ If UnariseEnv only maps variables to a list of variables, we can't eliminate
 this case expression. So instead we map variables to [StgArg] in UnariseEnv, and
 extend the environment with
 
-  x1 :-> [1#], x2 :-> x
+  x1 :-> [1#], x2 :-> [x]
 
 and unarise `f x1 x2`, which gives us `f 1# x`.
 
-In general, we can always eliminate the case expression when scrutinee is an
-explicit tuple. In this case left-hand side of case alts can be one of these two
-things:
+In general, we can always eliminate a case expression when scrutinee is an
+explicit tuple. When scrutinee is an unboxed tuple, left-hand side of case alts
+can be one of these two things:
 
   - An unboxed tuple pattern. (note that number of binders in the pattern will
     be the same as number of arguments in the scrutinee) e.g.
@@ -100,7 +101,7 @@ things:
     Scrutinee has to be in form `(# t1, t2, t3 #)` so we just extend the
     environment with
 
-      x1 :-> t1, x2 :-> t2, x3 :-> t3
+      x1 :-> [t1], x2 :-> [t2], x3 :-> [t3]
 
   - A variable. e.g.
 
@@ -230,9 +231,9 @@ unariseExpr rho expr@(StgApp f args) ty
   , isUnboxedSumType ty
   , as <- unariseId rho f
   = -- An Id bound to an unboxed sum
-  return (StgConApp (tupleDataCon Unboxed (length as)) as)
+    return (StgConApp (tupleDataCon Unboxed (length as)) as)
 
-  -- We now use rho for renaming too
+  -- Renaming
   | Just [StgVarArg f'] <- lookupVarEnv rho f
   = return (StgApp f' (unariseArgs rho args))
 
@@ -277,7 +278,7 @@ unariseExpr rho (StgOpApp op args ty) _
 unariseExpr _ e@StgLam{} _
   = pprPanic "unariseExpr: found lambda" (ppr e)
 
-unariseExpr rho (StgCase e bndr alt_ty alts) ty
+unariseExpr rho expr@(StgCase e bndr alt_ty alts) ty
   = do e' <- unariseExpr rho e (idType bndr)
        case (e', alts) of
          -- Special cases when scrutinee is an explicit unboxed tuple (i.e. tuple
@@ -303,13 +304,21 @@ unariseExpr rho (StgCase e bndr alt_ty alts) ty
          -- little bit extra work.
          (StgConApp dc args, alts)
            | isUnboxedTupleCon dc
-           -> do (_, (tag_bndr : _)) <- unariseIdBinder rho bndr -- FIXME
+           -> do -- this won't be used but we need a scrutinee binder anyway
+                 tag_bndr <- mkId (mkFastString "tag") (stgArgType (head args))
                  let rho' = extendVarEnv rho bndr args
+
+                     rubbishFail = pprPanic "unariseExpr"
+                                     (text "Found rubbish in tag position of an unboxed sum." $$
+                                      text "expr:" <+> ppr expr $$
+                                      text "unarised scrutinee:" <+> ppr e')
+
                  alts' <- mapM (\alt -> mkSumAlt rho' args alt ty) alts
                  return $ StgCase (case head args of
                                      StgVarArg v -> StgApp v []
-                                     StgLitArg l -> StgLit l) tag_bndr
-                                  (PrimAlt intPrimTyCon) (mkDefaultAlt alts')
+                                     StgLitArg l -> StgLit l
+                                     StgRubbishArg _ -> rubbishFail)
+                                  tag_bndr (PrimAlt intPrimTyCon) (mkDefaultAlt alts')
 
          -- General case
          _ -> do alts' <- unariseAlts rho alt_ty bndr alts ty
@@ -364,26 +373,28 @@ unariseAlts rho (UbxSumAlt _) bndr alts ty
 unariseAlts rho _ _ alts ty
   = mapM (\alt -> unariseAlt rho alt ty) alts
 
-mkSumAlt :: UnariseEnv -> [StgArg] -> StgAlt -> Type -> UniqSM StgAlt
+-- | Make alternatives that match on the tag of a sum.
+mkSumAlt :: UnariseEnv
+         -> [StgArg] -- ^ sum components. should at least have the tag argument,
+                     --   which always comes first.
+         -> StgAlt   -- ^ original alternative with sum LHS
+         -> Type     -- ^ type of RHS
+         -> UniqSM StgAlt
 mkSumAlt rho _ (DEFAULT, _, e) ty
   = ( DEFAULT, [], ) <$> unariseExpr rho e ty
 
-mkSumAlt rho scrt_args (DataAlt sumCon, bs, e) ty
+mkSumAlt rho (_ : real_args) (DataAlt sumCon, bs, e) ty
   = do (rho', bs') <- unariseIdBinders rho bs
        let
-         ys_types = map (\y -> (stgArgType y, y)) (tail scrt_args)
-                                                  -- TODO: Document this
+         ys_types = map (\y -> (stgArgType y, y)) real_args
          bs_types = map (\b -> (idType b, b)) bs'
-
          rns = rnUbxSumBndrs bs_types ys_types
-
          rho'' = extendVarEnvList (renameRhoRange rns rho') (map (second return) rns)
-
        e' <- unariseExpr rho'' e ty
        return ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], e' )
 
-mkSumAlt _ _ alt@(LitAlt{}, _, _) _
-  = pprPanic "mkSumAlt" (ppr alt)
+mkSumAlt _ scrt alt _
+  = pprPanic "mkSumAlt" (ppr scrt $$ ppr alt)
 
 --------------------------
 unariseAlt :: UnariseEnv -> StgAlt -> Type -> UniqSM StgAlt
@@ -432,7 +443,10 @@ unariseIdBinder rho x =
       return (rho', ys)
 
 mkIds :: FastString -> [UnaryType] -> UniqSM [Id]
-mkIds fs tys = mapM (mkSysLocalOrCoVarM fs) tys
+mkIds fs tys = mapM (mkId fs) tys
+
+mkId :: FastString -> UnaryType -> UniqSM Id
+mkId = mkSysLocalOrCoVarM
 
 --------------------------------------------------------------------------------
 
