@@ -134,10 +134,14 @@ lintStgRhs (StgRhsClosure _ _ _ _ binders expr _)
         body_ty <- MaybeT $ lintStgExpr expr
         return (mkFunTys (map idType binders) body_ty)
 
-lintStgRhs (StgRhsCon _ con args _arg_tys) = runMaybeT $ do
+lintStgRhs rhs@(StgRhsCon _ con args _arg_tys) = do
     -- TODO: Check arg_tys
-    arg_tys <- mapM (MaybeT . lintStgArg) args
-    MaybeT $ checkFunApp con_ty arg_tys (mkRhsConMsg con_ty arg_tys)
+    when (isUnboxedTupleCon con || isUnboxedSumCon con) $
+      addErrL (text "StgRhsCon is an unboxed tuple or sum application" $$
+               ppr rhs)
+    runMaybeT $ do
+      arg_tys <- mapM (MaybeT . lintStgArg) args
+      MaybeT $ checkFunApp con_ty arg_tys (mkRhsConMsg con_ty arg_tys)
   where
     con_ty = dataConRepType con
 
@@ -366,7 +370,7 @@ have long since disappeared.
 
 checkFunApp :: Type                 -- The function type
             -> [Type]               -- The arg type(s)
-            -> MsgDoc              -- Error message
+            -> MsgDoc               -- Error message
             -> LintM (Maybe Type)   -- Just ty => result type is accurate
 
 checkFunApp fun_ty arg_tys msg

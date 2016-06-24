@@ -774,7 +774,9 @@ mkStgRhs' con_updateable rhs_fvs bndr binder_info rhs rhs_ty
                    bndrs body body_ty
   | StgConApp con args ty_args <- unticked_rhs
   , not (con_updateable con args)
-  = StgRhsCon noCCS con args ty_args
+  = -- CorePrep does this right, but just to make sure
+    ASSERT (not (isUnboxedTupleCon con || isUnboxedSumCon con))
+    StgRhsCon noCCS con args ty_args
   | otherwise
   = StgRhsClosure noCCS binder_info
                    (getFVs rhs_fvs)

@@ -416,8 +416,9 @@ The second flavour of right-hand-side is for constructors (simple but important)
                          -- DontCareCCS, because we don't count static
                          -- data in heap profiles, and we don't set CCCS
                          -- from static closure.
-        DataCon          -- constructor
-        [GenStgArg occ]  -- args
+        DataCon          -- Constructor. Never an unboxed tuple or sum, as those
+                         -- are not allocated.
+        [GenStgArg occ]  -- Args
         [Type]           -- See the same argument in StgConApp.
 
 

@@ -253,7 +253,7 @@ unariseRhs rho (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
        return (StgRhsClosure ccs b_info fvs' update_flag args' expr' body_ty)
 
 unariseRhs rho (StgRhsCon ccs con args ty_args)
-  = -- TODO: What happens if con is a sum?
+  = ASSERT (not (isUnboxedTupleCon con || isUnboxedSumCon con))
     return (StgRhsCon ccs con (unariseArgs rho args) ty_args)
 
 ------------------------
