@@ -121,9 +121,9 @@ cgOpApp (StgPrimOp primop) args res_ty = do
              result_info = getPrimOpResultInfo primop
 
 cgOpApp (StgPrimCallOp primcall) args _res_ty
-  = do  { cmm_args <- getNonVoidArgAmodes_no_rubbish args
+  = do  { cmm_args <- getNonVoidArgAmodes args
         ; let fun = CmmLit (CmmLabel (mkPrimCallLabel primcall))
-        ; emitCall (NativeNodeCall, NativeReturn) fun (map CmmExprArg cmm_args) }
+        ; emitCall (NativeNodeCall, NativeReturn) fun cmm_args }
 
 -- | Interpret the argument as an unsigned value, assuming the value
 -- is given in two-complement form in the given width.
