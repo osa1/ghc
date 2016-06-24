@@ -64,7 +64,7 @@ cgExpr (StgOpApp (StgPrimOp SeqOp) [StgVarArg a, _] _res_ty) =
   cgIdApp a []
 
 cgExpr (StgOpApp op args ty) = cgOpApp op args ty
-cgExpr (StgConApp con args)  = cgConApp con args
+cgExpr (StgConApp con args _)= cgConApp con args
 cgExpr (StgTick t e)         = cgTick t >> cgExpr e
 cgExpr (StgLit lit)       = do cmm_lit <- cgLit lit
                                emitReturn [CmmExprArg (CmmLit cmm_lit)]
@@ -141,8 +141,8 @@ cgLetNoEscapeRhsBody
     -> FCode (CgIdInfo, FCode ())
 cgLetNoEscapeRhsBody local_cc bndr (StgRhsClosure cc _bi _ _upd args body _)
   = cgLetNoEscapeClosure bndr local_cc cc (nonVoidIds args) body
-cgLetNoEscapeRhsBody local_cc bndr (StgRhsCon cc con args)
-  = cgLetNoEscapeClosure bndr local_cc cc [] (StgConApp con args)
+cgLetNoEscapeRhsBody local_cc bndr (StgRhsCon cc con args ty_args)
+  = cgLetNoEscapeClosure bndr local_cc cc [] (StgConApp con args ty_args)
         -- For a constructor RHS we want to generate a single chunk of
         -- code which can be jumped to from many places, which will
         -- return the constructor. It's easy; just behave as if it

@@ -44,7 +44,7 @@ import ForeignCall
 import Demand           ( isUsedOnce )
 import PrimOp           ( PrimCall(..) )
 
-import Data.Maybe    (isJust)
+import Data.Maybe    (isJust, fromMaybe)
 import Control.Monad (liftM, ap)
 
 -- Note [Live vs free]
@@ -538,7 +538,9 @@ coreToStgApp _ f args ticks = do
 
         res_ty = exprType (mkApps (Var f) args)
         app = case idDetails f of
-                DataConWorkId dc | saturated -> StgConApp dc args'
+                DataConWorkId dc
+                  | saturated    -> StgConApp dc args'
+                                      (dropRuntimeRepArgs (fromMaybe [] (tyConAppArgs_maybe res_ty)))
 
                 -- Some primitive operator that might be implemented as a library call.
                 PrimOpId op      -> ASSERT( saturated )
@@ -603,10 +605,10 @@ coreToStgArgs (arg : args) = do         -- Non-type argument
 
         (aticks, arg'') = stripStgTicksTop tickishFloatable arg'
         stg_arg = case arg'' of
-                       StgApp v []      -> StgVarArg v
-                       StgConApp con [] -> StgVarArg (dataConWorkId con)
-                       StgLit lit       -> StgLitArg lit
-                       _                -> pprPanic "coreToStgArgs" (ppr arg)
+                       StgApp v []        -> StgVarArg v
+                       StgConApp con [] _ -> StgVarArg (dataConWorkId con)
+                       StgLit lit         -> StgLitArg lit
+                       _                  -> pprPanic "coreToStgArgs" (ppr arg)
 
         -- WARNING: what if we have an argument like (v `cast` co)
         --          where 'co' changes the representation type?
@@ -770,9 +772,9 @@ mkStgRhs' con_updateable rhs_fvs bndr binder_info rhs rhs_ty
                    (getFVs rhs_fvs)
                    ReEntrant
                    bndrs body body_ty
-  | StgConApp con args <- unticked_rhs
+  | StgConApp con args ty_args <- unticked_rhs
   , not (con_updateable con args)
-  = StgRhsCon noCCS con args
+  = StgRhsCon noCCS con args ty_args
   | otherwise
   = StgRhsClosure noCCS binder_info
                    (getFVs rhs_fvs)

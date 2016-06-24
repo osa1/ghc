@@ -55,7 +55,7 @@ instance Outputable UbxSumRepTy where
 -- | Given types of constructor arguments, return the unboxed sum rep type.
 mkUbxSumRepTy :: [[Type]] -> UbxSumRepTy
 mkUbxSumRepTy constrs =
-  ASSERT( length constrs > 1 ) -- otherwise it isn't a sum type
+  ASSERT2( length constrs > 1, ppr constrs ) -- otherwise it isn't a sum type
   let
     combine_alts
       :: [[SlotTy]]  -- slots of constructors
@@ -106,11 +106,14 @@ mkUbxSum sumTy tag fields =
       = arg : bindFields slots args
       | otherwise
       = slotDummyArg slot : bindFields slots args0
+
+    args = StgLitArg (MachInt (fromIntegral tag))
+                : (bindFields (tail (ubxSumSlots sumTy)) -- drop tag slot
+                              field_slots)
   in
     StgConApp (tupleDataCon Unboxed (length (ubxSumSlots sumTy)))
-              (StgLitArg (MachInt (fromIntegral tag))
-                : (bindFields (tail (ubxSumSlots sumTy)) -- drop tag slot
-                              field_slots))
+              args
+              (map stgArgType args)
 
 -- | Given binders and arguments of a tuple, maps binders to arguments for
 -- renaming.

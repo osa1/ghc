@@ -204,6 +204,10 @@ primitives, and literals.
         -- which can't be let-bound first
   | StgConApp   DataCon
                 [GenStgArg occ] -- Saturated
+                [Type]          -- Type arguments to the DataCon. Necessary for
+                                -- transforming unboxed sums to tuples. Does NOT
+                                -- include RuntimeRep args. Null when the type
+                                -- is not a TyCon application.
 
   | StgOpApp    StgOp           -- Primitive op or foreign call
                 [GenStgArg occ] -- Saturated. Not rubbish.
@@ -414,12 +418,14 @@ The second flavour of right-hand-side is for constructors (simple but important)
                          -- from static closure.
         DataCon          -- constructor
         [GenStgArg occ]  -- args
+        [Type]           -- See the same argument in StgConApp.
+
 
 stgRhsArity :: StgRhs -> Int
 stgRhsArity (StgRhsClosure _ _ _ _ bndrs _ _)
   = ASSERT( all isId bndrs ) length bndrs
   -- The arity never includes type parameters, but they should have gone by now
-stgRhsArity (StgRhsCon _ _ _) = 0
+stgRhsArity (StgRhsCon _ _ _ _) = 0
 
 -- Note [CAF consistency]
 -- ~~~~~~~~~~~~~~~~~~~~~~
@@ -444,7 +450,7 @@ topRhsHasCafRefs :: GenStgRhs bndr Id -> Bool
 topRhsHasCafRefs (StgRhsClosure _ _ _ upd _ body _)
   = -- See Note [CAF consistency]
     isUpdatable upd || exprHasCafRefs body
-topRhsHasCafRefs (StgRhsCon _ _ args)
+topRhsHasCafRefs (StgRhsCon _ _ args _)
   = any stgArgHasCafRefs args
 
 exprHasCafRefs :: GenStgExpr bndr Id -> Bool
@@ -452,7 +458,7 @@ exprHasCafRefs (StgApp f args)
   = stgIdHasCafRefs f || any stgArgHasCafRefs args
 exprHasCafRefs StgLit{}
   = False
-exprHasCafRefs (StgConApp _ args)
+exprHasCafRefs (StgConApp _ args _)
   = any stgArgHasCafRefs args
 exprHasCafRefs (StgOpApp _ args _)
   = any stgArgHasCafRefs args
@@ -476,7 +482,7 @@ bindHasCafRefs (StgRec binds)
 rhsHasCafRefs :: GenStgRhs bndr Id -> Bool
 rhsHasCafRefs (StgRhsClosure _ _ _ _ _ body _)
   = exprHasCafRefs body
-rhsHasCafRefs (StgRhsCon _ _ args)
+rhsHasCafRefs (StgRhsCon _ _ args _)
   = any stgArgHasCafRefs args
 
 altHasCafRefs :: GenStgAlt bndr Id -> Bool
@@ -683,8 +689,8 @@ pprStgExpr (StgLit lit)     = ppr lit
 pprStgExpr (StgApp func args)
   = hang (ppr func) 4 (sep (map (ppr) args))
 
-pprStgExpr (StgConApp con args)
-  = hsep [ ppr con, brackets (interppSP args)]
+pprStgExpr (StgConApp con args _)
+  = hsep [ ppr con, brackets (interppSP args) ]
 
 pprStgExpr (StgOpApp op args _)
   = hsep [ pprStgOp op, brackets (interppSP args)]
@@ -799,6 +805,6 @@ pprStgRhs (StgRhsClosure cc bi free_vars upd_flag args body ret_ty)
                 parens (text "->" <+> ppr ret_ty)])
          4 (ppr body)
 
-pprStgRhs (StgRhsCon cc con args)
+pprStgRhs (StgRhsCon cc con args _)
   = hcat [ ppr cc,
            space, ppr con, text "! ", brackets (interppSP args)]

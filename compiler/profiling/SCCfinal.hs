@@ -92,13 +92,13 @@ stgMassageForProfiling dflags mod_name _us stg_binds
 
     do_top_rhs _ (StgRhsClosure _ _ _ _ []
                      (StgTick (ProfNote _cc False{-not tick-} _push)
-                              (StgConApp con args)) _)
+                              (StgConApp con args ty_args)) _)
       | not (isDllConApp dflags mod_name con args)
         -- Trivial _scc_ around nothing but static data
         -- Eliminate _scc_ ... and turn into StgRhsCon
 
         -- isDllConApp checks for LitLit args too
-      = return (StgRhsCon dontCareCCS con args)
+      = return (StgRhsCon dontCareCCS con args ty_args)
 
     do_top_rhs binder (StgRhsClosure _ bi fv u [] body body_ty)
       = do
@@ -125,11 +125,11 @@ stgMassageForProfiling dflags mod_name _us stg_binds
       = do body' <- do_expr body
            return (StgRhsClosure dontCareCCS bi fv u args body' body_ty)
 
-    do_top_rhs _ (StgRhsCon _ con args)
+    do_top_rhs _ (StgRhsCon _ con args ty_args)
         -- Top-level (static) data is not counted in heap
         -- profiles; nor do we set CCCS from it; so we
         -- just slam in dontCareCostCentre
-      = return (StgRhsCon dontCareCCS con args)
+      = return (StgRhsCon dontCareCCS con args ty_args)
 
     ------
     do_expr :: StgExpr -> MassageM StgExpr
@@ -139,8 +139,8 @@ stgMassageForProfiling dflags mod_name _us stg_binds
     do_expr (StgApp fn args)
       = return (StgApp fn args)
 
-    do_expr (StgConApp con args)
-      = return (StgConApp con args)
+    do_expr (StgConApp con args ty_args)
+      = return (StgConApp con args ty_args)
 
     do_expr (StgOpApp con args res_ty)
       = return (StgOpApp con args res_ty)
@@ -202,16 +202,16 @@ stgMassageForProfiling dflags mod_name _us stg_binds
         -- but need to reinstate PushCC for that.
     do_rhs (StgRhsClosure _closure_cc _bi _fv _u []
                (StgTick (ProfNote cc False{-not tick-} _push)
-                        (StgConApp con args)) _)
+                        (StgConApp con args ty_args)) _)
       = do collectCC cc
-           return (StgRhsCon currentCCS con args)
+           return (StgRhsCon currentCCS con args ty_args)
 
     do_rhs (StgRhsClosure _ bi fv u args expr body_ty) = do
         expr' <- do_expr expr
         return (StgRhsClosure currentCCS bi fv u args expr' body_ty)
 
-    do_rhs (StgRhsCon _ con args)
-      = return (StgRhsCon currentCCS con args)
+    do_rhs (StgRhsCon _ con args ty_args)
+      = return (StgRhsCon currentCCS con args ty_args)
 
 
 -- -----------------------------------------------------------------------------

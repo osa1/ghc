@@ -134,7 +134,8 @@ lintStgRhs (StgRhsClosure _ _ _ _ binders expr _)
         body_ty <- MaybeT $ lintStgExpr expr
         return (mkFunTys (map idType binders) body_ty)
 
-lintStgRhs (StgRhsCon _ con args) = runMaybeT $ do
+lintStgRhs (StgRhsCon _ con args _arg_tys) = runMaybeT $ do
+    -- TODO: Check arg_tys
     arg_tys <- mapM (MaybeT . lintStgArg) args
     MaybeT $ checkFunApp con_ty arg_tys (mkRhsConMsg con_ty arg_tys)
   where
@@ -149,7 +150,8 @@ lintStgExpr e@(StgApp fun args) = runMaybeT $ do
     arg_tys <- mapM (MaybeT . lintStgArg) args
     MaybeT $ checkFunApp fun_ty arg_tys (mkFunAppMsg fun_ty arg_tys e)
 
-lintStgExpr e@(StgConApp con args) = runMaybeT $ do
+lintStgExpr e@(StgConApp con args _arg_tys) = runMaybeT $ do
+    -- TODO: Check arg_tys
     arg_tys <- mapM (MaybeT . lintStgArg) args
     MaybeT $ checkFunApp con_ty arg_tys (mkFunAppMsg con_ty arg_tys e)
   where

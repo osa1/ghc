@@ -205,7 +205,7 @@ cgRhs :: Id
                                   -- (see above)
                )
 
-cgRhs id (StgRhsCon cc con args)
+cgRhs id (StgRhsCon cc con args _)
   = withNewTickyCounterCon (idName id) $
     buildDynCon id True cc con args
 
