@@ -91,7 +91,61 @@ By the end of this pass, we only have unboxed tuples in return positions.
 
 Note [Translating unboxed sums to unboxed tuples]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-TODO
+
+TODO:
+
+Note [Two-step binder substitution for sums]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Explicit unboxed sums in scrutinee positions are also eliminated, however the
+process is a bit more complicated. Suppose we have this:
+
+  type Sum = (# (# Int#, Int #) | (# Int, Int# #) #)
+
+  showP1 :: (# Int#, Int #) -> String
+  showP1 = ...
+
+  showSum :: Sum -> String
+  showSum (# p1 | #) = showP1 p1
+  ...
+
+  showSum (# (# 123#, 456 #) | #)
+
+Tuple representation of Sum will be (# Int#, Any, Int# #). Now, this is the STG for showSum:
+
+  showSum s =
+    case s of
+      (# p1 | #) -> showP1 p1
+      ...
+
+We unarise s and it gives us this mapping
+
+  (0) s :-> [s_1 :: Int#, s_2 :: Any, s_3 :: Int#]
+
+so showSum becomes (after some simplifications)
+
+  showSum s_1 s_2 s_3 =
+    case s_1 of
+      1# -> showP1 <unarisation of p1>
+
+What will unarisation of p1 be? Note that in our tuple representation Any comes
+before Int#, but in the tuple of first alternative, (# Int#, Any #), Int# comes
+before Any. So correct unarisation of p1 is
+
+  (1) p1 :-> [s_3 :: Int#, s_2 :: Any]
+
+How do we generate this? There's an easy way. Suppose we added (0) to rho. We
+unarise p1 and it gives us
+
+  (2) p1 :-> [p1_1 :: Int#, p1_2 :: Any]
+
+Now we map [p_1 :: Int#, p_2 :: Any] to [s_2 :: Any, s_3 :: Int#] (in
+`rnUbxSumBndrs`) as described in Note [Translating unboxed sums to unboxed
+tuples], that gives us
+
+  (3) p1_1 :-> [s_3], p1_2 :-> [s_2]
+
+Now we apply the renaming (3) ro range of (2), to get (1). Then add it to the
+rho.
 
 Note [Case of known con tag]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -209,14 +263,15 @@ import MonadUtils (mapAccumLM)
 import Outputable
 import StgSyn
 import Type
-import TysPrim (intPrimTyCon)
+import TysPrim (intPrimTyCon, voidPrimTy)
 import TysWiredIn
 import UniqSupply
 import Util
 import VarEnv
 
 import Data.Bifunctor (second)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, fromJust)
+import qualified Data.IntMap as IM
 
 import ElimUbxSums
 
@@ -311,7 +366,7 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts)
 
          (StgConApp _ args _, [(DataAlt _, arg_bndrs, rhs)])
            | UbxTupAlt _ <- alt_ty
-           -> do let rho' = mapTupleIdBinders rho arg_bndrs args
+           -> do let rho' = mapTupleIdBinders arg_bndrs args rho
                  unariseExpr rho' rhs
 
          -- Explicit unboxed sum. Case expression can be eliminated with a
@@ -400,15 +455,8 @@ unariseSumAlt rho _ (DEFAULT, _, e)
   = ( DEFAULT, [], ) <$> unariseExpr rho e
 
 unariseSumAlt rho args (DataAlt sumCon, bs, e)
-  = do (rho', bs') <- unariseIdBinders rho bs
-       let
-         scrt_arg_tys = map (\y -> (stgArgType y, y)) args
-         bs_types     = map (\b -> (idType b, b)) bs'
-
-         rns = rnUbxSumBndrs bs_types scrt_arg_tys
-
-         rho'' = extendVarEnvList (renameRhoRange rns rho') (map (second return) rns)
-       e' <- unariseExpr rho'' e
+  = do let rho' = mapSumIdBinders bs args rho
+       e' <- unariseExpr rho' e
        return ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], e' )
 
 unariseSumAlt _ scrt alt
@@ -442,28 +490,32 @@ unariseIdBinders rho xs = second concat <$> mapAccumLM unariseIdBinder rho xs
 
 unariseIdBinder :: UnariseEnv -> Id -> UniqSM (UnariseEnv, [Id])
 unariseIdBinder rho x =
+  case unariseIdType x of
+    [ty] | ty `eqType` voidPrimTy
+      -> return (extendVarEnv rho x [StgVarArg voidPrimId], [voidPrimId])
+    tys
+      -> do ys <- mkIds (mkFastString "us") tys
+            return (extendVarEnv rho x (map StgVarArg ys), ys)
+
+unariseIdType :: Id -> [Type]
+unariseIdType x =
   case repType (idType x) of
-    UnaryRep _      -> return (rho, [x])
+    UnaryRep ty -> [ty]
 
     UbxTupleRep tys
-      | null tys -> do -- See Note [Unarisation and nullary tuples]
-        let ys   = [voidPrimId]
-            rho' = extendVarEnv rho x [StgVarArg voidPrimId]
-        return (rho', ys)
-      | otherwise -> do
-        ys <- mkIds (mkFastString "tup") tys
-        let rho' = extendVarEnv rho x (map StgVarArg ys)
-        return (rho', ys)
+      | null tys  -> [voidPrimTy]
+      | otherwise -> tys
 
-    UbxSumRep sumRep -> do
-      ys <- mkIds (mkFastString "sumf") (ubxSumFieldTypes sumRep)
-      let rho' = extendVarEnv rho x (map StgVarArg ys)
-      return (rho', ys)
+    UbxSumRep sumRep -> ubxSumFieldTypes sumRep
 
-mapTupleIdBinders :: UnariseEnv -> [Id] -> [StgArg] -> UnariseEnv
-mapTupleIdBinders rho0 ids args
+mapTupleIdBinders
+    :: [Id]      -- ^ binders of a tuple alternative
+    -> [StgArg]  -- ^ arguments that form the tuple
+    -> UnariseEnv
+    -> UnariseEnv
+mapTupleIdBinders ids args rho0
   = let
-      id_arities = map (\id -> (id, length (flattenRepType (repType (idType id))))) ids
+      id_arities = map (\id -> (id, length (unariseIdType id))) ids
 
       map_ids :: UnariseEnv -> [(Id, Int)] -> [StgArg] -> UnariseEnv
       map_ids rho [] _  = rho
@@ -475,20 +527,40 @@ mapTupleIdBinders rho0 ids args
       ASSERT (sum (map snd id_arities) == length args)
       map_ids rho0 id_arities args
 
+-- See Note [Two-step binder substitution for sums]
+mapSumIdBinders
+  :: [Id]        -- ^ binders of a sum alternative
+  -> [StgArg]    -- ^ arguments that form the sum (NOT including the tag)
+  -> UnariseEnv
+  -> UnariseEnv
+mapSumIdBinders ids sum_args rho
+  = let
+      id_exps      = map (\id -> (id, unariseIdType id)) ids
+
+      gen_id_temps :: Int -> [(a, [b])] -> [(a, [Int])]
+      gen_id_temps _ []
+          = []
+      gen_id_temps n ((id, l) : ls)
+          = (id, [n .. n + length l - 1]) : gen_id_temps (n + length l) ls
+
+      id_temps     = gen_id_temps 0 id_exps
+
+      temp_tys     = zip (concatMap unariseIdType ids) [0..]
+      scrt_arg_tys = map (\arg -> (stgArgType arg, arg)) sum_args
+
+      rns :: IM.IntMap StgArg
+      rns = IM.fromList (rnUbxSumBndrs temp_tys scrt_arg_tys)
+
+      rho' = extendVarEnvList rho $
+               map (second (map (\temp -> fromJust (IM.lookup temp rns)))) id_temps
+    in
+      rho'
+
 mkIds :: FastString -> [UnaryType] -> UniqSM [Id]
 mkIds fs tys = mapM (mkId fs) tys
 
 mkId :: FastString -> UnaryType -> UniqSM Id
 mkId = mkSysLocalOrCoVarM
-
---------------------------------------------------------------------------------
-
-renameRhoRange :: [(Id, StgArg)] -> UnariseEnv -> UnariseEnv
-renameRhoRange rns = mapVarEnv renameRange
-  where
-    renameRange = map $ \arg -> case arg of
-                                  StgVarArg v -> fromMaybe arg (lookup v rns)
-                                  _ -> arg
 
 --------------------------------------------------------------------------------
 

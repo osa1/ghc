@@ -17,12 +17,12 @@ module ElimUbxSums
   , UbxSumRepTy
   , ubxSumFieldTypes
   , flattenSumRep
+  , typeSlotTy
   ) where
 
 #include "HsVersions.h"
 
 import BasicTypes
-import Id
 import Literal
 import Outputable
 import StgSyn
@@ -117,18 +117,25 @@ mkUbxSum sumTy tag fields =
 
 -- | Given binders and arguments of a tuple, maps binders to arguments for
 -- renaming.
-rnUbxSumBndrs :: [(Type, Id)] -> [(Type, StgArg)] -> [(Id, StgArg)]
+rnUbxSumBndrs :: Outputable a => [(Type, a)] -> [(Type, StgArg)] -> [(a, StgArg)]
 rnUbxSumBndrs alt_bndrs ubx_sum_args
-  = mapBinders (mkSlots alt_bndrs) (mkSlots ubx_sum_args)
+  = mapBinders alt_bndr_slots sum_arg_slots
   where
-    mapBinders :: [(SlotTy, Id)] -> [(SlotTy, StgArg)] -> [(Id, StgArg)]
+    alt_bndr_slots = mkSlots alt_bndrs
+    sum_arg_slots  = mkSlots ubx_sum_args
+
+    mapBinders :: [(SlotTy, a)] -> [(SlotTy, StgArg)] -> [(a, StgArg)]
     mapBinders [] _
       = []
     mapBinders _ []
       = pprPanic "rnUbxSumBndrs.mapBinders"
-          (text "Run out of slots but still have args to bind." $$ ppr ubx_sum_args $$ ppr alt_bndrs)
+          (text "Run out of slots but still have args to bind." $$
+           text "args:" <+> ppr ubx_sum_args $$
+           text "bndrs:" <+> ppr alt_bndrs $$
+           text "alt_bndr_slots:" <+> ppr alt_bndr_slots $$
+           text "sum_arg_slots:" <+> ppr sum_arg_slots)
     mapBinders alt_ss@((alt_slot_ty, alt_slot_id) : alt_slots) ((sum_arg_ty, sum_arg) : sum_args)
-      | Just sum_arg_ty == (alt_slot_ty `fitsIn` sum_arg_ty)
+      | Just sum_arg_ty == (sum_arg_ty `fitsIn` alt_slot_ty)
       = (alt_slot_id, sum_arg) : mapBinders alt_slots sum_args
 
       | otherwise
