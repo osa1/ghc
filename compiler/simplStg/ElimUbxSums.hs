@@ -22,6 +22,7 @@ correct terms.
 
 module ElimUbxSums
   ( mkUbxSumRepTy
+  , isEnumUbxSum
   , mkUbxSum
   , rnUbxSumBndrs
 
@@ -60,6 +61,10 @@ newtype UbxSumRepTy = UbxSumRepTy { ubxSumSlots :: [SlotTy] }
 
 ubxSumFieldTypes :: UbxSumRepTy -> [Type]
 ubxSumFieldTypes = map slotTyToType . ubxSumSlots
+
+isEnumUbxSum :: UbxSumRepTy -> Bool
+isEnumUbxSum (UbxSumRepTy [_]) = True
+isEnumUbxSum _                 = False
 
 instance Outputable UbxSumRepTy where
   ppr (UbxSumRepTy slots) = text "UbxSumRepTy" <+> ppr slots
@@ -101,30 +106,35 @@ mkUbxSumRepTy constrs =
 
 -- | Build a unboxed sum term.
 mkUbxSum :: UbxSumRepTy -> ConTag -> [(Type, StgArg)] -> StgExpr
-mkUbxSum sumTy tag fields =
-  let
-    field_slots = mkSlots fields
+mkUbxSum sumTy tag fields
+  | isEnumUbxSum sumTy
+  = ASSERT(null fields)
+    StgLit (MachInt (fromIntegral tag))
 
-    bindFields :: [SlotTy] -> [(SlotTy, StgArg)] -> [StgArg]
-    bindFields slots []
-      = -- arguments are bound, fill rest of the slots with dummy values
-        map slotDummyArg slots
-    bindFields [] args
-      = -- we still have arguments to bind, but run out of slots
-        pprPanic "mkUbxSum" (text "Run out of slots. Args left to bind:" <+> ppr args)
-    bindFields (slot : slots) args0@((arg_slot, arg) : args)
-      | Just arg_slot == (arg_slot `fitsIn` slot)
-      = arg : bindFields slots args
-      | otherwise
-      = slotDummyArg slot : bindFields slots args0
+  | otherwise
+  = let
+      field_slots = mkSlots fields
 
-    args = StgLitArg (MachInt (fromIntegral tag))
-                : (bindFields (tail (ubxSumSlots sumTy)) -- drop tag slot
-                              field_slots)
-  in
-    StgConApp (tupleDataCon Unboxed (length (ubxSumSlots sumTy)))
-              args
-              (map stgArgType args)
+      bindFields :: [SlotTy] -> [(SlotTy, StgArg)] -> [StgArg]
+      bindFields slots []
+        = -- arguments are bound, fill rest of the slots with dummy values
+          map slotDummyArg slots
+      bindFields [] args
+        = -- we still have arguments to bind, but run out of slots
+          pprPanic "mkUbxSum" (text "Run out of slots. Args left to bind:" <+> ppr args)
+      bindFields (slot : slots) args0@((arg_slot, arg) : args)
+        | Just arg_slot == (arg_slot `fitsIn` slot)
+        = arg : bindFields slots args
+        | otherwise
+        = slotDummyArg slot : bindFields slots args0
+
+      args = StgLitArg (MachInt (fromIntegral tag)) :
+               bindFields (tail (ubxSumSlots sumTy)) -- drop tag slot
+                             field_slots
+    in
+      StgConApp (tupleDataCon Unboxed (length args))
+                args
+                (map stgArgType args)
 
 -- | Given binders and arguments of a sum, maps binders to arguments for
 -- renaming.
@@ -207,8 +217,8 @@ primRepSlot VecRep{}    = pprPanic "primRepSlot" (text "No slot for VecRep")
 
 slotTyToType :: SlotTy -> Type
 slotTyToType PtrSlot    = anyTypeOfKind liftedTypeKind
-slotTyToType Word64Slot = word64PrimTy
-slotTyToType WordSlot   = wordPrimTy
+slotTyToType Word64Slot = int64PrimTy
+slotTyToType WordSlot   = intPrimTy
 slotTyToType DoubleSlot = doublePrimTy
 slotTyToType FloatSlot  = floatPrimTy
 

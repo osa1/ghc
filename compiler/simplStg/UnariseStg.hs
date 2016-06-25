@@ -257,7 +257,7 @@ import MonadUtils (mapAccumLM)
 import Outputable
 import StgSyn
 import Type
-import TysPrim (intPrimTyCon, voidPrimTy)
+import TysPrim (intPrimTyCon, voidPrimTy, intPrimTy)
 import TysWiredIn
 import UniqSupply
 import Util
@@ -383,9 +383,24 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts)
                      -- See Note [Case of known con tag]
                      selectLitAlt l alts'
                    StgVarArg v ->
-                     StgCase (StgApp v []) tag_bndr (PrimAlt intPrimTyCon) (mkDefaultLitAlt alts')
+                     StgCase (StgApp v []) tag_bndr tagAltTy (mkDefaultLitAlt alts')
                    StgRubbishArg _ ->
                      rubbishFail
+
+         -- Enumeration types: No need for case expression to bind (unit) tuple field
+         _ | UbxSumAlt sum_alt <- alt_ty
+           , isEnumUbxSum sum_alt
+           -> do case e' of
+                   StgLit tag -> do
+                     -- See Note [Case of known con tag]
+                     let rho' = extendVarEnv rho bndr [StgLitArg tag]
+                     alts' <- mapM (unariseSumAlt rho' []) alts
+                     return (selectLitAlt tag alts')
+                   _ -> do
+                     let bndr' = bndr `setIdType` tagTy
+                     let rho' = extendVarEnv rho bndr [StgVarArg bndr']
+                     alts' <- mapM (unariseSumAlt rho' []) alts
+                     return (StgCase e' bndr' tagAltTy (mkDefaultLitAlt alts'))
 
          -- General case
          _ -> do alts' <- unariseAlts rho alt_ty bndr alts
@@ -432,7 +447,7 @@ unariseAlts rho (UbxSumAlt _) bndr alts
        alts' <- mapM (\alt -> unariseSumAlt rho_sum_bndrs (map StgVarArg real_bndrs) alt) alts
        let inner_case =
              StgCase (StgApp tag_bndr []) tag_bndr
-                     (PrimAlt intPrimTyCon) (mkDefaultLitAlt alts')
+                     tagAltTy (mkDefaultLitAlt alts')
        return [ (DataAlt (tupleDataCon Unboxed (length scrt_bndrs)),
                  scrt_bndrs,
                  inner_case) ]
@@ -557,6 +572,12 @@ mkId :: FastString -> UnaryType -> UniqSM Id
 mkId = mkSysLocalOrCoVarM
 
 --------------------------------------------------------------------------------
+
+tagAltTy :: AltType
+tagAltTy = PrimAlt intPrimTyCon
+
+tagTy :: Type
+tagTy = intPrimTy
 
 mkDefaultLitAlt :: [StgAlt] -> [StgAlt]
 mkDefaultLitAlt [] = pprPanic "elimUbxSumExpr.mkDefaultAlt" (text "Empty alts")
