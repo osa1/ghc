@@ -447,8 +447,7 @@ rnPatAndThen mk (TuplePat pats boxed _)
        ; return (TuplePat pats' boxed []) }
 
 rnPatAndThen mk (SumPat pat alt arity _)
-  = do { liftCps $ checkSumArity arity
-       ; pat <- rnLPatAndThen mk pat
+  = do { pat <- rnLPatAndThen mk pat
        ; return (SumPat pat alt arity PlaceHolder)
        }
 
