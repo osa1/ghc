@@ -635,12 +635,12 @@ sumParens p = ptext (sLit "(#") <+> p <+> ptext (sLit "#)")
 -- | Pretty print an alternative in an unboxed sum e.g. "| a | |".
 pprAlternative :: (a -> SDoc) -- ^ The pretty printing function to use
                -> a           -- ^ The things to be pretty printed
-               -> Int         -- ^ Alternative (zero-based)
+               -> ConTag      -- ^ Alternative (one-based)
                -> Int         -- ^ Arity
                -> SDoc        -- ^ 'SDoc' where the alternative havs been pretty
                               -- printed and finally packed into a paragraph.
 pprAlternative pp x alt arity =
-    fsep (replicate alt vbar ++ [pp x] ++ replicate (arity - alt) vbar)
+    fsep (replicate (alt - 1) vbar ++ [pp x] ++ replicate (arity - alt - 1) vbar)
 
 {-
 ************************************************************************
