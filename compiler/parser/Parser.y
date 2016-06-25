@@ -2376,25 +2376,24 @@ texp :: { LHsExpr RdrName }
        -- View patterns get parenthesized above
         | exp '->' texp   {% ams (sLL $1 $> $ EViewPat $1 $3) [mu AnnRarrow $2] }
 
--- Always at least one comma or bar
-tup_exprs :: { Either (Int, Int, LHsExpr RdrName) [LHsTupArg RdrName] }
-           -- TODO: Ann looks wrong.
+-- Always at least one comma or bar.
+tup_exprs :: { SumOrTuple }
            : texp commas_tup_tail
                           {% do { addAnnotation (gl $1) AnnComma (fst $2)
-                                ; return (Right ((sL1 $1 (Present $1)) : snd $2)) } }
+                                ; return (Tuple ((sL1 $1 (Present $1)) : snd $2)) } }
 
            | texp bars
                           {% do { mapM_ (\ll -> addAnnotation ll AnnComma ll) (fst $2)
-                                ; return (Left (1, snd $2 + 1, $1)) } }
+                                ; return (Sum 1  (snd $2 + 1) $1) } }
 
            | commas tup_tail
                 {% do { mapM_ (\ll -> addAnnotation ll AnnComma ll) (fst $1)
                       ; return
-                           (Right (map (\l -> L l missingTupArg) (fst $1) ++ $2)) } }
+                           (Tuple (map (\l -> L l missingTupArg) (fst $1) ++ $2)) } }
 
            | bars texp bars0
                 {% do { mapM_ (\ll -> addAnnotation ll AnnVbar ll) (fst $1)
-                      ; return (Left (snd $1 + 1, snd $1 + snd $3 + 1, $2)) } }
+                      ; return (Sum (snd $1 + 1) (snd $1 + snd $3 + 1) $2) } }
 
 -- Always starts with commas; always follows an expr
 commas_tup_tail :: { (SrcSpan,[LHsTupArg RdrName]) }

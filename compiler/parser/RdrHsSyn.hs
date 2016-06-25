@@ -61,7 +61,7 @@ module RdrHsSyn (
         mkImpExpSubSpec,
         checkImportSpec,
 
-        mkSumOrTuple
+        SumOrTuple (..), mkSumOrTuple
 
     ) where
 
@@ -1482,18 +1482,19 @@ mkImpExpSubSpec xs =
 parseErrorSDoc :: SrcSpan -> SDoc -> P a
 parseErrorSDoc span s = failSpanMsgP span s
 
-mkSumOrTuple :: Boxity
-             -> SrcSpan
-             -> Either (ConTag, Arity, LHsExpr RdrName) [LHsTupArg RdrName]
-             -> P (HsExpr RdrName)
+data SumOrTuple
+  = Sum ConTag Arity (LHsExpr RdrName)
+  | Tuple [LHsTupArg RdrName]
+
+mkSumOrTuple :: Boxity -> SrcSpan -> SumOrTuple -> P (HsExpr RdrName)
 
 -- Tuple
-mkSumOrTuple boxity _ (Right es) = return (ExplicitTuple es boxity)
+mkSumOrTuple boxity _ (Tuple es) = return (ExplicitTuple es boxity)
 
 -- Sum
-mkSumOrTuple Unboxed _ (Left (alt, arity, e)) =
+mkSumOrTuple Unboxed _ (Sum alt arity e) =
     return (ExplicitSum alt arity e PlaceHolder)
-mkSumOrTuple Boxed l (Left (alt, arity, L _ e)) =
+mkSumOrTuple Boxed l (Sum alt arity (L _ e)) =
     parseErrorSDoc l (hang (text "Boxed sums not supported:") 2 (ppr_boxed_sum alt arity e))
   where
     ppr_boxed_sum :: ConTag -> Arity -> HsExpr RdrName -> SDoc
