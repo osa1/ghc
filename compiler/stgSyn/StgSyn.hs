@@ -99,9 +99,7 @@ data GenStgArg occ
   = StgVarArg  occ
   | StgLitArg  Literal
   | StgRubbishArg
-               Type -- This is needed to be able to implement `stgArgType`. We
-                    -- actually only need to know whether this is a boxed or
-                    -- unboxed argument. (i.e. whether this is a GC root or not)
+               Type -- This is needed to be able to implement `stgArgType`
 
 
 -- | Does this constructor application refer to
