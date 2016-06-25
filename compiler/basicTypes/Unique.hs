@@ -310,9 +310,7 @@ mkSumTyConUnique       :: Arity -> Unique
 mkCTupleTyConUnique    :: Arity -> Unique
 mkPreludeDataConUnique :: Arity -> Unique
 mkTupleDataConUnique   :: Boxity -> Arity -> Unique
-mkSumDataConUnique     :: Int    -- ^ Alternative
-                       -> Arity  -- ^ Arity
-                       -> Unique
+mkSumDataConUnique     :: ConTagZ -> Arity -> Unique
 mkPrimOpIdUnique       :: Int -> Unique
 mkPreludeMiscIdUnique  :: Int -> Unique
 mkPArrDataConUnique    :: Int -> Unique
@@ -351,10 +349,11 @@ tyConRepNameUnique  u = incrUnique u
 mkPreludeDataConUnique i              = mkUnique '6' (3*i)    -- Must be alphabetic
 mkTupleDataConUnique Boxed          a = mkUnique '7' (3*a)    -- ditto (*may* be used in C labels)
 mkTupleDataConUnique Unboxed        a = mkUnique '8' (3*a)
-mkSumDataConUnique a b | a >= b =
-    panic ("mkSumDataConUnique: index out of bounds: "
-           ++ show a ++ " >= " ++ show b)
-mkSumDataConUnique         a b = mkUnique 'z' (2*a*b)
+mkSumDataConUnique alt arity
+  | alt >= arity
+  = panic ("mkSumDataConUnique: " ++ show alt ++ " >= " ++ show arity)
+  | otherwise
+  = mkUnique 'z' (2 * alt * arity)
 
 dataConRepNameUnique, dataConWorkerUnique :: Unique -> Unique
 dataConWorkerUnique  u = incrUnique u

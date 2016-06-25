@@ -636,7 +636,7 @@ sumParens p = ptext (sLit "(#") <+> p <+> ptext (sLit "#)")
 pprAlternative :: (a -> SDoc) -- ^ The pretty printing function to use
                -> a           -- ^ The things to be pretty printed
                -> ConTag      -- ^ Alternative (one-based)
-               -> Int         -- ^ Arity
+               -> Arity       -- ^ Arity
                -> SDoc        -- ^ 'SDoc' where the alternative havs been pretty
                               -- printed and finally packed into a paragraph.
 pprAlternative pp x alt arity =
