@@ -89,11 +89,6 @@ Suppose that a variable x : (# t1, t2 #).
 
 By the end of this pass, we only have unboxed tuples in return positions.
 
-Note [Translating unboxed sums to unboxed tuples]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-TODO:
-
 Note [Two-step binder substitution for sums]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Explicit unboxed sums in scrutinee positions are also eliminated, however the
@@ -257,7 +252,6 @@ import DataCon
 import FastString (FastString, mkFastString)
 import Id
 import Literal (Literal (..))
-import MkCore (rUNTIME_ERROR_ID)
 import MkId (voidPrimId)
 import MonadUtils (mapAccumLM)
 import Outputable
