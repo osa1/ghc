@@ -139,7 +139,7 @@ tuples], that gives us
 
   (3) p1_1 :-> [s_3], p1_2 :-> [s_2]
 
-Now we apply the renaming (3) ro range of (2), to get (1). Then add it to the
+Now we apply the renaming (3) to range of (2), to get (1). Then add it to the
 rho.
 
 Note [Case of known con tag]
