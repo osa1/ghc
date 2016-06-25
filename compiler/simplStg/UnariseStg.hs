@@ -387,9 +387,9 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts)
                  return $ case tag_arg of
                    StgLitArg l ->
                      -- See Note [Case of known con tag]
-                     selectLitAlt l (reverse (mkDefaultAlt alts'))
+                     selectLitAlt l alts'
                    StgVarArg v ->
-                     StgCase (StgApp v []) tag_bndr (PrimAlt intPrimTyCon) (mkDefaultAlt alts')
+                     StgCase (StgApp v []) tag_bndr (PrimAlt intPrimTyCon) (mkDefaultLitAlt alts')
                    StgRubbishArg _ ->
                      rubbishFail
 
@@ -438,7 +438,7 @@ unariseAlts rho (UbxSumAlt _) bndr alts
        alts' <- mapM (\alt -> unariseSumAlt rho_sum_bndrs (map StgVarArg real_bndrs) alt) alts
        let inner_case =
              StgCase (StgApp tag_bndr []) tag_bndr
-                     (PrimAlt intPrimTyCon) (mkDefaultAlt alts')
+                     (PrimAlt intPrimTyCon) (mkDefaultLitAlt alts')
        return [ (DataAlt (tupleDataCon Unboxed (length scrt_bndrs)),
                  scrt_bndrs,
                  inner_case) ]
@@ -564,14 +564,11 @@ mkId = mkSysLocalOrCoVarM
 
 --------------------------------------------------------------------------------
 
-mkDefaultAlt :: [StgAlt] -> [StgAlt]
-mkDefaultAlt [] = pprPanic "elimUbxSumExpr.mkDefaultAlt" (text "Empty alts")
-mkDefaultAlt alts@((DEFAULT, _, _) : _) = alts
-mkDefaultAlt ((LitAlt{}, [], rhs) : alts) = (DEFAULT, [], rhs) : alts
-mkDefaultAlt alts = dummyDefaultAlt : alts
-
-dummyDefaultAlt :: StgAlt
-dummyDefaultAlt = (DEFAULT, [], StgApp rUNTIME_ERROR_ID [])
+mkDefaultLitAlt :: [StgAlt] -> [StgAlt]
+mkDefaultLitAlt [] = pprPanic "elimUbxSumExpr.mkDefaultAlt" (text "Empty alts")
+mkDefaultLitAlt alts@((DEFAULT, _, _) : _) = alts
+mkDefaultLitAlt ((LitAlt{}, [], rhs) : alts) = (DEFAULT, [], rhs) : alts
+mkDefaultLitAlt alts = pprPanic "mkDefaultLitAlt" (text "Not a lit alt:" <+> ppr alts)
 
 isNullaryTupleArg :: StgArg -> Bool
 isNullaryTupleArg (StgVarArg v) = v == dataConWorkId unboxedUnitDataCon
