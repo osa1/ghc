@@ -1,8 +1,8 @@
 {-
 Note [Translating unboxed sums to unboxed tuples]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Unarise also translated unboxed sums to unboxed tuples, using functions defined
-here. We essentially need two functions:
+UnariseStg also translates unboxed sums to unboxed tuples, using functions
+defined here. We essentially need two functions:
 
 - Given a sum constructor and arguments, generate a tuple constructor and
   arguments. (term translation) This is implemented in `mkUbxSum`.
@@ -21,22 +21,20 @@ correct terms.
 {-# LANGUAGE CPP, TupleSections #-}
 
 module ElimUbxSums
-  ( mkUbxSumRepTy
-  , isEnumUbxSum
+  ( isEnumUbxSum
   , mkUbxSum
   , rnUbxSumBndrs
 
-  , ubxSumSlots
   , ubxSumRepType
   , UbxSumRepTy
   , ubxSumFieldTypes
   , flattenSumRep
-  , typeSlotTy
   ) where
 
 #include "HsVersions.h"
 
 import BasicTypes
+import DataCon
 import Literal
 import Outputable
 import StgSyn
@@ -70,9 +68,9 @@ instance Outputable UbxSumRepTy where
   ppr (UbxSumRepTy slots) = text "UbxSumRepTy" <+> ppr slots
 
 -- | Given types of constructor arguments, return the unboxed sum rep type.
-mkUbxSumRepTy :: [[Type]] -> UbxSumRepTy
-mkUbxSumRepTy constrs =
-  ASSERT2( length constrs > 1, ppr constrs ) -- otherwise it isn't a sum type
+mkUbxSumRepTy :: [Type] -> UbxSumRepTy
+mkUbxSumRepTy constrs0 =
+  ASSERT2( length constrs0 > 1, ppr constrs0 ) -- otherwise it isn't a sum type
   let
     combine_alts
       :: [[SlotTy]]  -- slots of constructors
@@ -94,47 +92,51 @@ mkUbxSumRepTy constrs =
         es : constr_reps ess (s : ss)
 
     -- Nesting unboxed tuples and sums is OK, so we need to flatten first.
-    constr_flatten_tys :: [Type] -> [Type]
-    constr_flatten_tys = concatMap (flattenRepType . repType)
+    constr_flatten_tys :: Type -> [UnaryType]
+    constr_flatten_tys = flattenRepType . repType
 
-    constr_slot_tys :: [Type] -> [SlotTy]
+    constr_slot_tys :: Type -> [SlotTy]
     constr_slot_tys = sort . mapMaybe typeSlotTy . constr_flatten_tys
 
-    sumRep = UbxSumRepTy (WordSlot : combine_alts (map constr_slot_tys constrs))
+    sumRep = UbxSumRepTy (WordSlot : combine_alts (map constr_slot_tys constrs0))
   in
     sumRep
 
 -- | Build a unboxed sum term.
-mkUbxSum :: UbxSumRepTy -> ConTag -> [(Type, StgArg)] -> StgExpr
-mkUbxSum sumTy tag fields
-  | isEnumUbxSum sumTy
-  = ASSERT(null fields)
-    StgLit (MachInt (fromIntegral tag))
+mkUbxSum
+  :: DataCon   -- Sum data con
+  -> [Type]    -- Type arguments of the sum type
+  -> [StgArg]  -- Actual arguments
+  -> StgExpr
+mkUbxSum dc ty_args args
+  = let sum_rep = mkUbxSumRepTy ty_args
+        tag = dataConTag dc in
+    if isEnumUbxSum sum_rep
+      then
+        ASSERT(null args)
+        StgLit (MachInt (fromIntegral tag))
+      else
+        let
+          arg_tys = map stgArgType args
 
-  | otherwise
-  = let
-      field_slots = mkSlots fields
+          bindFields :: [SlotTy] -> [(SlotTy, StgArg)] -> [StgArg]
+          bindFields slots []
+            = -- arguments are bound, fill rest of the slots with dummy values
+              map slotDummyArg slots
+          bindFields [] args
+            = -- we still have arguments to bind, but run out of slots
+              pprPanic "mkUbxSum" (text "Run out of slots. Args left to bind:" <+> ppr args)
+          bindFields (slot : slots) args0@((arg_slot, arg) : args)
+            | Just arg_slot == (arg_slot `fitsIn` slot)
+            = arg : bindFields slots args
+            | otherwise
+            = slotDummyArg slot : bindFields slots args0
 
-      bindFields :: [SlotTy] -> [(SlotTy, StgArg)] -> [StgArg]
-      bindFields slots []
-        = -- arguments are bound, fill rest of the slots with dummy values
-          map slotDummyArg slots
-      bindFields [] args
-        = -- we still have arguments to bind, but run out of slots
-          pprPanic "mkUbxSum" (text "Run out of slots. Args left to bind:" <+> ppr args)
-      bindFields (slot : slots) args0@((arg_slot, arg) : args)
-        | Just arg_slot == (arg_slot `fitsIn` slot)
-        = arg : bindFields slots args
-        | otherwise
-        = slotDummyArg slot : bindFields slots args0
-
-      args = StgLitArg (MachInt (fromIntegral tag)) :
-               bindFields (tail (ubxSumSlots sumTy)) -- drop tag slot
-                             field_slots
-    in
-      StgConApp (tupleDataCon Unboxed (length args))
-                args
-                (map stgArgType args)
+          args = StgLitArg (MachInt (fromIntegral tag)) :
+                   bindFields (tail (ubxSumSlots sum_rep)) -- drop tag slot
+                              (mkSlots (zip arg_tys args))
+        in
+          StgConApp (tupleDataCon Unboxed (length args)) args arg_tys
 
 -- | Given binders and arguments of a sum, maps binders to arguments for
 -- renaming.
@@ -194,7 +196,7 @@ instance Outputable SlotTy where
   ppr FloatSlot  = text "FloatSlot"
 
 -- Some types don't have any slots, e.g. the ones with VoidRep.
-typeSlotTy :: Type -> Maybe SlotTy
+typeSlotTy :: UnaryType -> Maybe SlotTy
 typeSlotTy ty =
     if isVoidRep primRep then Nothing else Just (primRepSlot primRep)
   where
@@ -258,7 +260,7 @@ slotDummyArg = StgRubbishArg . slotTyToType
 --------------------------------------------------------------------------------
 
 ubxSumRepType :: [Type] -> RepType
-ubxSumRepType = UbxSumRep . mkUbxSumRepTy . map return
+ubxSumRepType = UbxSumRep . mkUbxSumRepTy
 
 flattenSumRep :: UbxSumRepTy -> [UnaryType]
 flattenSumRep = map slotTyToType . ubxSumSlots

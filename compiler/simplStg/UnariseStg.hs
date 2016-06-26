@@ -328,16 +328,12 @@ unariseExpr _ (StgLit l)
 
 unariseExpr rho (StgConApp dc args ty_args)
   | isUnboxedTupleCon dc
-  , let args' = unariseArgs rho args
-  = return (StgConApp (tupleDataCon Unboxed (length args')) args' (map stgArgType args'))
+  = let args' = unariseArgs rho args
+     in return (StgConApp (tupleDataCon Unboxed (length args')) args' (map stgArgType args'))
 
   | isUnboxedSumCon dc
-  = let
-      sum_rep = mkUbxSumRepTy (map return ty_args)
-      args'   = unariseArgs rho (filter (not . isNullaryTupleArg) args)
-      tag     = dataConTag dc
-    in
-      return (mkUbxSum sum_rep tag (map (\a -> (stgArgType a, a)) args'))
+  = let args' = unariseArgs rho (filter (not . isNullaryTupleArg) args)
+     in return (mkUbxSum dc ty_args args')
 
   | otherwise
   = let args' = unariseArgs rho args
@@ -368,7 +364,7 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts)
          (StgConApp _ args@(tag_arg : real_args) _, alts)
            | UbxSumAlt _ <- alt_ty
            -> do -- this won't be used but we need a scrutinee binder anyway
-                 tag_bndr <- mkId (mkFastString "tag") (stgArgType tag_arg)
+                 tag_bndr <- mkId (mkFastString "tag") tagTy
                  let rho' = extendVarEnv rho bndr args
 
                      rubbishFail = pprPanic "unariseExpr"
@@ -494,28 +490,52 @@ unariseId rho x = fromMaybe [StgVarArg x] (lookupVarEnv rho x)
 unariseIds :: UnariseEnv -> [Id] -> [StgArg]
 unariseIds rho = concatMap (unariseId rho)
 
+-- | A version of `unariseIdBinder` for a list of Ids. Mappings from original
+-- Ids to unarised Ids will be accumulated in the rho.
 unariseIdBinders :: UnariseEnv -> [Id] -> UniqSM (UnariseEnv, [Id])
 unariseIdBinders rho xs = second concat <$> mapAccumLM unariseIdBinder rho xs
 
+-- | Given an Id with potentially unboxed tuple or sum type, returns its "flat"
+-- representation by inventing new Ids for tuple or sum's fields. Example:
+--
+--   unariseIdBinder (x :: (# String, Bool #))
+--   ==>
+--   [x_1 :: String, x_2 :: Bool]
+--
+--   unariseIdBinder (x :: (# String | Bool #))
+--   ==>
+--   [x_1 :: Int#, x_2 :: Any] -- x_1 is the tag
+--
+-- Also adds a mapping from the original Id to new Ids in the rho.
+--
+-- Does not update rho and returns the original Id when the it doesn't need
+-- unarisation.
 unariseIdBinder :: UnariseEnv -> Id -> UniqSM (UnariseEnv, [Id])
 unariseIdBinder rho x =
   case unariseIdType x of
-    [ty] | ty `eqType` voidPrimTy
+    Nothing
+      -> return (rho, [x])
+    Just [ty]
+      | ty `eqType` voidPrimTy
       -> return (extendVarEnv rho x [StgVarArg voidPrimId], [voidPrimId])
-    tys
+    Just tys
       -> do ys <- mkIds (mkFastString "us") tys
             return (extendVarEnv rho x (map StgVarArg ys), ys)
 
-unariseIdType :: Id -> [Type]
+-- | If Id needs unarisation, return list of types of its fields.
+unariseIdType :: Id -> Maybe [Type]
 unariseIdType x =
   case repType (idType x) of
-    UnaryRep ty -> [ty]
+    UnaryRep _ -> Nothing
 
     UbxTupleRep tys
-      | null tys  -> [voidPrimTy]
-      | otherwise -> tys
+      | null tys  -> Just [voidPrimTy]
+      | otherwise -> Just tys
 
-    UbxSumRep sumRep -> ubxSumFieldTypes sumRep
+    UbxSumRep sumRep -> Just (ubxSumFieldTypes sumRep)
+
+unariseIdType' :: Id -> [Type]
+unariseIdType' x = fromMaybe [idType x] (unariseIdType x)
 
 mapTupleIdBinders
     :: [Id]      -- ^ binders of a tuple alternative
@@ -524,7 +544,7 @@ mapTupleIdBinders
     -> UnariseEnv
 mapTupleIdBinders ids args rho0
   = let
-      id_arities = map (\id -> (id, length (unariseIdType id))) ids
+      id_arities = map (\id -> (id, length (unariseIdType' id))) ids
 
       map_ids :: UnariseEnv -> [(Id, Int)] -> [StgArg] -> UnariseEnv
       map_ids rho [] _  = rho
@@ -544,7 +564,7 @@ mapSumIdBinders
   -> UnariseEnv
 mapSumIdBinders ids sum_args rho
   = let
-      id_exps      = map (\id -> (id, unariseIdType id)) ids
+      id_us = map unariseIdType' ids
 
       gen_id_temps :: Int -> [(a, [b])] -> [(a, [Int])]
       gen_id_temps _ []
@@ -552,11 +572,16 @@ mapSumIdBinders ids sum_args rho
       gen_id_temps n ((id, l) : ls)
           = (id, [n .. n + length l - 1]) : gen_id_temps (n + length l) ls
 
-      id_temps     = gen_id_temps 0 id_exps
+      id_temps = gen_id_temps 0 (zip ids id_us)
 
-      temp_tys     = zip (concatMap unariseIdType ids) [0..]
+      temp_tys :: [(Type, Int)]
+      temp_tys = zip (concat id_us) [0..]
+
+      scrt_arg_tys :: [(Type, StgArg)]
       scrt_arg_tys = map (\arg -> (stgArgType arg, arg)) sum_args
 
+      -- map temporaries (temp_tys) to the StgArgs that make the sum
+      -- (scrt_arg_tys)
       rns :: IM.IntMap StgArg
       rns = IM.fromList (rnUbxSumBndrs temp_tys scrt_arg_tys)
 
