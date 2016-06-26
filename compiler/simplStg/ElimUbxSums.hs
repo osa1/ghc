@@ -108,16 +108,16 @@ mkUbxSum
   -> [Type]    -- Type arguments of the sum type
   -> [StgArg]  -- Actual arguments
   -> StgExpr
-mkUbxSum dc ty_args args
+mkUbxSum dc ty_args stg_args
   = let sum_rep = mkUbxSumRepTy ty_args
         tag = dataConTag dc in
     if isEnumUbxSum sum_rep
       then
-        ASSERT(null args)
+        ASSERT(null stg_args)
         StgLit (MachInt (fromIntegral tag))
       else
         let
-          arg_tys = map stgArgType args
+          arg_tys = map stgArgType stg_args
 
           bindFields :: [SlotTy] -> [(SlotTy, StgArg)] -> [StgArg]
           bindFields slots []
@@ -132,11 +132,11 @@ mkUbxSum dc ty_args args
             | otherwise
             = slotDummyArg slot : bindFields slots args0
 
-          args = StgLitArg (MachInt (fromIntegral tag)) :
-                   bindFields (tail (ubxSumSlots sum_rep)) -- drop tag slot
-                              (mkSlots (zip arg_tys args))
+          tup_args = StgLitArg (MachInt (fromIntegral tag)) :
+                       bindFields (tail (ubxSumSlots sum_rep)) -- drop tag slot
+                                  (mkSlots (zip arg_tys stg_args))
         in
-          StgConApp (tupleDataCon Unboxed (length args)) args arg_tys
+          StgConApp (tupleDataCon Unboxed (length tup_args)) tup_args arg_tys
 
 -- | Given binders and arguments of a sum, maps binders to arguments for
 -- renaming.
