@@ -356,7 +356,7 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts)
 
          (StgConApp _ args _, [(DataAlt _, arg_bndrs, rhs)])
            | UbxTupAlt _ <- alt_ty
-           -> do let rho' = mapTupleIdBinders arg_bndrs args rho
+           -> do let rho' = extendVarEnv (mapTupleIdBinders arg_bndrs args rho) bndr args
                  unariseExpr rho' rhs
 
          -- Explicit unboxed sum. Case expression can be eliminated with a
