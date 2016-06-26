@@ -391,10 +391,14 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts)
            packBool :: (# (# #) | (# #) #) -> GHC.Types.Bool
            packBool =
                \r [ds_syT] (-> GHC.Types.Bool)
-                   case ds_syT of _wild_something {
+                   case ds_syT of bndr {
                      (#_|#) _ [Occ=Dead] -> GHC.Types.True [];
                      (#|_#) _ [Occ=Dead] -> GHC.Types.False [];
                    };
+
+         Here unarising bndr gives us a unit tuple, and code for the general
+         case generates a redundant case expression to bind this tuple's only
+         field.
          -}
          _ | Just [ty] <- unariseIdType bndr
            , UbxSumAlt _ <- alt_ty
