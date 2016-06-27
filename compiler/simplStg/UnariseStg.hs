@@ -2,7 +2,6 @@
 (c) The GRASP/AQUA Project, Glasgow University, 1992-2012
 
 
-
 Note [Unarisation]
 ~~~~~~~~~~~~~~~~~~
 The idea of this pass is to translate away *all* unboxed-tuple and unboxed-sum
@@ -48,95 +47,79 @@ Suppose that a variable x : (# t1, t2 #).
 
        f x = x    ==>   f x1 x2 = (# x1, x2 #)
 
-    This applies to case scrutinees too
+  * We /always/ eliminate a case expression when
+       - It scrutinises an unboxed tuple
+       - The scrutinee is a variable (or when it is an
+         explicit tuple, but the simplifier emiminates those)
 
-       case x of (# a,b #) -> e   ==>   case (# x1, x2 #) of (# a, b #) -> e
-
-    Now the case expression is redundant. When a case scrutinee becomes an
-    explicit tuple after unarise, we eliminate the case expression altogether.
-    So in the example above, we extend the UnariseEnv so that
-
-      x :-> [x1,x2], a :-> x1, b :-> [x2]
-
-    and then unarise the right hand side.
-
-    Note that simplifier already simplifies case expressions with known
-    constructors, either by choosing a case alternative, or by binding scrutinee
-    in a let (this is possible because DataCon applications are OK for
-    speculation). So here we only simplify cases on tuples that we introduce as
-    a result of unarisation.
-
-    In general, we can always eliminate a case expression when scrutinee is an
-    explicit tuple. When scrutinee is an unboxed tuple, left-hand side of case
-    alts can be one of these two things:
+    The case alterntative (there can be only one) can be one of these
+    two things:
 
       - An unboxed tuple pattern. (note that number of binders in the pattern
         will be the same as number of arguments in the scrutinee) e.g.
 
-          (# x1, x2, x3 #) -> ...
+          case v of x { (# x1, x2, x3 #) -> ... }
 
         Scrutinee has to be in form `(# t1, t2, t3 #)` so we just extend the
         environment with
 
+          x :-> [t1,t2,t3]
           x1 :-> [t1], x2 :-> [t2], x3 :-> [t3]
 
-      - A variable. e.g.
-
-          x :-> ...
-
-        In this case we extend the environment with
-
-          x :-> scrutinee's arguments
+      - A DEFAULT alternative.  Just the same, without the bindings for x1,x2,x3
 
 By the end of this pass, we only have unboxed tuples in return positions.
 
 Note [Two-step binder substitution for sums]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Explicit unboxed sums in scrutinee positions are also eliminated, however the
-process is a bit more complicated. Suppose we have this:
+Explicit unboxed sums in scrutinee positions are also eliminated.
+However the process is a bit more complicated than doing the same
+thing for tuples. Suppose we have this:
 
-  type Sum = (# (# Int#, Int #) | (# Int, Int# #) #)
+  type Sum = (# (# Int#, Int #) | (# Bool, Int# #) #)
 
   showP1 :: (# Int#, Int #) -> String
   showP1 = ...
 
   showSum :: Sum -> String
-  showSum (# p1 | #) = showP1 p1
-  ...
+  showSum s = case s of
+                  (# p1 | #) -> showP1 p1
+                  ...
 
   showSum (# (# 123#, 456 #) | #)
 
-Tuple representation of Sum will be (# Int#, Any, Int# #). Now, this is the STG for showSum:
-
-  showSum s =
-    case s of
-      (# p1 | #) -> showP1 p1
-      ...
+The tuple representation of Sum will be (# Tag#, Any, Int# #), where the
+'Any' represents a pointer: either Int or String.
 
 We unarise s and it gives us this mapping
 
-  (0) s :-> [s_1 :: Int#, s_2 :: Any, s_3 :: Int#]
+  (0) s :-> [s_1 :: Tag#, s_2 :: Any, s_3 :: Int#]
 
 so showSum becomes (after some simplifications)
 
-  showSum s_1 s_2 s_3 =
+  showSum (s_1 :: Tag#) (s_2 :: Any) (s_3 :: Int# ) =
     case s_1 of
       1# -> showP1 <unarisation of p1>
 
-What will unarisation of p1 be? Note that in our tuple representation Any comes
-before Int#, but in the tuple of first alternative, (# Int#, Any #), Int# comes
-before Any. So correct unarisation of p1 is
+What will unarisation of p1 be? Note that in our tuple representation
+of s, Any comes before Int#, but in the tuple of first alternative,
+(# Int#, Any #), Int# comes before Any. So correct unarisation of p1
+(i.e. the environment in which to unarise the RHS of the alternative
+in showSum) is
 
   (1) p1 :-> [s_3 :: Int#, s_2 :: Any]
 
-How do we generate this? There's an easy way. Suppose we added (0) to rho. We
-unarise p1 and it gives us
+How do we generate this? There's an easy way. When we unarise the RHS of showSum,
+the environment will look like (0). We unarise p1 and it gives us
 
   (2) p1 :-> [p1_1 :: Int#, p1_2 :: Any]
 
-Now we map [p_1 :: Int#, p_2 :: Any] to [s_2 :: Any, s_3 :: Int#] (in
+Now we map [p1_1 :: Int#, p1_2 :: Any] to [s_2 :: Any, s_3 :: Int#] (in
 `rnUbxSumBndrs`) as described in Note [Translating unboxed sums to unboxed
-tuples], that gives us
+tuples] in ElimUbxSums,
+    rnUbxSubBndrs [p1_1, p1_2] [s_2, s_3]
+
+that gives us
 
   (3) p1_1 :-> [s_3], p1_2 :-> [s_2]
 
@@ -272,13 +255,17 @@ import ElimUbxSums
 
 -- | A mapping from unboxed-tuple binders to the Ids they were expanded to.
 --
--- INVARIANT: Ids in the range don't have unboxed tuple types.
+-- INVARIANT 1: Ids in the range don't have unboxed tuple types.
+--
+-- INVARIANT 2: If x -> args, the args is never an empty list
+--              See Note [Unarisation and nullary tuples]
 --
 -- Those in-scope variables without unboxed-tuple types are not present in the
 -- domain of the mapping at all.
 --
 -- See also Note [UnariseEnv can map to literals].
-type UnariseEnv = VarEnv [StgArg]
+type UnariseEnv = VarEnv [StgArg]  -- This list is always non-empty
+                                   -- See INVARIANT 1
 
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
 unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
@@ -548,13 +535,14 @@ unariseIdType x =
 unariseIdType' :: Id -> [Type]
 unariseIdType' x = fromMaybe [idType x] (unariseIdType x)
 
-mapTupleIdBinders
-    :: [Id]      -- ^ binders of a tuple alternative
-    -> [StgArg]  -- ^ arguments that form the tuple
+mapTupleIdBinders   -- See Note [mapTupleIdBinders]
+    :: [InId]       -- ^ Un-processed binders of a tuple alternative
+    -> [OutStgArg]  -- ^ Arguments that form the tuple (after unarisation)
     -> UnariseEnv
     -> UnariseEnv
 mapTupleIdBinders ids args rho0
   = let
+      id_arities :: [(Id, Int)]  -- For each binder, how many values will represent it
       id_arities = map (\id -> (id, length (unariseIdType' id))) ids
 
       map_ids :: UnariseEnv -> [(Id, Int)] -> [StgArg] -> UnariseEnv
@@ -606,6 +594,27 @@ mkIds fs tys = mapM (mkId fs) tys
 
 mkId :: FastString -> UnaryType -> UniqSM Id
 mkId = mkSysLocalOrCoVarM
+
+{- Note [mapTupleIdBinders]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Suppose x :: (# (# Int, Int #), Bool #)
+
+   case x of (# a, b #) -> e
+
+When we unarise this expression, we will have the env
+   env1:  x -> p q r
+That is, x will be represented by three values (of type Int, Int, Bool)
+
+We want to process 'e' with env
+  env2:  a -> p q
+         b -> r
+
+We will call
+  mapTupleIdBinders [a,b] [p,q,r] env1
+
+INVARIANT: a variable is represented by one or more values
+   
+-}
 
 --------------------------------------------------------------------------------
 
