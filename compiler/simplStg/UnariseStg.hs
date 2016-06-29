@@ -1,7 +1,6 @@
 {-
 (c) The GRASP/AQUA Project, Glasgow University, 1992-2012
 
-
 Note [Unarisation]
 ~~~~~~~~~~~~~~~~~~
 The idea of this pass is to translate away *all* unboxed-tuple and unboxed-sum
@@ -20,7 +19,7 @@ example the type of 'f' changes, for example.
 STG fed to the code generators *must* be unarised because the code generators do
 not support unboxed tuple and unboxed sum binders natively.
 
-In more detail:
+In more detail: (see next note for unboxed sums)
 
 Suppose that a variable x : (# t1, t2 #).
 
@@ -48,12 +47,14 @@ Suppose that a variable x : (# t1, t2 #).
        f x = x    ==>   f x1 x2 = (# x1, x2 #)
 
   * We /always/ eliminate a case expression when
-       - It scrutinises an unboxed tuple
-       - The scrutinee is a variable (or when it is an
-         explicit tuple, but the simplifier emiminates those)
 
-    The case alterntative (there can be only one) can be one of these
-    two things:
+       - It scrutinises an unboxed tuple or unboxed sum
+
+       - The scrutinee is a variable (or when it is an explicit tuple, but the
+         simplifier emiminates those)
+
+    The case alterntative (there can be only one) can be one of these two
+    things:
 
       - An unboxed tuple pattern. (note that number of binders in the pattern
         will be the same as number of arguments in the scrutinee) e.g.
@@ -66,69 +67,101 @@ Suppose that a variable x : (# t1, t2 #).
           x :-> [t1,t2,t3]
           x1 :-> [t1], x2 :-> [t2], x3 :-> [t3]
 
-      - A DEFAULT alternative.  Just the same, without the bindings for x1,x2,x3
+      - A DEFAULT alternative. Just the same, without the bindings for x1,x2,x3
 
 By the end of this pass, we only have unboxed tuples in return positions.
+Unboxed sums are completely eliminated, see next note.
 
-Note [Two-step binder substitution for sums]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Explicit unboxed sums in scrutinee positions are also eliminated.
-However the process is a bit more complicated than doing the same
-thing for tuples. Suppose we have this:
+Note [Translation of unboxed sums to unboxed tuples]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Unarise also eliminates unboxed sum binders, and translates unboxed sums in
+return positions to unboxed tuples. We want to overlap fields of a sum when
+translating it to a tuple to have efficient memory layout. When translating a
+sum pattern to a tuple pattern, we need to translate it so that binders of sum
+alternatives will be mapped to right arguments after the term translation. So
+translation of sum DataCon applications to tuple DataCon applications and
+translation of sum patterns to tuple patterns need to be in sync.
 
-  type Sum = (# (# Int#, Int #) | (# Bool, Int# #) #)
+These translations work like this. Suppose we have
 
-  showP1 :: (# Int#, Int #) -> String
-  showP1 = ...
+  (# x1 | | ... #) :: (# t1 | t2 | ... #)
 
-  showSum :: Sum -> String
-  showSum s = case s of
-                  (# p1 | #) -> showP1 p1
-                  ...
+remember that t1, t2 ... can be sums and tuples too. So we first generate
+layouts of those. Then we "merge" layouts of each alternative, which gives us a
+sum layout with best overlapping possible.
 
-  showSum (# (# 123#, 456 #) | #)
+Layout of a flat type 'ty1' is just [ty1].
+Layout of a tuple is just concatenation of layouts of its fields.
 
-The tuple representation of Sum will be (# Tag#, Any, Int# #), where the
-'Any' represents a pointer: either Int or String.
+For layout of a sum type,
 
-We unarise s and it gives us this mapping
+  - We first get layouts of all alternatives.
+  - We sort these layouts based on their "slot types".
+  - We merge all the alternatives.
 
-  (0) s :-> [s_1 :: Tag#, s_2 :: Any, s_3 :: Int#]
+For example, say we have (# (# Int#, Char #) | (# Int#, Int# #) | Int# #)
 
-so showSum becomes (after some simplifications)
+  - Layouts of alternatives: [ [Word, Ptr], [Word, Word], [Word] ]
+  - Sorted: [ [Ptr, Word], [Word, Word], [Word] ]
+  - Merge all alternatives together: [ Ptr, Word, Word ]
 
-  showSum (s_1 :: Tag#) (s_2 :: Any) (s_3 :: Int# ) =
-    case s_1 of
-      1# -> showP1 <unarisation of p1>
+We add a slot for the tag to the first position. So our tuple type is
 
-What will unarisation of p1 be? Note that in our tuple representation
-of s, Any comes before Int#, but in the tuple of first alternative,
-(# Int#, Any #), Int# comes before Any. So correct unarisation of p1
-(i.e. the environment in which to unarise the RHS of the alternative
-in showSum) is
+  (# Int# {- tag -}, Any, Word#, Word# #)
+  (we use Any for pointer slots)
 
-  (1) p1 :-> [s_3 :: Int#, s_2 :: Any]
+Now, any term of this sum type needs to generate a tuple of this type instead.
+This translation works like this:
 
-How do we generate this? There's an easy way. When we unarise the RHS of showSum,
-the environment will look like (0). We unarise p1 and it gives us
+We first "stable sort" the arguments based on their "slot types". Suppose we had
 
-  (2) p1 :-> [p1_1 :: Int#, p1_2 :: Any]
+  (# (# 42#, 'c' #) | | #)
 
-Now we map [p1_1 :: Int#, p1_2 :: Any] to [s_2 :: Any, s_3 :: Int#] (in
-`rnUbxSumBndrs`) as described in Note [Translating unboxed sums to unboxed
-tuples] in ElimUbxSums,
-    rnUbxSubBndrs [p1_1, p1_2] [s_2, s_3]
+Our arguments are: [42#, 'c']. Sorting these based on their slot types gives s
+['c', 42#]. Now we map arguments to their slots, filling mismatches with
+"rubbish" arguments (StgRubbishArg).
 
-that gives us
+  'c' matches with Any so we apply it.
+  1# matches with Word# so apply it too.
+  Now we have an empty slot in our tuple. We fill it with StgRubbishArg.
 
-  (3) p1_1 :-> [s_3], p1_2 :-> [s_2]
+The last thing is we add tag as first element of the tuple. So final tuple is:
+(# 1#, 'c', 42#, rubbish #)
 
-Now we apply the renaming (3) to range of (2), to get (1). Then add it to the
-rho.
+Another example using the same type, let's translate (# | | 123# #). Sorted
+arguments: [123#]. We start mapping.
+
+  123# does not match with Any, so we apply rubbish.
+  123# matches with Word, so we apply it.
+  We have one slot left, we apply rubbish.
+
+So we get: (# 3#, rubbish, 123#, rubbish #).
+
+Note that the sort function that sorts arguments based on their slot types need
+to be a stable sort. Consider (using same type)
+
+  (# | (# 1#, 2# #) | #)
+
+Suppose sort function is not stable, and we get this tuple:
+
+  (# 2# {- tag -}, rubbish, 2#, 1# #)
+
+Now in an expression like this:
+
+  case s of
+    (# | x | #) -> RHS
+
+s will be unarised to [tag, field1, field2, field3]. Using same matching
+function, we map x to some fields. x takes two Word slots so the mapping is
+
+  x :-> [field2, field3]
+
+But if we pass 2# to field2, x will be mapped to (# 2#, 1# #), instead of (# 1#,
+2# #). So, we should stable sort the arguments.
 
 Note [Case of known con tag]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-We need to be careful with the literal substitutions. Suppose we have:
+We need to be careful with literal substitutions. Suppose we have:
 
   Main.main6 :: GHC.Base.String
   [GblId] =
@@ -248,8 +281,8 @@ import Util
 import VarEnv
 
 import Data.Bifunctor (second)
-import Data.Maybe (fromMaybe, fromJust)
-import qualified Data.IntMap as IM
+import Data.List (sortOn)
+import Data.Maybe (fromMaybe)
 
 import ElimUbxSums
 
@@ -457,10 +490,13 @@ unariseSumAlt :: UnariseEnv
 unariseSumAlt rho _ (DEFAULT, _, e)
   = ( DEFAULT, [], ) <$> unariseExpr rho e
 
-unariseSumAlt rho args (DataAlt sumCon, bs, e)
-  = do let rho' = mapSumIdBinders bs args rho
+unariseSumAlt rho args (DataAlt sumCon, [b], e)
+  = do let rho' = mapSumIdBinders b args rho
        e' <- unariseExpr rho' e
        return ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], e' )
+
+unariseSumAlt _ _ alt@(DataAlt _, _bs, _) -- bs needs to be a singleton
+  = pprPanic "uanriseSumAlt" (text "Weird sum alt:" <+> ppr alt)
 
 unariseSumAlt _ scrt alt
   = pprPanic "unariseSumAlt" (ppr scrt $$ ppr alt)
@@ -536,8 +572,8 @@ unariseIdType' :: Id -> [Type]
 unariseIdType' x = fromMaybe [idType x] (unariseIdType x)
 
 mapTupleIdBinders   -- See Note [mapTupleIdBinders]
-    :: [InId]       -- ^ Un-processed binders of a tuple alternative
-    -> [OutStgArg]  -- ^ Arguments that form the tuple (after unarisation)
+    :: [Id]         -- Un-processed binders of a tuple alternative
+    -> [StgArg]     -- Arguments that form the tuple (after unarisation)
     -> UnariseEnv
     -> UnariseEnv
 mapTupleIdBinders ids args rho0
@@ -555,37 +591,29 @@ mapTupleIdBinders ids args rho0
       ASSERT (sum (map snd id_arities) == length args)
       map_ids rho0 id_arities args
 
--- See Note [Two-step binder substitution for sums]
 mapSumIdBinders
-  :: [Id]        -- ^ binders of a sum alternative
-  -> [StgArg]    -- ^ arguments that form the sum (NOT including the tag)
+  :: Id          -- Binder of a sum alternative (remember that sum patterns only
+                 -- have one binder)
+  -> [StgArg]    -- Arguments that form the sum (NOT including the tag)
   -> UnariseEnv
   -> UnariseEnv
-mapSumIdBinders ids sum_args rho
+mapSumIdBinders id sum_args rho
   = let
-      id_us = map unariseIdType' ids
-
-      gen_id_temps :: Int -> [(a, [b])] -> [(a, [Int])]
-      gen_id_temps _ []
-          = []
-      gen_id_temps n ((id, l) : ls)
-          = (id, [n .. n + length l - 1]) : gen_id_temps (n + length l) ls
-
-      id_temps = gen_id_temps 0 (zip ids id_us)
-
       temp_tys :: [(Type, Int)]
-      temp_tys = zip (concat id_us) [0..]
+      temp_tys = zip (unariseIdType' id) [0..]
 
       scrt_arg_tys :: [(Type, StgArg)]
       scrt_arg_tys = map (\arg -> (stgArgType arg, arg)) sum_args
 
       -- map temporaries (temp_tys) to the StgArgs that make the sum
       -- (scrt_arg_tys)
-      rns :: IM.IntMap StgArg
-      rns = IM.fromList (rnUbxSumBndrs temp_tys scrt_arg_tys)
+      rns :: [(Int, StgArg)]
+      rns = rnUbxSumBndrs temp_tys scrt_arg_tys
 
-      rho' = extendVarEnvList rho $
-               map (second (map (\temp -> fromJust (IM.lookup temp rns)))) id_temps
+      rho_ext :: [StgArg]
+      rho_ext = map snd (sortOn fst rns)
+
+      rho' = extendVarEnv rho id rho_ext
     in
       rho'
 
@@ -594,27 +622,6 @@ mkIds fs tys = mapM (mkId fs) tys
 
 mkId :: FastString -> UnaryType -> UniqSM Id
 mkId = mkSysLocalOrCoVarM
-
-{- Note [mapTupleIdBinders]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Suppose x :: (# (# Int, Int #), Bool #)
-
-   case x of (# a, b #) -> e
-
-When we unarise this expression, we will have the env
-   env1:  x -> p q r
-That is, x will be represented by three values (of type Int, Int, Bool)
-
-We want to process 'e' with env
-  env2:  a -> p q
-         b -> r
-
-We will call
-  mapTupleIdBinders [a,b] [p,q,r] env1
-
-INVARIANT: a variable is represented by one or more values
-   
--}
 
 --------------------------------------------------------------------------------
 
