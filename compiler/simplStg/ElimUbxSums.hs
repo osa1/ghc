@@ -84,7 +84,7 @@ mkUbxSumRepTy constrs0 =
 mkUbxSum
   :: DataCon   -- Sum data con
   -> [Type]    -- Type arguments of the sum data con
-  -> [StgArg]  -- Actual arguments
+  -> [StgArg]  -- Actual arguments of the alternative
   -> StgExpr
 mkUbxSum dc ty_args stg_args
   = let
