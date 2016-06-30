@@ -107,7 +107,7 @@ For example, say we have (# (# Int#, Char #) | (# Int#, Int# #) | Int# #)
 
 We add a slot for the tag to the first position. So our tuple type is
 
-  (# Int# {- tag -}, Any, Word#, Word# #)
+  (# Tag#, Any, Word#, Word# #)
   (we use Any for pointer slots)
 
 Now, any term of this sum type needs to generate a tuple of this type instead.

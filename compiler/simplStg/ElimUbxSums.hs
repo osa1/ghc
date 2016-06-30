@@ -121,7 +121,7 @@ mkUbxSum dc ty_args stg_args
 --
 -- INVARIANT: We can have more arguments than binders. Example:
 --
---   case (# | 123# #) :: (# Int | Float# #) of
+--   case x :: (# Int | Float# #) of
 --     (# | f #) -> ...
 --
 -- Scrutinee will have this form: (# Tag#, Any, Float# #), so it'll unarise to 3
@@ -149,15 +149,12 @@ rnUbxSumBndrs bndrs args
 
 -- We have 3 kinds of slots:
 --
---   - 64bit integer slots: Shared between PtrRep, IntRep, WordRep, Int64Rep,
---     Word64Rep, AddrRep.
+--   - Pointer slot: Only shared between actual pointers to Haskell heap (i.e.
+--     boxed objects)
 --
---   - Word-sized integer slots: Shared between PtrRep, IntRep, WordRep,
---     AddrRep.
+--   - Word slots: Shared between IntRep, WordRep, Int64Rep, Word64Rep, AddrRep.
 --
---   - Word-sized float slots: Just FloatRep.
---
---   - Double-sized float slots: Shared between FloatRep and DoubleRep.
+--   - Float slots: Shared between floating point types.
 
 data SlotTy = PtrSlot | WordSlot | Word64Slot | FloatSlot | DoubleSlot
   deriving (Eq, Ord) -- Constructor order is important! We want same type of
