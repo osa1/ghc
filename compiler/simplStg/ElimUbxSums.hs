@@ -22,10 +22,12 @@ import TyCon
 import Type
 import TysPrim
 import TysWiredIn
-import Util (debugIsOn)
+import Util (debugIsOn, zipEqual)
 
-import Data.List (foldl', sort, sortOn)
+import Data.List (foldl', sort)
 import Data.Maybe (mapMaybe, maybeToList)
+import qualified Data.IntMap as IM
+import qualified Data.IntSet as IS
 
 --------------------------------------------------------------------------------
 
@@ -95,26 +97,22 @@ mkUbxSum dc ty_args stg_args
           StgLit (MachInt (fromIntegral tag))
         else
           let
-            arg_tys = map stgArgType stg_args
+            layout'  = layout (tail (ubxSumSlots sum_rep)) (mapMaybe (typeSlotTy . stgArgType) stg_args)
+            tag_arg  = StgLitArg (MachInt (fromIntegral tag))
+            arg_idxs = IM.fromList (zipEqual "mkUbxSum" layout' stg_args)
 
-            bindFields :: [SlotTy] -> [(SlotTy, StgArg)] -> [StgArg]
-            bindFields slots []
-              = -- arguments are bound, fill rest of the slots with dummy values
-                map slotDummyArg slots
-            bindFields [] args
-              = -- we still have arguments to bind, but run out of slots
-                pprPanic "mkUbxSum" (text "Run out of slots. Args left to bind:" <+> ppr args)
-            bindFields (slot : slots) args0@((arg_slot, arg) : args)
-              | Just arg_slot == (arg_slot `fitsIn` slot)
-              = arg : bindFields slots args
-              | otherwise
-              = slotDummyArg slot : bindFields slots args0
-
-            tup_args = StgLitArg (MachInt (fromIntegral tag)) :
-                         bindFields (tail (ubxSumSlots sum_rep)) -- drop tag slot
-                                    (mkSlots (zip arg_tys stg_args))
+            mkTupArgs :: Int -> [SlotTy] -> IM.IntMap StgArg -> [StgArg]
+            mkTupArgs _ [] _
+              = []
+            mkTupArgs arg_idx (slot : slots_left) arg_map
+             | Just stg_arg <- IM.lookup arg_idx arg_map
+             = stg_arg : mkTupArgs (arg_idx + 1) slots_left arg_map
+             | otherwise
+             = slotDummyArg slot : mkTupArgs (arg_idx + 1) slots_left arg_map
           in
-            StgConApp (tupleDataCon Unboxed (length tup_args)) tup_args arg_tys
+            StgConApp (tupleDataCon Unboxed (length (ubxSumSlots sum_rep)))
+                      (tag_arg : mkTupArgs 0 (tail (ubxSumSlots sum_rep)) arg_idxs)
+                      (map slotTyToType (ubxSumSlots sum_rep))
 
 -- | Given binders and arguments of a sum, maps binders to arguments for
 -- renaming.
@@ -126,24 +124,42 @@ mkUbxSum dc ty_args stg_args
 --
 -- Scrutinee will have this form: (# Tag#, Any, Float# #), so it'll unarise to 3
 -- arguments, but we only bind one variable of type Float#.
-rnUbxSumBndrs :: (Outputable a, Outputable b) => [(Type, a)] -> [(Type, b)] -> [(a, b)]
+rnUbxSumBndrs
+  :: (Outputable a, Outputable b)
+  => [(Type, a)] -- things we want to map to sum components
+  -> [(Type, b)] -- sum components (NOT including tag)
+  -> [(a, b)]
 rnUbxSumBndrs bndrs args
   = ASSERT2 (length args >= length bndrs, ppr bndrs $$ ppr args)
-    mapBinders bndr_slots arg_slots
+    zipEqual "rnUbxSumBndrs" (map snd bndrs) (map (snd . (args !!)) layout')
   where
-    bndr_slots = mkSlots bndrs
-    arg_slots  = mkSlots args
+    bndr_slots = mapMaybe (typeSlotTy . fst) bndrs
+    arg_slots  = mapMaybe (typeSlotTy . fst) args
+    layout'    = layout arg_slots bndr_slots
 
-    mapBinders :: [(SlotTy, a)] -> [(SlotTy, b)] -> [(a, b)]
-    mapBinders [] _
+layout :: [SlotTy]  -- Layout of sum. Does not include tag. The invariant of
+                    -- UbxSumRepTy holds.
+       -> [SlotTy]  -- Slot types of things we want to map to locations in the
+                    -- sum layout
+       -> [Int]     -- Where to map 'things' in the sum layout
+layout sum_slots0 arg_slots0 = go arg_slots0 IS.empty
+  where
+    go :: [SlotTy] -> IS.IntSet -> [Int]
+    go [] _
       = []
-    mapBinders alt_ss@((slot_ty, slot_id) : slots) ((sum_arg_ty, sum_arg) : sum_args)
-      | Just slot_ty == (sum_arg_ty `fitsIn` slot_ty)
-      = (slot_id, sum_arg) : mapBinders slots sum_args
+    go (arg : args) used
+      = let slot_idx = findSlot arg 0 sum_slots0 used
+         in slot_idx : go args (IS.insert slot_idx used)
+
+    findSlot :: SlotTy -> Int -> [SlotTy] -> IS.IntSet -> Int
+    findSlot arg slot_idx (slot : slots) useds
+      | not (IS.member slot_idx useds)
+      , Just slot == arg `fitsIn` slot
+      = slot_idx
       | otherwise
-      = mapBinders alt_ss sum_args
-    mapBinders _ _
-      = pprPanic "rnUbxSumBndrs.mapBinders" (ppr bndrs $$ ppr args)
+      = findSlot arg (slot_idx + 1) slots useds
+    findSlot _ _ [] _
+      = pprPanic "findSlot" (text "Can't find slot" $$ ppr sum_slots0 $$ ppr arg_slots0)
 
 --------------------------------------------------------------------------------
 
@@ -173,9 +189,6 @@ typeSlotTy ty =
     if isVoidRep primRep then Nothing else Just (primRepSlot primRep)
   where
     primRep = typePrimRep ty
-
-mkSlots :: [(Type, a)] -> [(SlotTy, a)]
-mkSlots = sortOn fst . mapMaybe (\(ty, bndr) -> (,bndr) <$> typeSlotTy ty)
 
 primRepSlot :: PrimRep -> SlotTy
 primRepSlot VoidRep     = pprPanic "primRepSlot" (text "No slot for VoidRep")

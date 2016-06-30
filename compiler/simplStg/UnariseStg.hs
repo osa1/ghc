@@ -111,53 +111,19 @@ We add a slot for the tag to the first position. So our tuple type is
   (we use Any for pointer slots)
 
 Now, any term of this sum type needs to generate a tuple of this type instead.
-This translation works like this:
-
-We first "stable sort" the arguments based on their "slot types". Suppose we had
+The translation works by simply putting arguments to first slots that they fit
+in. Suppose we had
 
   (# (# 42#, 'c' #) | | #)
 
-Our arguments are: [42#, 'c']. Sorting these based on their slot types gives s
-['c', 42#]. Now we map arguments to their slots, filling mismatches with
-"rubbish" arguments (StgRubbishArg).
+42# fits in Word#, 'c' fits in Any, so we generate this application:
 
-  'c' matches with Any so we apply it.
-  1# matches with Word# so apply it too.
-  Now we have an empty slot in our tuple. We fill it with StgRubbishArg.
+  (# 1#, 'c', 42#, rubbish #)
 
-The last thing is we add tag as first element of the tuple. So final tuple is:
-(# 1#, 'c', 42#, rubbish #)
+Another example using the same type: (# | (# 2#, 3# #) | #). 2# fits in Word#,
+3# fits in Word #, so we get:
 
-Another example using the same type, let's translate (# | | 123# #). Sorted
-arguments: [123#]. We start mapping.
-
-  123# does not match with Any, so we apply rubbish.
-  123# matches with Word, so we apply it.
-  We have one slot left, we apply rubbish.
-
-So we get: (# 3#, rubbish, 123#, rubbish #).
-
-Note that the sort function that sorts arguments based on their slot types need
-to be a stable sort. Consider (using same type)
-
-  (# | (# 1#, 2# #) | #)
-
-Suppose sort function is not stable, and we get this tuple:
-
-  (# 2# {- tag -}, rubbish, 2#, 1# #)
-
-Now in an expression like this:
-
-  case s of
-    (# | x | #) -> RHS
-
-s will be unarised to [tag, field1, field2, field3]. Using same matching
-function, we map x to some fields. x takes two Word slots so the mapping is
-
-  x :-> [field2, field3]
-
-But if we pass 2# to field2, x will be mapped to (# 2#, 1# #), instead of (# 1#,
-2# #). So, we should stable sort the arguments.
+  (# 2#, rubbish, 2#, 3# #).
 
 Note [Case of known con tag]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
