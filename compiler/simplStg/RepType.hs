@@ -113,10 +113,6 @@ newtype UbxSumRepTy = UbxSumRepTy { ubxSumSlots :: [SlotTy] }
 ubxSumFieldTypes :: UbxSumRepTy -> [Type]
 ubxSumFieldTypes = map slotTyToType . ubxSumSlots
 
-isEnumUbxSum :: UbxSumRepTy -> Bool
-isEnumUbxSum (UbxSumRepTy [_]) = True
-isEnumUbxSum _                 = False
-
 instance Outputable UbxSumRepTy where
   ppr (UbxSumRepTy slots) = text "UbxSumRepTy" <+> ppr slots
 
@@ -165,29 +161,23 @@ mkUbxSum dc ty_args stg_args
   = let
       sum_rep = mkUbxSumRepTy ty_args
       tag = dataConTag dc
-    in
-      if isEnumUbxSum sum_rep
-        then
-          ASSERT (null stg_args)
-          StgLit (MachInt (fromIntegral tag))
-        else
-          let
-            layout'  = layout (tail (ubxSumSlots sum_rep)) (mapMaybe (typeSlotTy . stgArgType) stg_args)
-            tag_arg  = StgLitArg (MachInt (fromIntegral tag))
-            arg_idxs = IM.fromList (zipEqual "mkUbxSum" layout' stg_args)
 
-            mkTupArgs :: Int -> [SlotTy] -> IM.IntMap StgArg -> [StgArg]
-            mkTupArgs _ [] _
-              = []
-            mkTupArgs arg_idx (slot : slots_left) arg_map
-              | Just stg_arg <- IM.lookup arg_idx arg_map
-              = stg_arg : mkTupArgs (arg_idx + 1) slots_left arg_map
-              | otherwise
-              = StgRubbishArg (slotTyToType slot) : mkTupArgs (arg_idx + 1) slots_left arg_map
-          in
-            StgConApp (tupleDataCon Unboxed (length (ubxSumSlots sum_rep)))
-                      (tag_arg : mkTupArgs 0 (tail (ubxSumSlots sum_rep)) arg_idxs)
-                      (map slotTyToType (ubxSumSlots sum_rep))
+      layout'  = layout (tail (ubxSumSlots sum_rep)) (mapMaybe (typeSlotTy . stgArgType) stg_args)
+      tag_arg  = StgLitArg (MachInt (fromIntegral tag))
+      arg_idxs = IM.fromList (zipEqual "mkUbxSum" layout' stg_args)
+
+      mkTupArgs :: Int -> [SlotTy] -> IM.IntMap StgArg -> [StgArg]
+      mkTupArgs _ [] _
+        = []
+      mkTupArgs arg_idx (slot : slots_left) arg_map
+        | Just stg_arg <- IM.lookup arg_idx arg_map
+        = stg_arg : mkTupArgs (arg_idx + 1) slots_left arg_map
+        | otherwise
+        = StgRubbishArg (slotTyToType slot) : mkTupArgs (arg_idx + 1) slots_left arg_map
+    in
+      StgConApp (tupleDataCon Unboxed (length (ubxSumSlots sum_rep)))
+                (tag_arg : mkTupArgs 0 (tail (ubxSumSlots sum_rep)) arg_idxs)
+                (map slotTyToType (ubxSumSlots sum_rep))
 
 -- | Given binders and arguments of a sum, maps binders to arguments for
 -- renaming.
