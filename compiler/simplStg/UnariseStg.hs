@@ -315,11 +315,11 @@ unariseExpr _ (StgLit l)
 unariseExpr rho (StgConApp dc args ty_args)
   | isUnboxedTupleCon dc
   = let args' = unariseArgs rho args
-     in return (StgConApp (tupleDataCon Unboxed (length args')) args' (map stgArgType args'))
+     in return (mkTuple args')
 
   | isUnboxedSumCon dc
   = let args' = unariseArgs rho (filter (not . isNullaryTupleArg) args)
-     in return (mkUbxSum dc ty_args args')
+     in return (mkTuple (mkUbxSum dc ty_args args'))
 
   | otherwise
   = let args' = unariseArgs rho args
@@ -589,6 +589,9 @@ mkId :: FastString -> UnaryType -> UniqSM Id
 mkId = mkSysLocalOrCoVarM
 
 --------------------------------------------------------------------------------
+
+mkTuple :: [StgArg] -> StgExpr
+mkTuple args = StgConApp (tupleDataCon Unboxed (length args)) args (map stgArgType args)
 
 tagAltTy :: AltType
 tagAltTy = PrimAlt intPrimTyCon

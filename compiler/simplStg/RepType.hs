@@ -10,7 +10,6 @@ module RepType
 
 #include "HsVersions.h"
 
-import BasicTypes
 import DataCon
 import Literal
 import Outputable
@@ -156,7 +155,7 @@ mkUbxSum
   :: DataCon   -- Sum data con
   -> [Type]    -- Type arguments of the sum data con
   -> [StgArg]  -- Actual arguments of the alternative
-  -> StgExpr
+  -> [StgArg]  -- Final tuple arguments
 mkUbxSum dc ty_args stg_args
   = let
       sum_rep = mkUbxSumRepTy ty_args
@@ -175,9 +174,7 @@ mkUbxSum dc ty_args stg_args
         | otherwise
         = StgRubbishArg (slotTyToType slot) : mkTupArgs (arg_idx + 1) slots_left arg_map
     in
-      StgConApp (tupleDataCon Unboxed (length (ubxSumSlots sum_rep)))
-                (tag_arg : mkTupArgs 0 (tail (ubxSumSlots sum_rep)) arg_idxs)
-                (map slotTyToType (ubxSumSlots sum_rep))
+      tag_arg : mkTupArgs 0 (tail (ubxSumSlots sum_rep)) arg_idxs
 
 -- | Given binders and arguments of a sum, maps binders to arguments for
 -- renaming.
