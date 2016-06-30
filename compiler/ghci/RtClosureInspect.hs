@@ -34,6 +34,7 @@ import HscTypes
 
 import DataCon
 import Type
+import RepType
 import qualified Unify as U
 import Var
 import TcRnMonad

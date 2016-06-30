@@ -67,6 +67,7 @@ import UniqSupply (MonadUnique(..))
 import DynFlags
 import FastString
 import Outputable
+import RepType
 
 import qualified Data.ByteString as BS
 import qualified Data.Map as M

@@ -78,6 +78,7 @@ import Type
 import TyCoRep
 import TcType
 import TyCon
+import RepType
 import BasicTypes
 import Outputable
 import DynFlags

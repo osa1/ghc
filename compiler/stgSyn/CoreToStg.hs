@@ -21,6 +21,7 @@ import CoreArity        ( manifestArity )
 import StgSyn
 
 import Type
+import RepType
 import TyCon
 import MkId             ( coercionTokenId )
 import Id

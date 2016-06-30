@@ -1,14 +1,11 @@
 {-# LANGUAGE CPP, TupleSections #-}
 
--- | See Note [Translating unboxed sums to unboxed tuples] in UnariseStg.hs.
-module ElimUbxSums
-  ( isEnumUbxSum
-  , mkUbxSum
-  , rnUbxSumBndrs
-  , ubxSumRepType
-  , UbxSumRepTy
-  , ubxSumFieldTypes
-  , flattenSumRep
+module RepType
+  ( -- * Code generator views onto Types
+    UnaryType, RepType(..), flattenRepType, repType,
+
+    -- * Generating unboxed sum terms and types
+    UbxSumRepTy, mkUbxSum, rnUbxSumBndrs, ubxSumFieldTypes, translateSumAlt
   ) where
 
 #include "HsVersions.h"
@@ -19,17 +16,95 @@ import Literal
 import Outputable
 import StgSyn
 import TyCon
+import TyCoRep
 import Type
 import TysPrim
 import TysWiredIn
-import Util (debugIsOn, zipEqual)
+import Util
 
 import Data.List (foldl', sort)
 import Data.Maybe (mapMaybe, maybeToList)
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 
---------------------------------------------------------------------------------
+{- **********************************************************************
+*                                                                       *
+                Representation types
+*                                                                       *
+********************************************************************** -}
+
+type UnaryType = Type
+
+data RepType
+  = UbxTupleRep [UnaryType] -- Represented by multiple values
+                            -- Can be zero, one, or more
+                            -- INVARIANT: never an empty list
+                            -- (see Note [Nullary unboxed tuple])
+  | UbxSumRep UbxSumRepTy
+  | UnaryRep UnaryType      -- Represented by a single value
+
+instance Outputable RepType where
+  ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
+  ppr (UbxSumRep rep) = text "UbxSumRep" <+> ppr rep
+  ppr (UnaryRep ty) = text "UnaryRep" <+> ppr ty
+
+flattenRepType :: RepType -> [UnaryType]
+flattenRepType (UbxTupleRep tys) = tys
+flattenRepType (UbxSumRep sum_rep) = flattenSumRep sum_rep
+flattenRepType (UnaryRep ty) = [ty]
+
+-- | 'repType' figure out how a type will be represented
+--   at runtime.  It looks through
+--
+--      1. For-alls
+--      2. Synonyms
+--      3. Predicates
+--      4. All newtypes, including recursive ones, but not newtype families
+--      5. Casts
+--
+repType :: Type -> RepType
+repType ty
+  = go initRecTc ty
+  where
+    go :: RecTcChecker -> Type -> RepType
+    go rec_nts ty                       -- Expand predicates and synonyms
+      | Just ty' <- coreView ty
+      = go rec_nts ty'
+
+    go rec_nts (ForAllTy _ ty2)  -- Drop type foralls
+      = go rec_nts ty2
+
+    go rec_nts (TyConApp tc tys)        -- Expand newtypes
+      | isNewTyCon tc
+      , tys `lengthAtLeast` tyConArity tc
+      , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
+      = go rec_nts' (newTyConInstRhs tc tys)
+
+      | isUnboxedTupleTyCon tc
+      = UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
+
+      | isUnboxedSumTyCon tc
+      = ubxSumRepType non_rr_tys
+      where
+          -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
+        non_rr_tys = dropRuntimeRepArgs tys
+
+    go rec_nts (CastTy ty _)
+      = go rec_nts ty
+
+    go _ ty@(CoercionTy _)
+      = pprPanic "repType" (ppr ty)
+
+    go _ ty = UnaryRep ty
+
+
+{- **********************************************************************
+*                                                                       *
+                Unboxed sums
+ See Note [Translating unboxed sums to unboxed tuples] in UnariseStg.hs
+*                                                                       *
+********************************************************************** -}
+
 
 -- | An unboxed sum is represented as its slots. Includes the tag.
 -- INVARIANT: List is sorted, except the slot for tag always comes first.
@@ -105,10 +180,10 @@ mkUbxSum dc ty_args stg_args
             mkTupArgs _ [] _
               = []
             mkTupArgs arg_idx (slot : slots_left) arg_map
-             | Just stg_arg <- IM.lookup arg_idx arg_map
-             = stg_arg : mkTupArgs (arg_idx + 1) slots_left arg_map
-             | otherwise
-             = slotDummyArg slot : mkTupArgs (arg_idx + 1) slots_left arg_map
+              | Just stg_arg <- IM.lookup arg_idx arg_map
+              = stg_arg : mkTupArgs (arg_idx + 1) slots_left arg_map
+              | otherwise
+              = StgRubbishArg (slotTyToType slot) : mkTupArgs (arg_idx + 1) slots_left arg_map
           in
             StgConApp (tupleDataCon Unboxed (length (ubxSumSlots sum_rep)))
                       (tag_arg : mkTupArgs 0 (tail (ubxSumSlots sum_rep)) arg_idxs)
@@ -239,13 +314,11 @@ fitsIn ty1 ty2
 
 --------------------------------------------------------------------------------
 
-slotDummyArg :: SlotTy -> StgArg
-slotDummyArg = StgRubbishArg . slotTyToType
-
---------------------------------------------------------------------------------
-
 ubxSumRepType :: [Type] -> RepType
 ubxSumRepType = UbxSumRep . mkUbxSumRepTy
 
 flattenSumRep :: UbxSumRepTy -> [UnaryType]
 flattenSumRep = map slotTyToType . ubxSumSlots
+
+translateSumAlt :: UbxSumRepTy -> AltType
+translateSumAlt = UbxTupAlt . length . flattenSumRep

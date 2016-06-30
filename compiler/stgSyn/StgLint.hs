@@ -21,6 +21,7 @@ import Maybes
 import Name             ( getSrcLoc )
 import ErrUtils         ( MsgDoc, Severity(..), mkLocMessage )
 import Type
+import RepType
 import TyCon
 import Util
 import SrcLoc

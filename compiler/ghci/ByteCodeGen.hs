@@ -46,7 +46,7 @@ import SMRep
 import Bitmap
 import OrdList
 import Maybes
-import ElimUbxSums (ubxSumFieldTypes)
+import RepType
 
 import Data.List
 import Foreign

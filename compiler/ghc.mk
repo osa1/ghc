@@ -454,7 +454,6 @@ compiler_stage2_dll0_MODULES = \
 	Digraph \
 	DriverPhases \
 	DynFlags \
-	ElimUbxSums \
 	Encoding \
 	ErrUtils \
 	Exception \
@@ -518,6 +517,7 @@ compiler_stage2_dll0_MODULES = \
 	PrelRules \
 	Pretty \
 	PrimOp \
+	RepType \
 	RdrName \
 	Rules \
 	SrcLoc \

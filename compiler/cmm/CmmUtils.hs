@@ -69,7 +69,8 @@ module CmmUtils(
 #include "HsVersions.h"
 
 import TyCon    ( PrimRep(..), PrimElemRep(..) )
-import Type     ( UnaryType, typePrimRep )
+import Type     ( typePrimRep )
+import RepType  ( UnaryType )
 
 import SMRep
 import Cmm

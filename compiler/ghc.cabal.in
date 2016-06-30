@@ -384,7 +384,7 @@ Library
         SimplStg
         StgStats
         UnariseStg
-        ElimUbxSums
+        RepType
         Rules
         SpecConstr
         Specialise

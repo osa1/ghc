@@ -34,6 +34,7 @@ import Cmm
 import CmmUtils
 import MkGraph
 import Type
+import RepType
 import TysPrim
 import CLabel
 import SMRep

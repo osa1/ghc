@@ -238,6 +238,7 @@ import Literal (Literal (..))
 import MkId (voidPrimId)
 import MonadUtils (mapAccumLM)
 import Outputable
+import RepType
 import StgSyn
 import Type
 import TysPrim (intPrimTyCon, voidPrimTy, intPrimTy)
@@ -249,8 +250,6 @@ import VarEnv
 import Data.Bifunctor (second)
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
-
-import ElimUbxSums
 
 -- | A mapping from unboxed-tuple binders to the Ids they were expanded to.
 --
@@ -399,7 +398,7 @@ unariseExpr rho expr@(StgCase e bndr alt_ty alts)
          _ -> do alts' <- unariseAlts rho alt_ty bndr alts
                  let alt_ty'
                        | UbxSumAlt sum_rep <- alt_ty
-                       = UbxTupAlt (length (flattenSumRep sum_rep))
+                       = translateSumAlt sum_rep
                        | otherwise
                        = alt_ty
                  return (StgCase e' bndr alt_ty' alts')
