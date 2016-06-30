@@ -72,7 +72,7 @@ Suppose that a variable x : (# t1, t2 #).
 By the end of this pass, we only have unboxed tuples in return positions.
 Unboxed sums are completely eliminated, see next note.
 
-Note [Translation of unboxed sums to unboxed tuples]
+Note [Translating unboxed sums to unboxed tuples]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Unarise also eliminates unboxed sum binders, and translates unboxed sums in
 return positions to unboxed tuples. We want to overlap fields of a sum when
