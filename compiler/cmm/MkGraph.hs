@@ -21,23 +21,28 @@ module MkGraph
 where
 
 import BlockId
+import CLabel (mkClosureLabel)
 import Cmm
 import CmmCallConv
 import CmmSwitch (SwitchTargets)
 import CmmUtils (cmmArgType)
+import Id (idCafInfo, idName)
+import TyCon (isGcPtrRep)
+import Type (typePrimRep)
 
 import Compiler.Hoopl hiding (Unique, (<*>), mkFirst, mkMiddle, mkLast, mkLabel, mkBranch, Shape(..))
 import DynFlags
 import FastString
 import ForeignCall
+import MkCore (rUBBISH_ENTRY_ERROR_ID)
+import OrdList
 import SMRep (ByteOff)
 import UniqSupply
-import OrdList
 
 import Control.Monad
 import Data.List
 import Data.Maybe
-import Prelude (($),Int,Bool,Eq(..)) -- avoid importing (<*>)
+import Prelude (($),Int,Bool,Eq(..),otherwise) -- avoid importing (<*>)
 
 #include "HsVersions.h"
 
@@ -196,15 +201,27 @@ mkAssign l (CmmReg r) | l == r  = mkNop
 mkAssign l r  = mkMiddle $ CmmAssign l r
 
 mkAssign' :: CmmReg -> CmmArg -> CmmAGraph
-mkAssign' _ (CmmRubbishArg _) = mkNop
-mkAssign' l (CmmExprArg r) = mkAssign l r
+mkAssign' l (CmmRubbishArg ty)
+  | isGcPtrRep (typePrimRep ty)
+  = mkAssign l (CmmLit (CmmLabel (mkClosureLabel (idName rUBBISH_ENTRY_ERROR_ID)
+                                                 (idCafInfo rUBBISH_ENTRY_ERROR_ID))))
+  | otherwise
+  = mkNop
+mkAssign' l (CmmExprArg r)
+  = mkAssign l r
 
 mkStore      :: CmmExpr -> CmmExpr -> CmmAGraph
 mkStore  l r  = mkMiddle $ CmmStore  l r
 
 mkStore' :: CmmExpr -> CmmArg -> CmmAGraph
-mkStore' _ (CmmRubbishArg _) = mkNop
-mkStore' l (CmmExprArg r) = mkStore l r
+mkStore' l (CmmRubbishArg ty)
+  | isGcPtrRep (typePrimRep ty)
+  = mkStore l (CmmLit (CmmLabel (mkClosureLabel (idName rUBBISH_ENTRY_ERROR_ID)
+                                                (idCafInfo rUBBISH_ENTRY_ERROR_ID))))
+  | otherwise
+  = mkNop
+mkStore' l (CmmExprArg r)
+  = mkStore l r
 
 ---------- Control transfer
 mkJump          :: DynFlags -> Convention -> CmmExpr
