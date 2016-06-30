@@ -73,7 +73,7 @@ By the end of this pass, we only have unboxed tuples in return positions.
 Unboxed sums are completely eliminated, see next note.
 
 Note [Translating unboxed sums to unboxed tuples]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Unarise also eliminates unboxed sum binders, and translates unboxed sums in
 return positions to unboxed tuples. We want to overlap fields of a sum when
 translating it to a tuple to have efficient memory layout. When translating a
@@ -151,7 +151,7 @@ case, but one that has the tag as scrutinee:
   Main.main6 :: GHC.Base.String
   [GblId] =
       \u [] (-> GHC.Base.String)
-          case 2# of x, y {
+          case 2# of {
             __DEFAULT -> Main.showAlt1 2# 8.1#;
           };
 
@@ -447,6 +447,7 @@ unariseAlts rho (UbxSumAlt _) bndr alts
 unariseAlts rho _ _ alts
   = mapM (\alt -> unariseAlt rho alt) alts
 
+------------------------
 -- | Make alternatives that match on the tag of a sum.
 unariseSumAlt :: UnariseEnv
               -> [StgArg] -- ^ sum components _excluding_ the tag bit.

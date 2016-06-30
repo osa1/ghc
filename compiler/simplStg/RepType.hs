@@ -264,6 +264,7 @@ primRepSlot FloatRep    = FloatSlot
 primRepSlot DoubleRep   = DoubleSlot
 primRepSlot VecRep{}    = pprPanic "primRepSlot" (text "No slot for VecRep")
 
+-- Used when unarising sum binders (need to give unarised Ids types)
 slotTyToType :: SlotTy -> Type
 slotTyToType PtrSlot    = anyTypeOfKind liftedTypeKind
 slotTyToType Word64Slot = int64PrimTy
@@ -271,33 +272,28 @@ slotTyToType WordSlot   = intPrimTy
 slotTyToType DoubleSlot = doublePrimTy
 slotTyToType FloatSlot  = floatPrimTy
 
-isPtrSlot :: SlotTy -> Bool
-isPtrSlot PtrSlot = True
-isPtrSlot _       = False
-
-isWordSlot :: SlotTy -> Bool
-isWordSlot Word64Slot = True
-isWordSlot WordSlot   = True
-isWordSlot _          = False
-
-isFloatSlot :: SlotTy -> Bool
-isFloatSlot DoubleSlot = True
-isFloatSlot FloatSlot  = True
-isFloatSlot _          = False
-
+-- | Returns the bigger type if one fits into the other. (commutative)
 fitsIn :: SlotTy -> SlotTy -> Maybe SlotTy
 fitsIn ty1 ty2
   | isWordSlot ty1 && isWordSlot ty2
   = Just (max ty1 ty2)
-
   | isFloatSlot ty1 && isFloatSlot ty2
   = Just (max ty1 ty2)
-
   | isPtrSlot ty1 && isPtrSlot ty2
   = Just PtrSlot
-
   | otherwise
   = Nothing
+  where
+    isPtrSlot PtrSlot = True
+    isPtrSlot _       = False
+
+    isWordSlot Word64Slot = True
+    isWordSlot WordSlot   = True
+    isWordSlot _          = False
+
+    isFloatSlot DoubleSlot = True
+    isFloatSlot FloatSlot  = True
+    isFloatSlot _          = False
 
 --------------------------------------------------------------------------------
 
