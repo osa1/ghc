@@ -78,47 +78,58 @@ mkUbxSumRepTy constrs0 =
   in
     sumRep
 
--- | Build a unboxed sum term.
+-- | Build a unboxed sum term from arguments of an alternative.
 mkUbxSum
   :: DataCon   -- Sum data con
   -> [Type]    -- Type arguments of the sum data con
   -> [StgArg]  -- Actual arguments
   -> StgExpr
 mkUbxSum dc ty_args stg_args
-  = let sum_rep = mkUbxSumRepTy ty_args
-        tag = dataConTag dc in
-    if isEnumUbxSum sum_rep
-      then
-        ASSERT(null stg_args)
-        StgLit (MachInt (fromIntegral tag))
-      else
-        let
-          arg_tys = map stgArgType stg_args
+  = let
+      sum_rep = mkUbxSumRepTy ty_args
+      tag = dataConTag dc
+    in
+      if isEnumUbxSum sum_rep
+        then
+          ASSERT (null stg_args)
+          StgLit (MachInt (fromIntegral tag))
+        else
+          let
+            arg_tys = map stgArgType stg_args
 
-          bindFields :: [SlotTy] -> [(SlotTy, StgArg)] -> [StgArg]
-          bindFields slots []
-            = -- arguments are bound, fill rest of the slots with dummy values
-              map slotDummyArg slots
-          bindFields [] args
-            = -- we still have arguments to bind, but run out of slots
-              pprPanic "mkUbxSum" (text "Run out of slots. Args left to bind:" <+> ppr args)
-          bindFields (slot : slots) args0@((arg_slot, arg) : args)
-            | Just arg_slot == (arg_slot `fitsIn` slot)
-            = arg : bindFields slots args
-            | otherwise
-            = slotDummyArg slot : bindFields slots args0
+            bindFields :: [SlotTy] -> [(SlotTy, StgArg)] -> [StgArg]
+            bindFields slots []
+              = -- arguments are bound, fill rest of the slots with dummy values
+                map slotDummyArg slots
+            bindFields [] args
+              = -- we still have arguments to bind, but run out of slots
+                pprPanic "mkUbxSum" (text "Run out of slots. Args left to bind:" <+> ppr args)
+            bindFields (slot : slots) args0@((arg_slot, arg) : args)
+              | Just arg_slot == (arg_slot `fitsIn` slot)
+              = arg : bindFields slots args
+              | otherwise
+              = slotDummyArg slot : bindFields slots args0
 
-          tup_args = StgLitArg (MachInt (fromIntegral tag)) :
-                       bindFields (tail (ubxSumSlots sum_rep)) -- drop tag slot
-                                  (mkSlots (zip arg_tys stg_args))
-        in
-          StgConApp (tupleDataCon Unboxed (length tup_args)) tup_args arg_tys
+            tup_args = StgLitArg (MachInt (fromIntegral tag)) :
+                         bindFields (tail (ubxSumSlots sum_rep)) -- drop tag slot
+                                    (mkSlots (zip arg_tys stg_args))
+          in
+            StgConApp (tupleDataCon Unboxed (length tup_args)) tup_args arg_tys
 
 -- | Given binders and arguments of a sum, maps binders to arguments for
 -- renaming.
+--
+-- INVARIANT: We can have more arguments than binders. Example:
+--
+--   case (# | 123# #) :: (# Int | Float# #) of
+--     (# | f #) -> ...
+--
+-- Scrutinee will have this form: (# Tag#, Any, Float# #), so it'll unarise to 3
+-- arguments, but we only bind one variable of type Float#.
 rnUbxSumBndrs :: (Outputable a, Outputable b) => [(Type, a)] -> [(Type, b)] -> [(a, b)]
 rnUbxSumBndrs bndrs args
-  = mapBinders bndr_slots arg_slots
+  = ASSERT2 (length args >= length bndrs, ppr bndrs $$ ppr args)
+    mapBinders bndr_slots arg_slots
   where
     bndr_slots = mkSlots bndrs
     arg_slots  = mkSlots args
@@ -126,17 +137,13 @@ rnUbxSumBndrs bndrs args
     mapBinders :: [(SlotTy, a)] -> [(SlotTy, b)] -> [(a, b)]
     mapBinders [] _
       = []
-    mapBinders _ []
-      = pprPanic "rnUbxSumBndrs.mapBinders"
-          (text "Run out of slots but still have args to bind." $$
-           text "args:" <+> ppr args $$
-           text "bndrs:" <+> ppr bndrs)
-    mapBinders alt_ss@((alt_slot_ty, alt_slot_id) : alt_slots) ((sum_arg_ty, sum_arg) : sum_args)
-      | Just sum_arg_ty == (sum_arg_ty `fitsIn` alt_slot_ty)
-      = (alt_slot_id, sum_arg) : mapBinders alt_slots sum_args
-
+    mapBinders alt_ss@((slot_ty, slot_id) : slots) ((sum_arg_ty, sum_arg) : sum_args)
+      | Just slot_ty == (sum_arg_ty `fitsIn` slot_ty)
+      = (slot_id, sum_arg) : mapBinders slots sum_args
       | otherwise
       = mapBinders alt_ss sum_args
+    mapBinders _ _
+      = pprPanic "rnUbxSumBndrs.mapBinders" (ppr bndrs $$ ppr args)
 
 --------------------------------------------------------------------------------
 
