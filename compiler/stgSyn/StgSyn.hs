@@ -59,7 +59,7 @@ import Packages    ( isDllName )
 import Platform
 import PprCore     ( {- instances -} )
 import PrimOp      ( PrimOp, PrimCall )
-import {-# SOURCE #-} RepType ( UbxSumRepTy )
+import RepType     ( UbxSumRepTy )
 import TyCon       ( PrimRep(..) )
 import TyCon       ( TyCon )
 import Type        ( Type, typePrimRep )

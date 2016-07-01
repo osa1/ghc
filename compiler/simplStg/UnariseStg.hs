@@ -248,8 +248,8 @@ import Util
 import VarEnv
 
 import Data.Bifunctor (second)
-import Data.List (sortOn)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
+import qualified Data.IntMap as IM
 
 -- | A mapping from unboxed-tuple binders to the Ids they were expanded to.
 --
@@ -624,10 +624,37 @@ mapSumIdBinders id sum_args rho
       arg_slots = mapMaybe typeSlotTy (concatMap (flattenRepType . repType . stgArgType) sum_args)
       id_slots  = mapMaybe typeSlotTy (unariseIdType' id)
       layout'   = layout arg_slots id_slots
-
-      rho' = extendVarEnv rho id [ sum_args !! i | i <- layout' ]
     in
-      rho'
+      extendVarEnv rho id [ sum_args !! i | i <- layout' ]
+
+-- | Build a unboxed sum term from arguments of an alternative.
+mkUbxSum
+  :: DataCon   -- Sum data con
+  -> [Type]    -- Type arguments of the sum data con
+  -> [StgArg]  -- Actual arguments of the alternative
+  -> [StgArg]  -- Final tuple arguments
+mkUbxSum dc ty_args stg_args
+  = let
+      sum_rep = mkUbxSumRepTy ty_args
+      tag = dataConTag dc
+
+      layout'  = layout (tail (ubxSumSlots sum_rep)) (mapMaybe (typeSlotTy . stgArgType) stg_args)
+      tag_arg  = StgLitArg (MachInt (fromIntegral tag))
+      arg_idxs = IM.fromList (zipEqual "mkUbxSum" layout' stg_args)
+
+      mkTupArgs :: Int -> [SlotTy] -> IM.IntMap StgArg -> [StgArg]
+      mkTupArgs _ [] _
+        = []
+      mkTupArgs arg_idx (slot : slots_left) arg_map
+        | Just stg_arg <- IM.lookup arg_idx arg_map
+        = stg_arg : mkTupArgs (arg_idx + 1) slots_left arg_map
+        | otherwise
+        = StgRubbishArg (slotTyToType slot) : mkTupArgs (arg_idx + 1) slots_left arg_map
+    in
+      tag_arg : mkTupArgs 0 (tail (ubxSumSlots sum_rep)) arg_idxs
+
+translateSumAlt :: UbxSumRepTy -> AltType
+translateSumAlt = UbxTupAlt . length . flattenSumRep
 
 mkIds :: FastString -> [UnaryType] -> UniqSM [Id]
 mkIds fs tys = mapM (mkId fs) tys

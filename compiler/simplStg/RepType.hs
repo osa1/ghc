@@ -4,17 +4,14 @@ module RepType
   ( -- * Code generator views onto Types
     UnaryType, RepType(..), flattenRepType, repType,
 
-    -- * Generating unboxed sum terms and types
-    UbxSumRepTy, mkUbxSum, rnUbxSumBndrs, ubxSumFieldTypes, translateSumAlt,
-    layout, typeSlotTy
+    -- * Unboxed sum representation type
+    UbxSumRepTy, ubxSumFieldTypes, layout, typeSlotTy, SlotTy,
+    mkUbxSumRepTy, ubxSumSlots, slotTyToType, flattenSumRep
   ) where
 
 #include "HsVersions.h"
 
-import DataCon
-import Literal
 import Outputable
-import StgSyn
 import TyCon
 import TyCoRep
 import Type
@@ -24,7 +21,6 @@ import Util
 
 import Data.List (foldl', sort)
 import Data.Maybe (mapMaybe, maybeToList)
-import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 
 {- **********************************************************************
@@ -151,55 +147,6 @@ mkUbxSumRepTy constrs0 =
   in
     sumRep
 
--- | Build a unboxed sum term from arguments of an alternative.
-mkUbxSum
-  :: DataCon   -- Sum data con
-  -> [Type]    -- Type arguments of the sum data con
-  -> [StgArg]  -- Actual arguments of the alternative
-  -> [StgArg]  -- Final tuple arguments
-mkUbxSum dc ty_args stg_args
-  = let
-      sum_rep = mkUbxSumRepTy ty_args
-      tag = dataConTag dc
-
-      layout'  = layout (tail (ubxSumSlots sum_rep)) (mapMaybe (typeSlotTy . stgArgType) stg_args)
-      tag_arg  = StgLitArg (MachInt (fromIntegral tag))
-      arg_idxs = IM.fromList (zipEqual "mkUbxSum" layout' stg_args)
-
-      mkTupArgs :: Int -> [SlotTy] -> IM.IntMap StgArg -> [StgArg]
-      mkTupArgs _ [] _
-        = []
-      mkTupArgs arg_idx (slot : slots_left) arg_map
-        | Just stg_arg <- IM.lookup arg_idx arg_map
-        = stg_arg : mkTupArgs (arg_idx + 1) slots_left arg_map
-        | otherwise
-        = StgRubbishArg (slotTyToType slot) : mkTupArgs (arg_idx + 1) slots_left arg_map
-    in
-      tag_arg : mkTupArgs 0 (tail (ubxSumSlots sum_rep)) arg_idxs
-
--- | Given binders and arguments of a sum, maps binders to arguments for
--- renaming.
---
--- INVARIANT: We can have more arguments than binders. Example:
---
---   case x :: (# Int | Float# #) of
---     (# | f #) -> ...
---
--- Scrutinee will have this form: (# Tag#, Any, Float# #), so it'll unarise to 3
--- arguments, but we only bind one variable of type Float#.
-rnUbxSumBndrs
-  :: (Outputable a, Outputable b)
-  => [(Type, a)] -- things we want to map to sum components
-  -> [(Type, b)] -- sum components (NOT including tag)
-  -> [(a, b)]
-rnUbxSumBndrs bndrs args
-  = ASSERT2 (length args >= length bndrs, ppr bndrs $$ ppr args)
-    zipEqual "rnUbxSumBndrs" (map snd bndrs) (map (snd . (args !!)) layout')
-  where
-    bndr_slots = mapMaybe (typeSlotTy . fst) bndrs
-    arg_slots  = mapMaybe (typeSlotTy . fst) args
-    layout'    = layout arg_slots bndr_slots
-
 layout :: [SlotTy]  -- Layout of sum. Does not include tag. The invariant of
                     -- UbxSumRepTy holds.
        -> [SlotTy]  -- Slot types of things we want to map to locations in the
@@ -303,6 +250,3 @@ ubxSumRepType = UbxSumRep . mkUbxSumRepTy
 
 flattenSumRep :: UbxSumRepTy -> [UnaryType]
 flattenSumRep = map slotTyToType . ubxSumSlots
-
-translateSumAlt :: UbxSumRepTy -> AltType
-translateSumAlt = UbxTupAlt . length . flattenSumRep
