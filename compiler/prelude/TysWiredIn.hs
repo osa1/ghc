@@ -140,8 +140,7 @@ import Class            ( Class, mkClass )
 import RdrName
 import Name
 import NameSet          ( NameSet, mkNameSet, elemNameSet )
-import BasicTypes       ( Arity, RecFlag(..), Boxity(..),
-                          TupleSort(..), ConTagZ )
+import BasicTypes       ( Arity, Boxity(..), TupleSort(..), ConTagZ )
 import ForeignCall
 import SrcLoc           ( noSrcSpan )
 import Unique
