@@ -17,6 +17,7 @@ module MkGraph
   , copyInOflow, copyOutOflow
   , noExtraStack
   , toCall, Transfer(..)
+  , rubbishExpr
   )
 where
 
@@ -203,8 +204,7 @@ mkAssign l r  = mkMiddle $ CmmAssign l r
 mkAssign' :: CmmReg -> CmmArg -> CmmAGraph
 mkAssign' l (CmmRubbishArg ty)
   | isGcPtrRep (typePrimRep ty)
-  = mkAssign l (CmmLit (CmmLabel (mkClosureLabel (idName rUBBISH_ENTRY_ERROR_ID)
-                                                 (idCafInfo rUBBISH_ENTRY_ERROR_ID))))
+  = mkAssign l rubbishExpr
   | otherwise
   = mkNop
 mkAssign' l (CmmExprArg r)
@@ -216,8 +216,7 @@ mkStore  l r  = mkMiddle $ CmmStore  l r
 mkStore' :: CmmExpr -> CmmArg -> CmmAGraph
 mkStore' l (CmmRubbishArg ty)
   | isGcPtrRep (typePrimRep ty)
-  = mkStore l (CmmLit (CmmLabel (mkClosureLabel (idName rUBBISH_ENTRY_ERROR_ID)
-                                                (idCafInfo rUBBISH_ENTRY_ERROR_ID))))
+  = mkStore l rubbishExpr
   | otherwise
   = mkNop
 mkStore' l (CmmExprArg r)
@@ -434,3 +433,8 @@ toCall :: CmmExpr -> Maybe BlockId -> UpdFrameOffset -> ByteOff
        -> CmmAGraph
 toCall e cont updfr_off res_space arg_space regs =
   mkLast $ CmmCall e cont regs arg_space res_space updfr_off
+
+--------------
+rubbishExpr :: CmmExpr
+rubbishExpr = CmmLit (CmmLabel (mkClosureLabel (idName rUBBISH_ENTRY_ERROR_ID)
+                                               (idCafInfo rUBBISH_ENTRY_ERROR_ID)))

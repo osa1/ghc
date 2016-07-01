@@ -332,19 +332,76 @@ unariseExpr _ e@StgLam{}
 unariseExpr rho expr@(StgCase e bndr alt_ty alts)
   = do e' <- unariseExpr rho e
        case (e', alts) of
-         -- Special cases when scrutinee is an explicit unboxed tuple (i.e. tuple
-         -- con app). See Note [Unarisation].
+         {-
+         Scrutinee is an explicit unboxed tuple (i.e. tuple con app).
+
+           f (# 1, 2 #)
+
+           ==> (CorePrep)
+
+           case (# 1, 2 #) of x {
+             _ -> f x
+           }
+
+           ==> (unarise)
+
+           case (# 1, 2 #) of x {
+             (# x_1, x_2 #) -> f x_1 x_2
+           }
+
+         Instead, we want to generate `f 1 2`, without calling unarise on alts.
+         -}
          (StgConApp _ args _, [(DEFAULT, [], rhs)])
            | UbxTupAlt _ <- alt_ty
            -> unariseExpr (extendVarEnv rho bndr args) rhs
 
+         {-
+         Same as above, except fields are bound in the original pattern.
+
+           showEither1 :: (# String | (# Int, Bool #) -> String
+           showEither1 x =
+             case x of
+               (# x1 | #) -> ...
+               (# | x2 #) ->
+                 case x2 of
+                   (# y1, y2 #) -> ...
+
+           ==> (unarise x)
+
+           showEither1 tag field1 field2 of =
+             case tag of
+               1# -> ...
+               2# -> case (# field1, field2 #) of
+                       (# y1, y2 #) -> ...
+
+         We want to rename y1 -> field1, y2 -> field2 and remove the case
+         expression in the RHS of 2#.
+         -}
          (StgConApp _ args _, [(DataAlt _, arg_bndrs, rhs)])
            | UbxTupAlt _ <- alt_ty
            -> do let rho' = extendVarEnv (mapTupleIdBinders arg_bndrs args rho) bndr args
                  unariseExpr rho' rhs
 
-         -- Explicit unboxed sum. Case expression can be eliminated with a
-         -- little bit extra work.
+         {-
+         Explicit unboxed sum. Case expression can be eliminated with a little
+         bit extra work. Example:
+
+           f (# False | #)
+
+           ==> (CorePrep)
+
+           case (# False | #) of x {
+             _ -> f x
+           }
+
+           ==> (unarise scrutinee)
+
+           case (# 1#, False #) of x {
+             _ -> f x
+           }
+
+         We want to directly generate `f 1# False`.
+         -}
          (StgConApp _ args@(tag_arg : real_args) _, alts)
            | UbxSumAlt _ <- alt_ty
            -> do -- this won't be used but we need a scrutinee binder anyway

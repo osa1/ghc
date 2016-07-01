@@ -38,7 +38,7 @@ module StgCmmUtils (
         addToMem, addToMemE, addToMemLblE, addToMemLbl,
         mkWordCLit,
         newStringCLit, newByteStringCLit,
-        blankWord
+        blankWord, rubbishExpr
   ) where
 
 #include "HsVersions.h"
@@ -385,7 +385,7 @@ emitMultiAssign :: [LocalReg] -> [CmmArg] -> FCode ()
 type Key  = Int
 type Vrtx = (Key, Stmt) -- Give each vertex a unique number,
                         -- for fast comparison
-type Stmt = (LocalReg, CmmExpr) -- r := e
+type Stmt = (LocalReg, CmmArg) -- r := e
 
 -- We use the strongly-connected component algorithm, in which
 --      * the vertices are the statements
@@ -394,20 +394,11 @@ type Stmt = (LocalReg, CmmExpr) -- r := e
 --        that is, if s1 should *follow* s2 in the final order
 
 emitMultiAssign []    []    = return ()
-emitMultiAssign [reg] [CmmExprArg rhs] = emitAssign (CmmLocal reg) rhs
-emitMultiAssign [_]   [CmmRubbishArg _] = return ()
+emitMultiAssign [reg] [rhs] = emitAssign' (CmmLocal reg) rhs
 emitMultiAssign regs rhss   = do
   dflags <- getDynFlags
   ASSERT2( equalLength regs rhss, ppr regs $$ ppr rhss )
-    unscramble dflags (filter_rubbish_out ([1..] `zip` (regs `zip` rhss)))
-  where
-    filter_rubbish_out :: [(Int, (LocalReg, CmmArg))] -> [(Int, (LocalReg, CmmExpr))]
-    filter_rubbish_out []
-      = []
-    filter_rubbish_out ((_, (_, CmmRubbishArg _)) : rest)
-      = filter_rubbish_out rest
-    filter_rubbish_out ((k, (r, CmmExprArg e)) : rest)
-      = (k, (r, e)) : filter_rubbish_out rest
+    unscramble dflags ([1..] `zip` (regs `zip` rhss))
 
 unscramble :: DynFlags -> [Vrtx] -> FCode ()
 unscramble dflags vertices = mapM_ do_component components
@@ -442,16 +433,20 @@ unscramble dflags vertices = mapM_ do_component components
 
         split :: DynFlags -> Unique -> Stmt -> (Stmt, Stmt)
         split dflags uniq (reg, rhs)
-          = ((tmp, rhs), (reg, CmmReg (CmmLocal tmp)))
+          = ((tmp, rhs), (reg, CmmExprArg (CmmReg (CmmLocal tmp))))
           where
-            rep = cmmExprType dflags rhs
+            rep = cmmArgType dflags rhs
             tmp = LocalReg uniq rep
 
         mk_graph :: Stmt -> FCode ()
-        mk_graph (reg, rhs) = emitAssign (CmmLocal reg) rhs
+        mk_graph (reg, rhs) = emitAssign' (CmmLocal reg) rhs
 
         mustFollow :: Stmt -> Stmt -> Bool
-        (reg, _) `mustFollow` (_, rhs) = regUsedIn dflags (CmmLocal reg) rhs
+        (reg, _) `mustFollow` (_, rhs) = regUsedIn' dflags (CmmLocal reg) rhs
+
+regUsedIn' :: DynFlags -> CmmReg -> CmmArg -> Bool
+regUsedIn' _ _ (CmmRubbishArg _) = False
+regUsedIn' dflags reg (CmmExprArg expr) = regUsedIn dflags reg expr
 
 -------------------------------------------------------------------------
 --      mkSwitch

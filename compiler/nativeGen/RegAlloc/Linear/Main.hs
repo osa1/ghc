@@ -759,6 +759,11 @@ allocateRegsAndSpill reading keep spills alloc (r:rs)
                 -- Not already in a register, so we need to find a free one...
                 Just (InMem slot) | reading   -> doSpill (ReadMem slot)
                                   | otherwise -> doSpill WriteMem
+
+{-
+                Now that we have CmmRubbishArg, this can be a valid code, so
+                disabling this panic.
+
                 Nothing | reading   ->
                    pprPanic "allocateRegsAndSpill: Cannot read from uninitialized register" (ppr r)
                    -- NOTE: if the input to the NCG contains some
@@ -769,6 +774,8 @@ allocateRegsAndSpill reading keep spills alloc (r:rs)
                    -- reason.
 
                         | otherwise -> doSpill WriteNew
+-}
+                Nothing -> doSpill WriteNew
 
 
 -- reading is redundant with reason, but we keep it around because it's

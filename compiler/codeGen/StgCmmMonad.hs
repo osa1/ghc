@@ -19,8 +19,8 @@ module StgCmmMonad (
 
         emit, emitDecl, emitProc,
         emitProcWithConvention, emitProcWithStackFrame,
-        emitOutOfLine, emitAssign, emitStore, emitComment,
-        emitTick, emitUnwind,
+        emitOutOfLine, emitAssign, emitAssign', emitStore,
+        emitComment, emitTick, emitUnwind,
 
         getCmm, aGraphToGraph,
         getCodeR, getCode, getCodeScoped, getHeapUsage,
@@ -76,6 +76,7 @@ import Unique
 import UniqSupply
 import FastString
 import Outputable
+import Type (typePrimRep)
 
 import Control.Monad
 import Data.List
@@ -742,6 +743,14 @@ emitUnwind g e = do
 
 emitAssign :: CmmReg  -> CmmExpr -> FCode ()
 emitAssign l r = emitCgStmt (CgStmt (CmmAssign l r))
+
+emitAssign' :: CmmReg -> CmmArg -> FCode ()
+emitAssign' l (CmmExprArg r) = emitAssign l r
+emitAssign' l (CmmRubbishArg ty)
+  | isGcPtrRep (typePrimRep ty)
+  = emitAssign l rubbishExpr
+  | otherwise
+  = return ()
 
 emitStore :: CmmExpr  -> CmmExpr -> FCode ()
 emitStore l r = emitCgStmt (CgStmt (CmmStore l r))
