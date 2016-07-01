@@ -2433,7 +2433,7 @@ legalFIPrimArgTyCon :: DynFlags -> TyCon -> Validity
 -- currently they're of the wrong kind to use in function args anyway.
 legalFIPrimArgTyCon dflags tc
   | isUnliftedTyCon tc
-  , not (isUnboxedTupleTyCon tc)
+  , not (isUnboxedTupleTyCon tc || isUnboxedSumTyCon tc)
   = validIfUnliftedFFITypes dflags
   | otherwise
   = NotValid unlifted_only
@@ -2444,6 +2444,7 @@ legalFIPrimResultTyCon :: DynFlags -> TyCon -> Validity
 legalFIPrimResultTyCon dflags tc
   | isUnliftedTyCon tc
   , (isUnboxedTupleTyCon tc
+     || isUnboxedSumTyCon tc
      || case tyConPrimRep tc of      -- Note [Marshalling VoidRep]
            VoidRep -> False
            _       -> True)
