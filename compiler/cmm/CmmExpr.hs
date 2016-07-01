@@ -77,7 +77,7 @@ data CmmReg
 
 data CmmArg
   = CmmExprArg CmmExpr
-  | CmmRubbishArg Type
+  | CmmRubbishArg Type -- See StgRubbishArg in StgSyn.hs
 
 -- | A stack area is either the stack slot where a variable is spilled
 -- or the stack space where function arguments and results are passed.

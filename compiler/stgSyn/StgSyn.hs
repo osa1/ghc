@@ -96,8 +96,10 @@ data GenStgBinding bndr occ
 data GenStgArg occ
   = StgVarArg  occ
   | StgLitArg  Literal
-  | StgRubbishArg
-               Type -- This is needed to be able to implement `stgArgType`
+
+    -- A rubbish arg is a value that's not supposed to be used by the generated
+    -- code, but it may be a GC root (i.e. used by GC) if the type is boxed.
+  | StgRubbishArg Type
 
 
 -- | Does this constructor application refer to
