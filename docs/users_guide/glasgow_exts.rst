@@ -336,12 +336,6 @@ an another example, this is the layout for unboxed version of `Maybe a` type: ::
 The `Pointer` field is not used when tag says that it's `Nothing`. Otherwise
 `Pointer` points to the value in `Just`.
 
-Currently it's not possible to pass an unboxed sum to primops, or return unboxed
-sums from primops.
-
-Currently unboxed sums are not used for any optimizations, but that's planned
-for the future.
-
 .. _syntax-extns:
 
 Syntactic extensions
