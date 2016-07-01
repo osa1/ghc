@@ -619,22 +619,13 @@ mapSumIdBinders
   -> UnariseEnv
   -> UnariseEnv
 mapSumIdBinders id sum_args rho
+  -- TODO: Handle the case where Id is void
   = let
-      temp_tys :: [(Type, Int)]
-      temp_tys = zip (unariseIdType' id) [0..]
+      arg_slots = mapMaybe typeSlotTy (concatMap (flattenRepType . repType . stgArgType) sum_args)
+      id_slots  = mapMaybe typeSlotTy (unariseIdType' id)
+      layout'   = layout arg_slots id_slots
 
-      scrt_arg_tys :: [(Type, StgArg)]
-      scrt_arg_tys = map (\arg -> (stgArgType arg, arg)) sum_args
-
-      -- map temporaries (temp_tys) to the StgArgs that make the sum
-      -- (scrt_arg_tys)
-      rns :: [(Int, StgArg)]
-      rns = rnUbxSumBndrs temp_tys scrt_arg_tys
-
-      rho_ext :: [StgArg]
-      rho_ext = map snd (sortOn fst rns)
-
-      rho' = extendVarEnv rho id rho_ext
+      rho' = extendVarEnv rho id [ sum_args !! i | i <- layout' ]
     in
       rho'
 

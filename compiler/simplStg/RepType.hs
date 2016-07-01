@@ -5,7 +5,8 @@ module RepType
     UnaryType, RepType(..), flattenRepType, repType,
 
     -- * Generating unboxed sum terms and types
-    UbxSumRepTy, mkUbxSum, rnUbxSumBndrs, ubxSumFieldTypes, translateSumAlt
+    UbxSumRepTy, mkUbxSum, rnUbxSumBndrs, ubxSumFieldTypes, translateSumAlt,
+    layout, typeSlotTy
   ) where
 
 #include "HsVersions.h"
