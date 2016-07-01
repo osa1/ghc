@@ -2403,7 +2403,7 @@ legalFFITyCon tc
 marshalableTyCon :: DynFlags -> TyCon -> Validity
 marshalableTyCon dflags tc
   | isUnliftedTyCon tc
-  , not (isUnboxedTupleTyCon tc)
+  , not (isUnboxedTupleTyCon tc || isUnboxedSumTyCon tc)
   , case tyConPrimRep tc of        -- Note [Marshalling VoidRep]
        VoidRep -> False
        _       -> True
