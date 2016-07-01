@@ -253,13 +253,11 @@ import Data.Maybe (fromMaybe)
 
 -- | A mapping from unboxed-tuple binders to the Ids they were expanded to.
 --
--- INVARIANT 1: Ids in the range don't have unboxed tuple types.
+-- INVARIANT 1: Ids in the range only have "unary" types. (i.e. no unboxed
+--              tuples or sums)
 --
 -- INVARIANT 2: If x -> args, the args is never an empty list
 --              See Note [Unarisation and nullary tuples]
---
--- Those in-scope variables without unboxed-tuple types are not present in the
--- domain of the mapping at all.
 --
 -- See also Note [UnariseEnv can map to literals].
 type UnariseEnv = VarEnv [StgArg]  -- This list is always non-empty
