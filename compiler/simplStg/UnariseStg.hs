@@ -191,7 +191,7 @@ corresponds to the number of (possibly-void) *registers* arguments will arrive
 in.
 -}
 
-{-# LANGUAGE CPP, TupleSections #-}
+{-# LANGUAGE CPP, TupleSections, BangPatterns #-}
 
 module UnariseStg (unarise) where
 
@@ -208,11 +208,13 @@ import Outputable
 import RepType
 import StgSyn
 import Type
+import TyCon (isVoidRep)
 import TysPrim (intPrimTyCon, intPrimTy)
 import TysWiredIn
 import UniqSupply
+import MkId (voidPrimId)
 import Util
-import VarEnv (VarEnv, extendVarEnv, emptyVarEnv, lookupVarEnv)
+import VarEnv (VarEnv, extendVarEnv, emptyVarEnv, lookupVarEnv, unitVarEnv)
 
 import Data.Bifunctor (second)
 import Data.Maybe (fromMaybe, mapMaybe)
@@ -237,7 +239,11 @@ extendRho rho x args
 --------------------------------------------------------------------------------
 
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
-unarise us binds = initUs_ us (mapM (unariseBinding emptyVarEnv) binds)
+unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
+  where
+    -- See Note [Unarisation and nullary tuples]
+    nullary_tup = dataConWorkId unboxedUnitDataCon
+    init_env = unitVarEnv nullary_tup [StgVarArg voidPrimId]
 
 unariseBinding :: UnariseEnv -> StgBinding -> UniqSM StgBinding
 unariseBinding rho (StgNonRec x rhs)
@@ -261,9 +267,16 @@ unariseRhs rho (StgRhsCon ccs con args ty_args)
 unariseExpr :: UnariseEnv -> StgExpr -> UniqSM StgExpr
 unariseExpr rho (StgApp f [])
   | Just args <- unariseId rho f
+  , isMultiValBndr f
   = return (mkTuple args)
 
+  | Just [StgVarArg f'] <- unariseId rho f
+  = return (StgApp f' [])
+
 unariseExpr rho (StgApp f args)
+  | Just [StgVarArg f'] <- unariseId rho f
+  = return (StgApp f' (unariseArgs rho args))
+  | otherwise
   = return (StgApp f (unariseArgs rho args))
 
 unariseExpr _ (StgLit l)
@@ -275,7 +288,7 @@ unariseExpr rho (StgConApp dc args ty_args)
      in return (mkTuple args')
 
   | isUnboxedSumCon dc
-  = let args' = unariseArgs rho args
+  = let args' = filterOutVoidArgs (unariseArgs rho args)
      in return (mkTuple (mkUbxSum dc ty_args args'))
 
   | otherwise
@@ -307,12 +320,6 @@ unariseCase
   :: UnariseEnv
   -> StgExpr -- scrutinee, already unarised
   -> Id -> AltType -> [StgAlt] -> UniqSM StgExpr
-
-{-
-unariseCase _ scrt _ _ alts
-  | pprTrace "unariseCase" (ppr scrt $$ ppr alts) False
-  = undefined
--}
 
 unariseCase rho (StgConApp con args _) bndr _ [(DEFAULT, [], rhs)]
   | isUnboxedTupleCon con -- works for both sums and products!
@@ -550,6 +557,12 @@ mkId :: FastString -> UnaryType -> UniqSM Id
 mkId = mkSysLocalOrCoVarM
 
 --------------------------------------------------------------------------------
+
+isMultiValBndr :: Id -> Bool
+isMultiValBndr x = isUnboxedTupleType (idType x) || isUnboxedSumType (idType x)
+
+filterOutVoidArgs :: [StgArg] -> [StgArg]
+filterOutVoidArgs = filter (not . isVoidRep . typePrimRep . stgArgType)
 
 mkTuple :: [StgArg] -> StgExpr
 mkTuple args  = StgConApp (tupleDataCon Unboxed (length args)) args (map stgArgType args)
