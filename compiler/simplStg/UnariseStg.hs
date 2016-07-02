@@ -191,7 +191,7 @@ corresponds to the number of (possibly-void) *registers* arguments will arrive
 in.
 -}
 
-{-# LANGUAGE CPP, TupleSections, BangPatterns #-}
+{-# LANGUAGE CPP, TupleSections #-}
 
 module UnariseStg (unarise) where
 
@@ -214,7 +214,7 @@ import TysWiredIn
 import UniqSupply
 import MkId (voidPrimId)
 import Util
-import VarEnv (VarEnv, extendVarEnv, emptyVarEnv, lookupVarEnv, unitVarEnv)
+import VarEnv (VarEnv, extendVarEnv, lookupVarEnv, unitVarEnv)
 
 import Data.Bifunctor (second)
 import Data.Maybe (fromMaybe, mapMaybe)
@@ -265,6 +265,15 @@ unariseRhs rho (StgRhsCon ccs con args ty_args)
 --------------------------------------------------------------------------------
 
 unariseExpr :: UnariseEnv -> StgExpr -> UniqSM StgExpr
+
+{-
+Tricky case! Suppose we have this mapping in rho:
+
+  x :-> [y]
+
+Is that because x bound to a singleton tuple, or are we renaming it? We decide
+by looking at x's type here.
+-}
 unariseExpr rho (StgApp f [])
   | Just args <- unariseId rho f
   , isMultiValBndr f
@@ -284,16 +293,16 @@ unariseExpr _ (StgLit l)
 
 unariseExpr rho (StgConApp dc args ty_args)
   | isUnboxedTupleCon dc
-  = let args' = unariseArgs rho args
-     in return (mkTuple args')
+  , let args' = unariseArgs rho args
+  = return (mkTuple args')
 
   | isUnboxedSumCon dc
-  = let args' = filterOutVoidArgs (unariseArgs rho args)
-     in return (mkTuple (mkUbxSum dc ty_args args'))
+  , let args' =  unariseArgs rho args
+  = return (mkTuple (mkUbxSum dc ty_args args'))
 
   | otherwise
-  = let args' = unariseArgs rho args
-     in return (StgConApp dc args' (map stgArgType args'))
+  , let args' = unariseArgs rho args
+  = return (StgConApp dc args' (map stgArgType args'))
 
 unariseExpr rho (StgOpApp op args ty)
   = return (StgOpApp op (unariseArgs rho args) ty)
@@ -438,7 +447,7 @@ unariseArg rho (StgVarArg x) = unariseId' rho x
 unariseArg _   arg           = [arg]
 
 unariseArgs :: UnariseEnv -> [StgArg] -> [StgArg]
-unariseArgs rho = concatMap (unariseArg rho)
+unariseArgs rho = filterOutVoidArgs . concatMap (unariseArg rho)
 
 unariseId :: UnariseEnv -> Id -> Maybe [StgArg]
 unariseId rho x = lookupVarEnv rho x
