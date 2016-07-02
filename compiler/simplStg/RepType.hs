@@ -3,6 +3,7 @@
 module RepType
   ( -- * Code generator views onto Types
     UnaryType, RepType(..), flattenRepType, repType,
+    isUnaryRep, isUnboxedTupleRep, isUnboxedSumRep,
 
     -- * Unboxed sum representation type
     UbxSumRepTy, ubxSumFieldTypes, layout, typeSlotTy, SlotTy,
@@ -43,6 +44,18 @@ instance Outputable RepType where
   ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
   ppr (UbxSumRep rep) = text "UbxSumRep" <+> ppr rep
   ppr (UnaryRep ty) = text "UnaryRep" <+> ppr ty
+
+isUnaryRep :: RepType -> Bool
+isUnaryRep (UnaryRep _) = True
+isUnaryRep _            = False
+
+isUnboxedTupleRep :: RepType -> Bool
+isUnboxedTupleRep (UbxTupleRep _) = True
+isUnboxedTupleRep _               = False
+
+isUnboxedSumRep :: RepType -> Bool
+isUnboxedSumRep (UbxSumRep _) = True
+isUnboxedSumRep _             = False
 
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (UbxTupleRep tys) = tys
