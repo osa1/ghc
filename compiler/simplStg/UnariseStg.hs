@@ -212,7 +212,6 @@ import TyCon (isVoidRep)
 import TysPrim (intPrimTyCon, intPrimTy)
 import TysWiredIn
 import UniqSupply
-import MkId (voidPrimId)
 import Util
 import VarEnv (VarEnv, extendVarEnv, lookupVarEnv, unitVarEnv)
 
@@ -241,9 +240,8 @@ extendRho rho x args
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
 unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
   where
-    -- See Note [Unarisation and nullary tuples]
     nullary_tup = dataConWorkId unboxedUnitDataCon
-    init_env = unitVarEnv nullary_tup [StgVarArg voidPrimId]
+    init_env = unitVarEnv nullary_tup []
 
 unariseBinding :: UnariseEnv -> StgBinding -> UniqSM StgBinding
 unariseBinding rho (StgNonRec x rhs)
