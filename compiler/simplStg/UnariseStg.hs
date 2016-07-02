@@ -297,7 +297,7 @@ unariseExpr rho (StgConApp dc args ty_args)
   = return (mkTuple args')
 
   | isUnboxedSumCon dc
-  , let args' =  unariseArgs rho args
+  , let args' = filterOutVoidArgs (unariseArgs rho args)
   = return (mkTuple (mkUbxSum dc ty_args args'))
 
   | otherwise
@@ -447,7 +447,7 @@ unariseArg rho (StgVarArg x) = unariseId' rho x
 unariseArg _   arg           = [arg]
 
 unariseArgs :: UnariseEnv -> [StgArg] -> [StgArg]
-unariseArgs rho = filterOutVoidArgs . concatMap (unariseArg rho)
+unariseArgs rho = concatMap (unariseArg rho)
 
 unariseId :: UnariseEnv -> Id -> Maybe [StgArg]
 unariseId rho x = lookupVarEnv rho x
