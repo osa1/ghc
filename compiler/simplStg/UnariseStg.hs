@@ -166,53 +166,21 @@ needs to map variables to literals too. Suppose we have this Core:
 
   ==> (CorePrep)
 
-  case (# x | #) of
-    y -> f y
+  case (# x | #) of y {
+    _ -> f y
+  }
 
   ==> (Unarise)
 
-  case (# 1#, x #) of
-    (# x1, x2 #) -> f x1 x2
+  case (# 1#, x #) of [x1, x2] {
+    _ -> f x1 x2
+  }
 
 To eliminate this case expression we need to map x1 to 1# in UnariseEnv:
 
   x1 :-> [1#], x2 :-> [x]
 
 so that `f x1 x2` becomes `f 1# x`.
-
-Note [Unarisation and nullary tuples]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The above scheme has a special cases for nullary unboxed tuples, x :: (# #)
-To see why, consider
-    f2 :: (# Int, Int #) -> Int
-    f1 :: (# Int #) -> Int
-    f0 :: (# #) -> Int
-
-When we "unarise" to eliminate unboxed tuples (this is done at the STG level),
-we'll transform to
-    f2 :: Int -> Int -> Int
-    f1 :: Int -> Int
-    f0 :: ??
-
-We do not want to give f0 zero arguments, otherwise a lambda will
-turn into a thunk! So we want to get
-    f0 :: Void# -> Int
-
-So here is what we do for nullary tuples
-
-  * Extend the UnariseEnv with   x :-> [voidPrimId]
-
-  * Replace bindings with a binding for void:Void#
-       \x. e  =>  \void. e
-    and similarly case alternatives
-
-  * If we find (# #) as an argument all by itself
-       f ...(# #)...
-    it looks like an Id, so we look up in UnariseEnv. We want to replace it
-    with voidPrimId, so the convenient thing is to initalise the UnariseEnv
-    with   (# #) :-> [voidPrimId]
-
-See also Note [Nullary unboxed tuple] in Type.hs.
 
 Note [Unarisation and arity]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -235,40 +203,41 @@ import DataCon
 import FastString (FastString, mkFastString)
 import Id
 import Literal (Literal (..))
-import MkId (voidPrimId)
 import MonadUtils (mapAccumLM)
 import Outputable
 import RepType
 import StgSyn
 import Type
-import TysPrim (intPrimTyCon, voidPrimTy, intPrimTy)
+import TysPrim (intPrimTyCon, intPrimTy)
 import TysWiredIn
 import UniqSupply
 import Util
-import VarEnv
+import VarEnv (VarEnv, extendVarEnv, emptyVarEnv, lookupVarEnv)
 
 import Data.Bifunctor (second)
 import Data.Maybe (fromMaybe, mapMaybe)
 import qualified Data.IntMap as IM
 
--- | A mapping from unboxed-tuple binders to the Ids they were expanded to.
+--------------------------------------------------------------------------------
+
+-- | A mapping from binders to the Ids they were expanded/renamed to.
 --
--- INVARIANT 1: Ids in the range only have "unary" types. (i.e. no unboxed
---              tuples or sums)
+-- INVARIANT: Ids in the range only have "unary" types. (i.e. no unboxed
+--            tuples or sums)
 --
--- INVARIANT 2: If x -> args, the args is never an empty list
---              See Note [Unarisation and nullary tuples]
---
--- See also Note [UnariseEnv can map to literals].
-type UnariseEnv = VarEnv [StgArg]  -- This list is always non-empty
-                                   -- See INVARIANT 1
+type UnariseEnv = VarEnv [StgArg]
+
+-- | Invariant checking version of `extendVarEnv`. See the UnariseEnv invariant
+-- above.
+extendRho :: UnariseEnv -> Id -> [StgArg] -> UnariseEnv
+extendRho rho x args
+  = ASSERT2 (all (isUnaryRep . repType . stgArgType) args, ppr (map (\a -> (a, stgArgType a)) args))
+    extendVarEnv rho x args
+
+--------------------------------------------------------------------------------
 
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
-unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
-  where
-     -- See Note [Unarisation and nullary tuples]
-     nullary_tup = dataConWorkId unboxedUnitDataCon
-     init_env = unitVarEnv nullary_tup [StgVarArg voidPrimId]
+unarise us binds = initUs_ us (mapM (unariseBinding emptyVarEnv) binds)
 
 unariseBinding :: UnariseEnv -> StgBinding -> UniqSM StgBinding
 unariseBinding rho (StgNonRec x rhs)
@@ -280,32 +249,22 @@ unariseRhs :: UnariseEnv -> StgRhs -> UniqSM StgRhs
 unariseRhs rho (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
   = do (rho', args') <- unariseIdBinders rho args
        expr' <- unariseExpr rho' expr
-       let fvs' = filterIdArgs (unariseIds rho fvs) -- TODO (osa): Not sure about this
-                  -- I think this makes sense. if a free variable became a
-                  -- literal then it's not a free variable anymore.
+       let fvs' = [ v | StgVarArg v <- unariseIds rho fvs ]
        return (StgRhsClosure ccs b_info fvs' update_flag args' expr' body_ty)
 
 unariseRhs rho (StgRhsCon ccs con args ty_args)
   = ASSERT (not (isUnboxedTupleCon con || isUnboxedSumCon con))
     return (StgRhsCon ccs con (unariseArgs rho args) ty_args)
 
-------------------------
+--------------------------------------------------------------------------------
+
 unariseExpr :: UnariseEnv -> StgExpr -> UniqSM StgExpr
 unariseExpr rho (StgApp f [])
-  = case unariseId rho f of
-      [StgVarArg v] -> return (StgApp v []) -- renaming
-      [StgLitArg l] -> return (StgLit l)    -- constant propagation. usually just for unboxed sum tags.
-      args          -> return (StgConApp (tupleDataCon Unboxed (length args)) args (map stgArgType args))
-                                            -- actual unarisation
+  | Just args <- unariseId rho f
+  = return (mkTuple args)
 
 unariseExpr rho (StgApp f args)
-  | [StgVarArg f'] <- unariseId rho f
-  = return (StgApp f' (unariseArgs rho args))
-
-unariseExpr rho expr@(StgApp f _)
-  = pprPanic "unariseExpr" (text "Tuple applied to arguments." $$
-                            text "expr:" <+> ppr expr $$
-                            text "unarised fun:" <+> ppr (unariseId rho f))
+  = return (StgApp f (unariseArgs rho args))
 
 unariseExpr _ (StgLit l)
   = return (StgLit l)
@@ -316,7 +275,7 @@ unariseExpr rho (StgConApp dc args ty_args)
      in return (mkTuple args')
 
   | isUnboxedSumCon dc
-  = let args' = unariseArgs rho (filter (not . isNullaryTupleArg) args)
+  = let args' = unariseArgs rho args
      in return (mkTuple (mkUbxSum dc ty_args args'))
 
   | otherwise
@@ -329,134 +288,9 @@ unariseExpr rho (StgOpApp op args ty)
 unariseExpr _ e@StgLam{}
   = pprPanic "unariseExpr: found lambda" (ppr e)
 
-unariseExpr rho expr@(StgCase e bndr alt_ty alts)
+unariseExpr rho (StgCase e bndr alt_ty alts)
   = do e' <- unariseExpr rho e
-       case (e', alts) of
-         {-
-         Scrutinee is an explicit unboxed tuple (i.e. tuple con app).
-
-           f (# 1, 2 #)
-
-           ==> (CorePrep)
-
-           case (# 1, 2 #) of x {
-             _ -> f x
-           }
-
-           ==> (unarise)
-
-           case (# 1, 2 #) of x {
-             (# x_1, x_2 #) -> f x_1 x_2
-           }
-
-         Instead, we want to generate `f 1 2`, without calling unarise on alts.
-         -}
-         (StgConApp _ args _, [(DEFAULT, [], rhs)])
-           | UbxTupAlt _ <- alt_ty
-           -> unariseExpr (extendVarEnv rho bndr args) rhs
-
-         {-
-         Same as above, except fields are bound in the original pattern.
-
-           showEither1 :: (# String | (# Int, Bool #) -> String
-           showEither1 x =
-             case x of
-               (# x1 | #) -> ...
-               (# | x2 #) ->
-                 case x2 of
-                   (# y1, y2 #) -> ...
-
-           ==> (unarise x)
-
-           showEither1 tag field1 field2 of =
-             case tag of
-               1# -> ...
-               2# -> case (# field1, field2 #) of
-                       (# y1, y2 #) -> ...
-
-         We want to rename y1 -> field1, y2 -> field2 and remove the case
-         expression in the RHS of 2#.
-         -}
-         (StgConApp _ args _, [(DataAlt _, arg_bndrs, rhs)])
-           | UbxTupAlt _ <- alt_ty
-           -> do let rho' = extendVarEnv (mapTupleIdBinders arg_bndrs args rho) bndr args
-                 unariseExpr rho' rhs
-
-         {-
-         Explicit unboxed sum. Case expression can be eliminated with a little
-         bit extra work. Example:
-
-           f (# False | #)
-
-           ==> (CorePrep)
-
-           case (# False | #) of x {
-             _ -> f x
-           }
-
-           ==> (unarise scrutinee)
-
-           case (# 1#, False #) of x {
-             _ -> f x
-           }
-
-         We want to directly generate `f 1# False`.
-         -}
-         (StgConApp _ args@(tag_arg : real_args) _, alts)
-           | UbxSumAlt _ <- alt_ty
-           -> do -- this won't be used but we need a scrutinee binder anyway
-                 tag_bndr <- mkId (mkFastString "tag") tagTy
-                 let rho' = extendVarEnv rho bndr args
-
-                     rubbishFail = pprPanic "unariseExpr"
-                                     (text "Found rubbish in tag position of an unboxed sum." $$
-                                      text "expr:" <+> ppr expr $$
-                                      text "unarised scrutinee:" <+> ppr e')
-
-                 alts' <- mapM (\alt -> unariseSumAlt rho' real_args alt) alts
-
-                 return $ case tag_arg of
-                   StgLitArg l ->
-                     -- See Note [Case of known con tag]
-                     selectLitAlt l alts'
-                   StgVarArg v ->
-                     StgCase (StgApp v []) tag_bndr tagAltTy (mkDefaultLitAlt alts')
-                   StgRubbishArg _ ->
-                     rubbishFail
-
-         {-
-         Unit tuples. No need for an extra case expression to bind
-         non-existent components. This is happening when we have something
-         like
-
-           packBool :: (# (# #) | (# #) #) -> GHC.Types.Bool
-           packBool =
-               \r [ds_syT] (-> GHC.Types.Bool)
-                   case ds_syT of bndr {
-                     (#_|#) _ [Occ=Dead] -> GHC.Types.True [];
-                     (#|_#) _ [Occ=Dead] -> GHC.Types.False [];
-                   };
-
-         Here unarising bndr gives us a unit tuple, and code for the general
-         case generates a redundant case expression to bind this tuple's only
-         field.
-         -}
-         _ | Just [ty] <- unariseIdType bndr
-           , UbxSumAlt _ <- alt_ty
-           -> do MASSERT (ty `eqType` tagTy)
-                 let bndr' = bndr `setIdType` tagTy
-                 let rho' = extendVarEnv rho bndr [StgVarArg bndr']
-                 alts' <- mapM (unariseSumAlt rho' []) alts
-                 return (StgCase e' bndr' tagAltTy (mkDefaultLitAlt alts'))
-
-         -- General case
-         _ -> do alts' <- unariseAlts rho alt_ty bndr alts
-                 let alt_ty'
-                       | UbxSumAlt sum_rep <- alt_ty
-                       = translateSumAlt sum_rep
-                       | otherwise
-                       = alt_ty
-                 return (StgCase e' bndr alt_ty' alts')
+       unariseCase rho e' bndr alt_ty alts
 
 unariseExpr rho (StgLet bind e)
   = StgLet <$> unariseBinding rho bind <*> unariseExpr rho e
@@ -467,7 +301,68 @@ unariseExpr rho (StgLetNoEscape bind e)
 unariseExpr rho (StgTick tick e)
   = StgTick tick <$> unariseExpr rho e
 
-------------------------
+--------------------------------------------------------------------------------
+
+unariseCase
+  :: UnariseEnv
+  -> StgExpr -- scrutinee, already unarised
+  -> Id -> AltType -> [StgAlt] -> UniqSM StgExpr
+
+{-
+unariseCase _ scrt _ _ alts
+  | pprTrace "unariseCase" (ppr scrt $$ ppr alts) False
+  = undefined
+-}
+
+unariseCase rho (StgConApp con args _) bndr _ [(DEFAULT, [], rhs)]
+  | isUnboxedTupleCon con -- works for both sums and products!
+  = unariseExpr (extendRho rho bndr args) rhs
+
+unariseCase rho (StgConApp con args _) bndr alt_ty [(DataAlt _, bndrs, rhs)]
+  = do -- This can only happen as a result of some unarisation, otherwise
+       -- simplifier would eliminate this case
+       MASSERT (isUnboxedTupleCon con) -- again works for both sums and products
+       let rho'
+             | UbxSumAlt _ <- alt_ty
+             = mapSumIdBinders (head bndrs) -- sum patterns have one binder only
+                               args rho
+             | otherwise
+             = mapTupleIdBinders bndrs args rho
+
+       unariseExpr (extendRho rho' bndr args) rhs
+
+unariseCase rho scrt@(StgConApp _ args@(tag_arg : real_args) _) bndr (UbxSumAlt _) alts
+  = do -- this won't be used but we need a scrutinee binder anyway
+       tag_bndr <- mkId (mkFastString "tag") tagTy
+       let rho' = extendRho rho bndr args
+
+           rubbishFail = pprPanic "unariseExpr"
+                           (text "Found rubbish in tag position of an unboxed sum." $$
+                            text "expr:" <+> ppr tag_arg $$
+                            text "unarised scrutinee:" <+> ppr scrt)
+
+       alts' <- mapM (\alt -> unariseSumAlt rho' real_args alt) alts
+
+       return $ case tag_arg of
+         StgLitArg l ->
+           -- See Note [Case of known con tag]
+           selectLitAlt l alts'
+         StgVarArg v ->
+           StgCase (StgApp v []) tag_bndr tagAltTy (mkDefaultLitAlt alts')
+         StgRubbishArg _ ->
+           rubbishFail
+
+unariseCase rho scrt bndr alt_ty alts
+  = do alts' <- unariseAlts rho alt_ty bndr alts
+       let alt_ty'
+             | UbxSumAlt sum_rep <- alt_ty
+             = translateSumAlt sum_rep
+             | otherwise
+             = alt_ty
+       return (StgCase scrt bndr alt_ty' alts')
+
+--------------------------------------------------------------------------------
+
 unariseAlts :: UnariseEnv -> AltType -> Id -> [StgAlt] -> UniqSM [StgAlt]
 unariseAlts rho (UbxTupAlt n) bndr [(DEFAULT, [], e)]
   = do (rho', ys) <- unariseIdBinder rho bndr
@@ -476,7 +371,7 @@ unariseAlts rho (UbxTupAlt n) bndr [(DEFAULT, [], e)]
 
 unariseAlts rho (UbxTupAlt n) bndr [(DataAlt _, ys, e)]
   = do (rho', ys') <- unariseIdBinders rho ys
-       let rho'' = extendVarEnv rho' bndr (map StgVarArg ys')
+       let rho'' = extendRho rho' bndr (map StgVarArg ys')
        e' <- unariseExpr rho'' e
        return [(DataAlt (tupleDataCon Unboxed n), ys', e')]
 
@@ -502,8 +397,15 @@ unariseAlts rho (UbxSumAlt _) bndr alts
 unariseAlts rho _ _ alts
   = mapM (\alt -> unariseAlt rho alt) alts
 
-------------------------
--- | Make alternatives that match on the tag of a sum.
+unariseAlt :: UnariseEnv -> StgAlt -> UniqSM StgAlt
+unariseAlt rho (con, xs, e)
+  = do (rho', xs') <- unariseIdBinders rho xs
+       (con, xs',) <$> unariseExpr rho' e
+
+--------------------------------------------------------------------------------
+
+-- | Make alternatives that match on the tag of a sum
+-- (i.e. generate LitAlts for the tag)
 unariseSumAlt :: UnariseEnv
               -> [StgArg] -- ^ sum components _excluding_ the tag bit.
               -> StgAlt   -- ^ original alternative with sum LHS
@@ -522,28 +424,23 @@ unariseSumAlt _ _ alt@(DataAlt _, _bs, _) -- bs needs to be a singleton
 unariseSumAlt _ scrt alt
   = pprPanic "unariseSumAlt" (ppr scrt $$ ppr alt)
 
---------------------------
-unariseAlt :: UnariseEnv -> StgAlt -> UniqSM StgAlt
-unariseAlt rho (con, xs, e)
-  = do (rho', xs') <- unariseIdBinders rho xs
-       (con, xs',) <$> unariseExpr rho' e
+--------------------------------------------------------------------------------
 
-------------------------
 unariseArg :: UnariseEnv -> StgArg -> [StgArg]
-unariseArg rho (StgVarArg x) = unariseId rho x
+unariseArg rho (StgVarArg x) = unariseId' rho x
 unariseArg _   arg           = [arg]
 
 unariseArgs :: UnariseEnv -> [StgArg] -> [StgArg]
 unariseArgs rho = concatMap (unariseArg rho)
 
-filterIdArgs :: [StgArg] -> [Id]
-filterIdArgs args = [ var | StgVarArg var <- args ]
+unariseId :: UnariseEnv -> Id -> Maybe [StgArg]
+unariseId rho x = lookupVarEnv rho x
 
-unariseId :: UnariseEnv -> Id -> [StgArg]
-unariseId rho x = fromMaybe [StgVarArg x] (lookupVarEnv rho x)
+unariseId' :: UnariseEnv -> Id -> [StgArg]
+unariseId' rho x = fromMaybe [StgVarArg x] (unariseId rho x)
 
 unariseIds :: UnariseEnv -> [Id] -> [StgArg]
-unariseIds rho = concatMap (unariseId rho)
+unariseIds rho = concatMap (unariseId' rho)
 
 -- | A version of `unariseIdBinder` for a list of Ids. Mappings from original
 -- Ids to unarised Ids will be accumulated in the rho.
@@ -566,33 +463,24 @@ unariseIdBinders rho xs = second concat <$> mapAccumLM unariseIdBinder rho xs
 -- Does not update rho and returns the original Id when the it doesn't need
 -- unarisation.
 unariseIdBinder :: UnariseEnv -> Id -> UniqSM (UnariseEnv, [Id])
-unariseIdBinder rho x =
-  case unariseIdType x of
-    Nothing
-      -> return (rho, [x])
-    Just [ty]
-      | ty `eqType` voidPrimTy
-      -> return (extendVarEnv rho x [StgVarArg voidPrimId], [voidPrimId])
-    Just tys
-      -> do ys <- mkIds (mkFastString "us") tys
-            return (extendVarEnv rho x (map StgVarArg ys), ys)
+unariseIdBinder rho x
+  | Just tys <- unariseIdType x
+  = do xs <- mkIds (mkFastString "us") tys
+       return (extendRho rho x (map StgVarArg xs), xs)
+  | otherwise
+  = return (rho, [x])
 
--- | If Id needs unarisation, return list of types of its fields.
 unariseIdType :: Id -> Maybe [Type]
 unariseIdType x =
   case repType (idType x) of
-    UnaryRep _ -> Nothing
-
-    UbxTupleRep tys
-      | null tys  -> Just [voidPrimTy]
-      | otherwise -> Just tys
-
+    UnaryRep _       -> Nothing
+    UbxTupleRep tys  -> Just tys
     UbxSumRep sumRep -> Just (ubxSumFieldTypes sumRep)
 
 unariseIdType' :: Id -> [Type]
 unariseIdType' x = fromMaybe [idType x] (unariseIdType x)
 
-mapTupleIdBinders   -- See Note [mapTupleIdBinders]
+mapTupleIdBinders
     :: [Id]         -- Un-processed binders of a tuple alternative
     -> [StgArg]     -- Arguments that form the tuple (after unarisation)
     -> UnariseEnv
@@ -607,9 +495,9 @@ mapTupleIdBinders ids args rho0
       map_ids _   _  [] = pprPanic "mapTupleIdBinders" (ppr ids $$ ppr args)
       map_ids rho ((x, x_arity) : xs) args =
         let (x_args, args') = splitAt x_arity args
-         in map_ids (extendVarEnv rho x x_args) xs args'
+         in map_ids (extendRho rho x x_args) xs args'
     in
-      ASSERT (sum (map snd id_arities) == length args)
+      ASSERT2 (sum (map snd id_arities) == length args, ppr id_arities $$ ppr args)
       map_ids rho0 id_arities args
 
 mapSumIdBinders
@@ -619,7 +507,6 @@ mapSumIdBinders
   -> UnariseEnv
   -> UnariseEnv
 mapSumIdBinders id sum_args rho
-  -- TODO: Handle the case where Id is void
   = let
       arg_slots = mapMaybe typeSlotTy (concatMap (flattenRepType . repType . stgArgType) sum_args)
       id_slots  = mapMaybe typeSlotTy (unariseIdType' id)
@@ -665,7 +552,7 @@ mkId = mkSysLocalOrCoVarM
 --------------------------------------------------------------------------------
 
 mkTuple :: [StgArg] -> StgExpr
-mkTuple args = StgConApp (tupleDataCon Unboxed (length args)) args (map stgArgType args)
+mkTuple args  = StgConApp (tupleDataCon Unboxed (length args)) args (map stgArgType args)
 
 tagAltTy :: AltType
 tagAltTy = PrimAlt intPrimTyCon
@@ -678,10 +565,6 @@ mkDefaultLitAlt [] = pprPanic "elimUbxSumExpr.mkDefaultAlt" (text "Empty alts")
 mkDefaultLitAlt alts@((DEFAULT, _, _) : _) = alts
 mkDefaultLitAlt ((LitAlt{}, [], rhs) : alts) = (DEFAULT, [], rhs) : alts
 mkDefaultLitAlt alts = pprPanic "mkDefaultLitAlt" (text "Not a lit alt:" <+> ppr alts)
-
-isNullaryTupleArg :: StgArg -> Bool
-isNullaryTupleArg (StgVarArg v) = v == dataConWorkId unboxedUnitDataCon
-isNullaryTupleArg _             = False
 
 selectLitAlt :: Literal -> [StgAlt] -> StgExpr
 selectLitAlt l []
