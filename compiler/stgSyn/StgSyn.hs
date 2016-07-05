@@ -60,9 +60,9 @@ import Platform
 import PprCore     ( {- instances -} )
 import PrimOp      ( PrimOp, PrimCall )
 import RepType     ( UbxSumRepTy )
-import TyCon       ( PrimRep(..) )
-import TyCon       ( TyCon )
-import Type        ( Type, typePrimRep )
+import TyCon       ( PrimRep(..), TyCon )
+import Type        ( Type )
+import RepType     ( typePrimRep )
 import UniqFM
 import UniqSet
 import Unique      ( Unique )

@@ -97,7 +97,7 @@ module Type (
         funTyCon,
 
         -- ** Predicates on types
-        isTyVarTy, isFunTy, isDictTy, isPredTy, isVoidTy, isCoercionTy,
+        isTyVarTy, isFunTy, isDictTy, isPredTy, isCoercionTy,
         isCoercionTy_maybe, isCoercionType, isForAllTy,
         isPiTy,
 
@@ -144,9 +144,6 @@ module Type (
         coreView, coreViewOneStarKind,
 
         tyConsOfType,
-
-        -- * Type representation for the code generator
-        typePrimRep, typeRepArity, tyConPrimRep,
 
         -- * Main type substitution data types
         TvSubstEnv,     -- Representation widely visible
@@ -221,7 +218,6 @@ import CoAxiom
 import {-# SOURCE #-} Coercion
 
 -- others
-import BasicTypes       ( Arity, RepArity )
 import Util
 import Outputable
 import FastString

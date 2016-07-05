@@ -40,6 +40,7 @@ import Id
 import PrimOp
 import TyCon
 import Type
+import RepType          ( isVoidTy )
 import CostCentre       ( CostCentreStack, currentCCS )
 import Maybes
 import Util

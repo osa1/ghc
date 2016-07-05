@@ -33,7 +33,6 @@ import HscTypes
 import CostCentre
 import Id
 import IdInfo
-import Type
 import RepType
 import DataCon
 import Name

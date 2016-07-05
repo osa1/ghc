@@ -76,7 +76,7 @@ import Unique
 import UniqSupply
 import FastString
 import Outputable
-import Type (typePrimRep)
+import RepType (typePrimRep)
 
 import Control.Monad
 import Data.List

@@ -208,7 +208,6 @@ import Outputable
 import RepType
 import StgSyn
 import Type
-import TyCon (isVoidRep)
 import TysPrim (intPrimTyCon, intPrimTy)
 import TysWiredIn
 import UniqSupply
@@ -223,7 +222,7 @@ import qualified Data.IntMap as IM
 
 -- | A mapping from binders to the Ids they were expanded/renamed to.
 --
---    x |-> [a,b,c] in rho
+--    x :-> [a,b,c] in rho
 -- means
 --    x is represented by the multi-value a,b,c
 --
@@ -240,6 +239,10 @@ extendRho rho x args
     extendVarEnv rho x args
 
 --------------------------------------------------------------------------------
+
+type OutStgExpr = StgExpr
+type InId       = Id
+type InStgAlt   = StgAlt
 
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
 unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
@@ -308,8 +311,8 @@ unariseExpr rho (StgConApp dc args ty_args)
   = return (mkTuple args')
 
   | isUnboxedSumCon dc
-  , let args' = ASSERT( isSingleton args ) unariseArgs rho args
-  = return (mkTuple (mkUbxSum dc ty_args args'))
+  , let args1 = ASSERT (isSingleton args) unariseArgs rho args
+  = return (mkTuple (mkUbxSum dc ty_args args1))
 
   | otherwise
   , let args' = unariseArgs rho args
@@ -439,9 +442,6 @@ unariseSumAlt rho args (DataAlt sumCon, bs, e)
        e' <- unariseExpr rho' e
        return ( LitAlt (MachInt (fromIntegral (dataConTag sumCon))), [], e' )
 
-unariseSumAlt _ _ alt@(DataAlt _, _bs, _) -- bs needs to be a singleton
-  = pprPanic "uanriseSumAlt" (text "Weird sum alt:" <+> ppr alt)
-
 unariseSumAlt _ scrt alt
   = pprPanic "unariseSumAlt" (ppr scrt $$ ppr alt)
 
@@ -535,7 +535,7 @@ mapSumIdBinders [id] sum_args rho
     in
       extendVarEnv rho id [ sum_args !! i | i <- layout' ]
 mapSumIdBinders ids sum_args rho
-  = pprPanic "mapIdSumBinders" (ppr ids)
+  = pprPanic "mapIdSumBinders" (ppr ids $$ ppr sum_args)
 
 -- | Build a unboxed sum term from arguments of an alternative.
 mkUbxSum

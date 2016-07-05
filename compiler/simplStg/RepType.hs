@@ -5,6 +5,12 @@ module RepType
     UnaryType, RepType(..), flattenRepType, repType,
     isUnaryRep, isUnboxedTupleRep, isUnboxedSumRep,
 
+    -- * Predicates on types
+    isVoidTy, typePrimRep,
+
+    -- * Type representation for the code generator
+    typeRepArity, tyConPrimRep,
+
     -- * Unboxed sum representation type
     UbxSumRepTy, ubxSumFieldTypes, layout, typeSlotTy, SlotTy,
     mkUbxSumRepTy, ubxSumSlots, slotTyToType, flattenSumRep
@@ -12,12 +18,15 @@ module RepType
 
 #include "HsVersions.h"
 
+import BasicTypes (Arity, RepArity)
 import Outputable
+import PrelNames
 import TyCon
 import TyCoRep
 import Type
 import TysPrim
 import TysWiredIn
+import Unique (hasKey)
 import Util
 
 import Data.List (foldl', sort)

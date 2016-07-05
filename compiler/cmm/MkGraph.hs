@@ -29,7 +29,7 @@ import CmmSwitch (SwitchTargets)
 import CmmUtils (cmmArgType)
 import Id (idCafInfo, idName)
 import TyCon (isGcPtrRep)
-import Type (typePrimRep)
+import RepType (typePrimRep)
 
 import Compiler.Hoopl hiding (Unique, (<*>), mkFirst, mkMiddle, mkLast, mkLabel, mkBranch, Shape(..))
 import DynFlags
