@@ -785,7 +785,10 @@ mk_tuple Unboxed arity = (tycon, tuple_con)
     -- Kind:  forall (k1:RuntimeRep) (k2:RuntimeRep). TYPE k2 -> TYPE k2 -> #
     tc_binders = mkTemplateTyConBinders (nOfThem arity runtimeRepTy)
                                         (\ks -> map tYPE ks)
-    tc_res_kind = unboxedTupleKind
+
+    tc_res_kind | arity == 0 = tYPE voidRepDataConTy  -- Nullary unboxed tuple
+                | otherwise  = unboxedTupleKind
+
     tc_arity    = arity * 2
     flavour     = UnboxedAlgTyCon
 

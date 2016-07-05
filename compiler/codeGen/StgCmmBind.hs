@@ -211,10 +211,10 @@ cgRhs id (StgRhsCon cc con args _)
     buildDynCon id True cc con args
 
 {- See Note [GC recovery] in compiler/codeGen/StgCmmClosure.hs -}
-cgRhs name (StgRhsClosure cc bi fvs upd_flag args body _)
+cgRhs id (StgRhsClosure cc bi fvs upd_flag args body _)
   = ASSERT2( idRepArity id == length args, ppr id )
     do dflags <- getDynFlags
-       mkRhsClosure dflags name cc bi (nonVoidIds fvs) upd_flag args body
+       mkRhsClosure dflags id cc bi (nonVoidIds fvs) upd_flag args body
 
 ------------------------------------------------------------------------
 --              Non-constructor right hand sides

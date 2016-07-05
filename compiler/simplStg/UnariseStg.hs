@@ -182,7 +182,7 @@ import TysPrim (intPrimTyCon, intPrimTy)
 import TysWiredIn
 import UniqSupply
 import Util
-import VarEnv (VarEnv, extendVarEnv, lookupVarEnv, unitVarEnv)
+import VarEnv
 
 import Data.Bifunctor (second)
 import Data.Maybe (fromMaybe, mapMaybe)
@@ -217,9 +217,10 @@ type InStgAlt   = StgAlt
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
 unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
   where
+    init_env = emptyVarEnv
     -- See Note [Unarisation and nullary tuples]
-    nullary_tup = dataConWorkId unboxedUnitDataCon
-    init_env = unitVarEnv nullary_tup [StgVarArg voidPrimId]
+--    nullary_tup = dataConWorkId unboxedUnitDataCon
+--    init_env = unitVarEnv nullary_tup []
 
 unariseBinding :: UnariseEnv -> StgBinding -> UniqSM StgBinding
 unariseBinding rho (StgNonRec x rhs)
@@ -281,7 +282,7 @@ unariseExpr rho (StgConApp dc args ty_args)
   = return (mkTuple args')
 
   | isUnboxedSumCon dc
-  , let args1 = ASSERT (isSingleton args) (filterOutVoidArgs (unariseArgs rho args))
+  , let args1 = ASSERT (isSingleton args) (unariseArgs rho args)
   = return (mkTuple (mkUbxSum dc ty_args args1))
 
   | otherwise
@@ -500,8 +501,8 @@ mapSumIdBinders
 
 mapSumIdBinders [id] sum_args rho
   = let
-      arg_slots = mapMaybe typeSlotTy (concatMap (flattenRepType . repType . stgArgType) sum_args)
-      id_slots  = mapMaybe typeSlotTy (unariseIdType' id)
+      arg_slots = map typeSlotTy (concatMap (flattenRepType . repType . stgArgType) sum_args)
+      id_slots  = map typeSlotTy (unariseIdType' id)
       layout'   = layout arg_slots id_slots
     in
       extendVarEnv rho id [ sum_args !! i | i <- layout' ]
@@ -520,7 +521,7 @@ mkUbxSum dc ty_args stg_args
       sum_rep = mkUbxSumRepTy ty_args
       tag = dataConTag dc
 
-      layout'  = layout (tail (ubxSumSlots sum_rep)) (mapMaybe (typeSlotTy . stgArgType) stg_args)
+      layout'  = layout (tail (ubxSumSlots sum_rep)) (map (typeSlotTy . stgArgType) stg_args)
       tag_arg  = StgLitArg (MachInt (fromIntegral tag))
       arg_idxs = IM.fromList (zipEqual "mkUbxSum" layout' stg_args)
 
@@ -549,8 +550,8 @@ mkId = mkSysLocalOrCoVarM
 isMultiValBndr :: Id -> Bool
 isMultiValBndr x = isUnboxedTupleType (idType x) || isUnboxedSumType (idType x)
 
-filterOutVoidArgs :: [StgArg] -> [StgArg]
-filterOutVoidArgs = filter (not . isVoidRep . typePrimRep . stgArgType)
+--filterOutVoidArgs :: [StgArg] -> [StgArg]
+--filterOutVoidArgs = filter (not . isVoidRep . typePrimRep . stgArgType)
 
 mkTuple :: [StgArg] -> StgExpr
 mkTuple args  = StgConApp (tupleDataCon Unboxed (length args)) args (map stgArgType args)

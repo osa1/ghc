@@ -26,11 +26,11 @@ import TyCoRep
 import Type
 import TysPrim
 import TysWiredIn
-import Unique (hasKey)
+-- import Unique (hasKey)
 import Util
 
 import Data.List (foldl', sort)
-import Data.Maybe (mapMaybe, maybeToList)
+-- import Data.Maybe (mapMaybe, maybeToList)
 import qualified Data.IntSet as IS
 
 {- **********************************************************************
@@ -39,20 +39,21 @@ import qualified Data.IntSet as IS
 *                                                                       *
 ********************************************************************** -}
 
-type UnaryType = Type
+type UnaryType = Type  -- Never an unboxed tuple, sum, or void type
 
 data RepType
   = UbxTupleRep [UnaryType] -- Represented by multiple values
                             -- Can be zero, one, or more
-                            -- INVARIANT: never an empty list
                             -- (see Note [Nullary unboxed tuple])
+
   | UbxSumRep UbxSumRepTy
+
   | UnaryRep UnaryType      -- Represented by a single value
 
 instance Outputable RepType where
   ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
-  ppr (UbxSumRep rep) = text "UbxSumRep" <+> ppr rep
-  ppr (UnaryRep ty) = text "UnaryRep" <+> ppr ty
+  ppr (UbxSumRep rep)   = text "UbxSumRep" <+> ppr rep
+  ppr (UnaryRep ty)     = text "UnaryRep" <+> ppr ty
 
 isUnaryRep :: RepType -> Bool
 isUnaryRep (UnaryRep _) = True
@@ -97,6 +98,10 @@ repType ty
       , tys `lengthAtLeast` tyConArity tc
       , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
       = go rec_nts' (newTyConInstRhs tc tys)
+
+      | isVoidRep (tyConPrimRep tc)
+      = UbxTupleRep []   -- Represent /all/ void types by nothing at all
+                         -- including Void#, State# a, etc
 
       | isUnboxedTupleTyCon tc
       = UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
@@ -175,9 +180,9 @@ mkUbxSumRepTy constrs0 =
     -- Nesting unboxed tuples and sums is OK, so we need to flatten first.
     rep :: Type -> [SlotTy]
     rep ty = case repType ty of
-               UbxTupleRep tys   -> sort (mapMaybe typeSlotTy tys)
-               UbxSumRep sum_rep -> mapMaybe typeSlotTy (flattenSumRep sum_rep)
-               UnaryRep ty'      -> maybeToList (typeSlotTy ty')
+               UbxTupleRep tys   -> sort (map typeSlotTy tys)
+               UbxSumRep sum_rep -> map typeSlotTy (flattenSumRep sum_rep)
+               UnaryRep ty'      -> [typeSlotTy ty']
 
     sumRep = UbxSumRepTy (WordSlot : combine_alts (map rep constrs0))
   in
@@ -229,12 +234,8 @@ instance Outputable SlotTy where
   ppr DoubleSlot = text "DoubleSlot"
   ppr FloatSlot  = text "FloatSlot"
 
--- Some types don't have any slots, e.g. the ones with VoidRep.
-typeSlotTy :: UnaryType -> Maybe SlotTy
-typeSlotTy ty =
-    if isVoidRep primRep then Nothing else Just (primRepSlot primRep)
-  where
-    primRep = typePrimRep ty
+typeSlotTy :: UnaryType -> SlotTy
+typeSlotTy ty = primRepSlot (typePrimRep ty)
 
 primRepSlot :: PrimRep -> SlotTy
 primRepSlot VoidRep     = pprPanic "primRepSlot" (text "No slot for VoidRep")
