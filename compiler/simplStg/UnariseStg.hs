@@ -203,15 +203,16 @@ import DataCon
 import FastString (FastString, mkFastString)
 import Id
 import Literal (Literal (..))
+import MkId (voidPrimId)
 import MonadUtils (mapAccumLM)
 import Outputable
 import RepType
 import StgSyn
+import TyCon (isVoidRep)
 import Type
 import TysPrim (intPrimTyCon, intPrimTy)
 import TysWiredIn
 import UniqSupply
-import MkId (voidPrimId)
 import Util
 import VarEnv (VarEnv, extendVarEnv, lookupVarEnv, unitVarEnv)
 
@@ -312,7 +313,7 @@ unariseExpr rho (StgConApp dc args ty_args)
   = return (mkTuple args')
 
   | isUnboxedSumCon dc
-  , let args1 = ASSERT (isSingleton args) unariseArgs rho args
+  , let args1 = ASSERT (isSingleton args) (filterOutVoidArgs (unariseArgs rho args))
   = return (mkTuple (mkUbxSum dc ty_args args1))
 
   | otherwise
@@ -528,6 +529,7 @@ mapSumIdBinders
   -> [StgArg]    -- Arguments that form the sum (NOT including the tag)
   -> UnariseEnv
   -> UnariseEnv
+
 mapSumIdBinders [id] sum_args rho
   = let
       arg_slots = mapMaybe typeSlotTy (concatMap (flattenRepType . repType . stgArgType) sum_args)
@@ -535,6 +537,7 @@ mapSumIdBinders [id] sum_args rho
       layout'   = layout arg_slots id_slots
     in
       extendVarEnv rho id [ sum_args !! i | i <- layout' ]
+
 mapSumIdBinders ids sum_args _
   = pprPanic "mapIdSumBinders" (ppr ids $$ ppr sum_args)
 
@@ -577,6 +580,9 @@ mkId = mkSysLocalOrCoVarM
 
 isMultiValBndr :: Id -> Bool
 isMultiValBndr x = isUnboxedTupleType (idType x) || isUnboxedSumType (idType x)
+
+filterOutVoidArgs :: [StgArg] -> [StgArg]
+filterOutVoidArgs = filter (not . isVoidRep . typePrimRep . stgArgType)
 
 mkTuple :: [StgArg] -> StgExpr
 mkTuple args  = StgConApp (tupleDataCon Unboxed (length args)) args (map stgArgType args)
