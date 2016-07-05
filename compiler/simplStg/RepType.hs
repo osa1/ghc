@@ -129,10 +129,11 @@ typeRepArity n ty = case repType ty of
 
 isVoidTy :: Type -> Bool
 -- True if the type has zero width
-isVoidTy ty = case repType ty of
-                UnaryRep (TyConApp tc _) -> isUnliftedTyCon tc &&
-                                            isVoidRep (tyConPrimRep tc)
-                _                        -> False
+isVoidTy ty
+  | UbxTupleRep [] <- repType ty
+  = True
+  | otherwise
+  = False
 
 
 {- **********************************************************************
