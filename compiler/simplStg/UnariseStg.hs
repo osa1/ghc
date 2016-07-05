@@ -125,38 +125,6 @@ Another example using the same type: (# | (# 2#, 3# #) | #). 2# fits in Word#,
 
   (# 2#, rubbish, 2#, 3# #).
 
-Note [Case of known con tag]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-We need to be careful with literal substitutions. Suppose we have:
-
-  Main.main6 :: GHC.Base.String
-  [GblId] =
-      \u [] (-> GHC.Base.String)
-          case (#|_#) [8.1#] of sat_s75B {
-            __DEFAULT -> Main.showAlt1 sat_s75B;
-          };
-
-After unarising scrutinee, this becomes:
-
-  Main.main6 :: GHC.Base.String
-  [GblId] =
-      \u [] (-> GHC.Base.String)
-          case (#,#) [2#, 8.1#] of sat_s75B {
-            __DEFAULT -> Main.showAlt1 sat_s75B;
-          };
-
-Then we expand and rename the binder, and replace case expression with another
-case, but one that has the tag as scrutinee:
-
-  Main.main6 :: GHC.Base.String
-  [GblId] =
-      \u [] (-> GHC.Base.String)
-          case 2# of {
-            __DEFAULT -> Main.showAlt1 2# 8.1#;
-          };
-
-This case expression is now redundant.
-
 Note [UnariseEnv can map to literals]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 To avoid redundant case expressions when unarising unboxed sums, UnariseEnv
