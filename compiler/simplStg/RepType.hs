@@ -107,6 +107,20 @@ repType ty
     go _ ty = UnaryRep ty
 
 
+typeRepArity :: Arity -> Type -> RepArity
+typeRepArity 0 _ = 0
+typeRepArity n ty = case repType ty of
+  UnaryRep (FunTy arg res) -> length (flattenRepType (repType arg)) + typeRepArity (n - 1) res
+  _ -> pprPanic "typeRepArity: arity greater than type can handle" (ppr (n, ty, repType ty))
+
+isVoidTy :: Type -> Bool
+-- True if the type has zero width
+isVoidTy ty = case repType ty of
+                UnaryRep (TyConApp tc _) -> isUnliftedTyCon tc &&
+                                            isVoidRep (tyConPrimRep tc)
+                _                        -> False
+
+
 {- **********************************************************************
 *                                                                       *
                 Unboxed sums
@@ -263,3 +277,44 @@ ubxSumRepType = UbxSumRep . mkUbxSumRepTy
 
 flattenSumRep :: UbxSumRepTy -> [UnaryType]
 flattenSumRep = map slotTyToType . ubxSumSlots
+
+{-
+%************************************************************************
+%*                                                                      *
+                   PrimRep
+*                                                                      *
+************************************************************************
+-}
+
+-- ToDo: this could be moved to the code generator, using splitTyConApp instead
+-- of inspecting the type directly.
+
+-- | Discovers the primitive representation of a more abstract 'UnaryType'
+typePrimRep :: Type -> PrimRep
+typePrimRep ty = kindPrimRep (typeKind ty)
+
+-- | Find the primitive representation of a 'TyCon'. Defined here to
+-- avoid module loops. Call this only on unlifted tycons.
+tyConPrimRep :: TyCon -> PrimRep
+tyConPrimRep tc = kindPrimRep res_kind
+  where
+    res_kind = tyConResKind tc
+
+-- | Take a kind (of shape @TYPE rr@) and produce the 'PrimRep' of values
+-- of types of this kind.
+kindPrimRep :: Kind -> PrimRep
+kindPrimRep ki | Just ki' <- coreViewOneStarKind ki = kindPrimRep ki'
+kindPrimRep (TyConApp typ [runtime_rep])
+  = ASSERT( typ `hasKey` tYPETyConKey )
+    go runtime_rep
+  where
+    go rr | Just rr' <- coreView rr = go rr'
+    go (TyConApp rr_dc args)
+      | RuntimeRep fun <- tyConRuntimeRepInfo rr_dc
+      = fun args
+    go rr = pprPanic "kindPrimRep.go" (ppr rr)
+kindPrimRep ki = WARN( True
+                     , text "kindPrimRep defaulting to PtrRep on" <+> ppr ki )
+                 PtrRep  -- this can happen legitimately for, e.g., Any
+
+
