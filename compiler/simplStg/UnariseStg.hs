@@ -535,7 +535,7 @@ mapSumIdBinders [id] sum_args rho
       layout'   = layout arg_slots id_slots
     in
       extendVarEnv rho id [ sum_args !! i | i <- layout' ]
-mapSumIdBinders ids sum_args rho
+mapSumIdBinders ids sum_args _
   = pprPanic "mapIdSumBinders" (ppr ids $$ ppr sum_args)
 
 -- | Build a unboxed sum term from arguments of an alternative.
