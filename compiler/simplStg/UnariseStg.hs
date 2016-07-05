@@ -429,7 +429,14 @@ unariseId :: UnariseEnv -> Id -> Maybe [StgArg]
 unariseId rho x = lookupVarEnv rho x
 
 unariseId' :: UnariseEnv -> Id -> [StgArg]
-unariseId' rho x = fromMaybe [StgVarArg x] (unariseId rho x)
+unariseId' rho x
+  | Just args <- unariseId rho x
+  = args
+  | isVoidTy (idType id)
+  = []  -- We have some global constants that have void
+        -- types, including (# #), coercionToken#
+  | otherwise
+  = [arg]
 
 unariseIds :: UnariseEnv -> [Id] -> [StgArg]
 unariseIds rho = concatMap (unariseId' rho)
