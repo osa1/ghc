@@ -432,11 +432,11 @@ unariseId' :: UnariseEnv -> Id -> [StgArg]
 unariseId' rho x
   | Just args <- unariseId rho x
   = args
-  | isVoidTy (idType id)
+  | isVoidTy (idType x)
   = []  -- We have some global constants that have void
         -- types, including (# #), coercionToken#
   | otherwise
-  = [arg]
+  = [StgVarArg x]
 
 unariseIds :: UnariseEnv -> [Id] -> [StgArg]
 unariseIds rho = concatMap (unariseId' rho)
