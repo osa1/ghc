@@ -263,7 +263,8 @@ We decide by looking at x's type here.
 unariseExpr rho e@(StgApp f args)
   | null args
   , Just rep_args <- unarised_fun
-  , isMultiValBndr f  -- See Note [Tricky case for singeton tuples]
+  , isMultiValBndr f || isVoidTy (idType f)  -- See Note [Tricky case for singeton tuples]
+                         -- TODO (osa): not sure about isVoidTy part
   = return (mkTuple rep_args)
   | otherwise
   = case unarised_fun of
