@@ -61,7 +61,7 @@ cgExpr  :: StgExpr -> FCode ReturnKind
 cgExpr (StgApp fun args)     = cgIdApp fun args
 
 {- seq# a s ==> a -}
-cgExpr (StgOpApp (StgPrimOp SeqOp) [StgVarArg a, _] _res_ty) =
+cgExpr (StgOpApp (StgPrimOp SeqOp) [StgVarArg a] _res_ty) =
   cgIdApp a []
 
 cgExpr (StgOpApp op args ty) = cgOpApp op args ty
