@@ -99,15 +99,15 @@ repType ty
       , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
       = go rec_nts' (newTyConInstRhs tc tys)
 
-      | isVoidRep (tyConPrimRep tc)
-      = UbxTupleRep []   -- Represent /all/ void types by nothing at all
-                         -- including Void#, State# a, etc
-
       | isUnboxedTupleTyCon tc
       = UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
 
       | isUnboxedSumTyCon tc
       = ubxSumRepType non_rr_tys
+
+      | isVoidRep (tyConPrimRep tc)
+      = UbxTupleRep []   -- Represent /all/ void types by nothing at all
+                         -- including Void#, State# a, etc
       where
           -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
         non_rr_tys = dropRuntimeRepArgs tys
@@ -304,10 +304,14 @@ flattenSumRep = map slotTyToType . ubxSumSlots
 typePrimRep :: Type -> PrimRep
 typePrimRep ty = kindPrimRep (typeKind ty)
 
--- | Find the primitive representation of a 'TyCon'. Defined here to
--- avoid module loops. Call this only on unlifted tycons.
+-- | Find the runtime representation of a 'TyCon'. Defined here to
+-- avoid module loops. Do not call this on unboxed tuples or sums,
+-- because they don't /have/ a runtime representation
 tyConPrimRep :: TyCon -> PrimRep
-tyConPrimRep tc = kindPrimRep res_kind
+tyConPrimRep tc
+  = ASSERT2( not (isUnboxedTupleTyCon tc), ppr tc )
+    ASSERT2( not (isUnboxedSumTyCon   tc), ppr tc )
+    kindPrimRep res_kind
   where
     res_kind = tyConResKind tc
 
