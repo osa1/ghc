@@ -318,18 +318,21 @@ tyConPrimRep tc
 -- | Take a kind (of shape @TYPE rr@) and produce the 'PrimRep' of values
 -- of types of this kind.
 kindPrimRep :: Kind -> PrimRep
-kindPrimRep ki | Just ki' <- coreViewOneStarKind ki = kindPrimRep ki'
+kindPrimRep ki
+  | Just ki' <- coreViewOneStarKind ki
+  = kindPrimRep ki'
 kindPrimRep (TyConApp typ [runtime_rep])
   = ASSERT( typ `hasKey` tYPETyConKey )
     go runtime_rep
   where
-    go rr | Just rr' <- coreView rr = go rr'
+    go rr
+      | Just rr' <- coreView rr
+      = go rr'
     go (TyConApp rr_dc args)
       | RuntimeRep fun <- tyConRuntimeRepInfo rr_dc
       = fun args
-    go rr = pprPanic "kindPrimRep.go" (ppr rr)
+    go rr
+      = pprPanic "kindPrimRep.go" (ppr rr)
 kindPrimRep ki = WARN( True
                      , text "kindPrimRep defaulting to PtrRep on" <+> ppr ki )
                  PtrRep  -- this can happen legitimately for, e.g., Any
-
-
