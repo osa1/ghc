@@ -39,7 +39,9 @@ import qualified Data.IntSet as IS
 *                                                                       *
 ********************************************************************** -}
 
-type UnaryType = Type  -- Never an unboxed tuple, sum, or void type
+type UnaryType = Type  -- Always a value type; i.e. its kind is TYPE rr
+                       ---  for some rr; moreover the rr is never a variable.
+                       -- Never an unboxed tuple, sum, or void type
 
 data RepType
   = UbxTupleRep [UnaryType] -- Represented by multiple values
@@ -301,8 +303,9 @@ flattenSumRep = map slotTyToType . ubxSumSlots
 -- of inspecting the type directly.
 
 -- | Discovers the primitive representation of a more abstract 'UnaryType'
-typePrimRep :: Type -> PrimRep
-typePrimRep ty = kindPrimRep (typeKind ty)
+typePrimRep :: UnaryType -> PrimRep
+typePrimRep ty = kindPrimRep (text "kindRep ty" <+> ppr ty $$ ppr (typeKind ty))
+                             (typeKind ty)
 
 -- | Find the runtime representation of a 'TyCon'. Defined here to
 -- avoid module loops. Do not call this on unboxed tuples or sums,
@@ -311,17 +314,18 @@ tyConPrimRep :: TyCon -> PrimRep
 tyConPrimRep tc
   = ASSERT2( not (isUnboxedTupleTyCon tc), ppr tc )
     ASSERT2( not (isUnboxedSumTyCon   tc), ppr tc )
-    kindPrimRep res_kind
+    kindPrimRep (text "kindRep tc" <+> ppr tc $$ ppr res_kind)
+                res_kind
   where
     res_kind = tyConResKind tc
 
 -- | Take a kind (of shape @TYPE rr@) and produce the 'PrimRep' of values
 -- of types of this kind.
-kindPrimRep :: Kind -> PrimRep
-kindPrimRep ki
+kindPrimRep :: SDoc -> Kind -> PrimRep
+kindPrimRep doc ki
   | Just ki' <- coreViewOneStarKind ki
-  = kindPrimRep ki'
-kindPrimRep (TyConApp typ [runtime_rep])
+  = kindPrimRep doc ki'
+kindPrimRep doc (TyConApp typ [runtime_rep])
   = ASSERT( typ `hasKey` tYPETyConKey )
     go runtime_rep
   where
@@ -333,6 +337,6 @@ kindPrimRep (TyConApp typ [runtime_rep])
       = fun args
     go rr
       = pprPanic "kindPrimRep.go" (ppr rr)
-kindPrimRep ki = WARN( True
-                     , text "kindPrimRep defaulting to PtrRep on" <+> ppr ki )
+kindPrimRep doc ki = WARN( True
+                        , text "kindPrimRep defaulting to PtrRep on" <+> ppr ki $$ doc)
                  PtrRep  -- this can happen legitimately for, e.g., Any
