@@ -231,13 +231,13 @@ unariseBinding rho (StgRec xrhss)
 unariseRhs :: UnariseEnv -> Id -> StgRhs -> UniqSM StgRhs
 unariseRhs rho x (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
   = ASSERT2( length args == idArity x, ppr x $$ ppr args $$ ppr (idArity x) )
-    do (rho', args') <- unariseIdBinders rho args
+    do (rho', args1) <- unariseIdBinders rho args
        expr' <- unariseExpr rho' expr
        let fvs' = [ v | StgVarArg v <- unariseIds rho fvs ]
-       return (ASSERT( length args' == idRepArity id, ppr id $$ ppr args' $$ ppr (idRepArity id) )
-               StgRhsClosure ccs b_info fvs' update_flag args' expr' body_ty)
+       return (ASSERT2( length args1 == idRepArity x, ppr x $$ ppr args1 $$ ppr (idRepArity x) )
+               StgRhsClosure ccs b_info fvs' update_flag args1 expr' body_ty)
 
-unariseRhs rho (StgRhsCon ccs con args ty_args)
+unariseRhs rho x (StgRhsCon ccs con args ty_args)
   = ASSERT (not (isUnboxedTupleCon con || isUnboxedSumCon con))
     return (StgRhsCon ccs con (unariseArgs rho args) ty_args)
 
