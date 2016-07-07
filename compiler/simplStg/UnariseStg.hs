@@ -224,16 +224,18 @@ unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
 
 unariseBinding :: UnariseEnv -> StgBinding -> UniqSM StgBinding
 unariseBinding rho (StgNonRec x rhs)
-  = StgNonRec x <$> unariseRhs rho rhs
+  = StgNonRec x <$> unariseRhs rho x rhs
 unariseBinding rho (StgRec xrhss)
-  = StgRec <$> mapM (\(x, rhs) -> (x,) <$> unariseRhs rho rhs) xrhss
+  = StgRec <$> mapM (\(x, rhs) -> (x,) <$> unariseRhs rho x rhs) xrhss
 
-unariseRhs :: UnariseEnv -> StgRhs -> UniqSM StgRhs
-unariseRhs rho (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
-  = do (rho', args') <- unariseIdBinders rho args
+unariseRhs :: UnariseEnv -> Id -> StgRhs -> UniqSM StgRhs
+unariseRhs rho x (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
+  = ASSERT2( length args == idArity x, ppr x $$ ppr args $$ ppr (idArity x) )
+    do (rho', args') <- unariseIdBinders rho args
        expr' <- unariseExpr rho' expr
        let fvs' = [ v | StgVarArg v <- unariseIds rho fvs ]
-       return (StgRhsClosure ccs b_info fvs' update_flag args' expr' body_ty)
+       return (ASSERT( length args' == idRepArity id, ppr id $$ ppr args' $$ ppr (idRepArity id) )
+               StgRhsClosure ccs b_info fvs' update_flag args' expr' body_ty)
 
 unariseRhs rho (StgRhsCon ccs con args ty_args)
   = ASSERT (not (isUnboxedTupleCon con || isUnboxedSumCon con))
