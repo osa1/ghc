@@ -230,11 +230,11 @@ unariseBinding rho (StgRec xrhss)
 
 unariseRhs :: UnariseEnv -> Id -> StgRhs -> UniqSM StgRhs
 unariseRhs rho x (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
-  = -- ASSERT2( length args == idArity x, ppr x $$ ppr args $$ ppr (idArity x) )
+  = ASSERT2( length args == idArity x, ppr x $$ ppr args $$ ppr (idArity x) )
     do (rho', args1) <- unariseIdBinders rho args
        expr' <- unariseExpr rho' expr
        let fvs' = [ v | StgVarArg v <- unariseIds rho fvs ]
-       return ( -- ASSERT2( length args1 == idRepArity x, ppr x $$ ppr args1 $$ ppr (idRepArity x) )
+       return (ASSERT2( length args1 == idRepArity x, ppr x $$ ppr args1 $$ ppr (idRepArity x) )
                StgRhsClosure ccs b_info fvs' update_flag args1 expr' body_ty)
 
 unariseRhs rho x (StgRhsCon ccs con args ty_args)
@@ -398,7 +398,7 @@ unariseAlt rho (con, xs, e)
 -- (i.e. generate LitAlts for the tag)
 unariseSumAlts :: UnariseEnv
                -> [StgArg] -- ^ sum components _excluding_ the tag bit.
-               -> [StgAlt]   -- ^ original alternative with sum LHS
+               -> [StgAlt] -- ^ original alternative with sum LHS
                -> UniqSM [StgAlt]
 unariseSumAlts env args alts
   = do alts' <- mapM (unariseSumAlt env args) alts

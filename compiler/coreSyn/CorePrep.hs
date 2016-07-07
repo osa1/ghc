@@ -423,7 +423,7 @@ cpePair top_lvl is_rec dmd is_unlifted env bndr rhs
                then return (floats2, cpeEtaExpand arity rhs2)
                else WARN(True, text "CorePrep: silly extra arguments:" <+> ppr bndr)
                                -- Note [Silly extra arguments]
-                    (do { v <- newVar (idType bndr)
+                    (do { v <- newVarWArity (idType bndr) arity
                         ; let float = mkFloat topDmd False v rhs2
                         ; return ( addFloat floats2 float
                                  , cpeEtaExpand arity (Var v)) })
@@ -657,8 +657,9 @@ rhsToBody expr@(Lam {})
   | all isTyVar bndrs           -- Type lambdas are ok
   = return (emptyFloats, expr)
   | otherwise                   -- Some value lambdas
-  = do { fn <- newVar (exprType expr)
-       ; let rhs   = cpeEtaExpand (exprArity expr) expr
+  = do { let arity = exprArity expr
+       ; fn <- newVarWArity (exprType expr) arity
+       ; let rhs   = cpeEtaExpand arity expr
              float = FloatLet (NonRec fn rhs)
        ; return (unitFloat float, Var fn) }
   where
@@ -791,8 +792,9 @@ cpeArg env dmd arg arg_ty
        ; if cpe_ExprIsTrivial arg2    -- Do not eta expand a trivial argument
          then return (floats2, arg2)
          else do
-       { v <- newVar arg_ty
-       ; let arg3      = cpeEtaExpand (exprArity arg2) arg2
+       { let new_arity = exprArity arg2
+       ; v <- newVarWArity arg_ty new_arity
+       ; let arg3      = cpeEtaExpand new_arity arg2
              arg_float = mkFloat dmd is_unlifted v arg3
        ; return (addFloat floats2 arg_float, varToCoreExpr v) } }
   where
@@ -1378,6 +1380,11 @@ newVar ty
  = seqType ty `seq` do
      uniq <- getUniqueM
      return (mkSysLocalOrCoVar (fsLit "sat") uniq ty)
+
+newVarWArity :: Type -> Arity -> UniqSM Id
+newVarWArity ty arity
+  = do v <- newVar ty
+       return (v `setIdArity` arity)
 
 
 ------------------------------------------------------------------------------
