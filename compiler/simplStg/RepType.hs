@@ -26,11 +26,9 @@ import TyCoRep
 import Type
 import TysPrim
 import TysWiredIn
--- import Unique (hasKey)
 import Util
 
 import Data.List (foldl', sort)
--- import Data.Maybe (mapMaybe, maybeToList)
 import qualified Data.IntSet as IS
 
 {- **********************************************************************
@@ -92,7 +90,7 @@ repType ty
       | Just ty' <- coreView ty
       = go rec_nts ty'
 
-    go rec_nts (ForAllTy _ ty2)  -- Drop type foralls
+    go rec_nts (ForAllTy _ ty2)         -- Drop type foralls
       = go rec_nts ty2
 
     go rec_nts (TyConApp tc tys)        -- Expand newtypes
@@ -111,7 +109,7 @@ repType ty
       = UbxTupleRep []   -- Represent /all/ void types by nothing at all
                          -- including Void#, State# a, etc
       where
-          -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
+        -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
         non_rr_tys = dropRuntimeRepArgs tys
 
     go rec_nts (CastTy ty _)
@@ -325,7 +323,7 @@ kindPrimRep :: SDoc -> Kind -> PrimRep
 kindPrimRep doc ki
   | Just ki' <- coreViewOneStarKind ki
   = kindPrimRep doc ki'
-kindPrimRep doc (TyConApp typ [runtime_rep])
+kindPrimRep _ (TyConApp typ [runtime_rep])
   = ASSERT( typ `hasKey` tYPETyConKey )
     go runtime_rep
   where
@@ -337,6 +335,6 @@ kindPrimRep doc (TyConApp typ [runtime_rep])
       = fun args
     go rr
       = pprPanic "kindPrimRep.go" (ppr rr)
-kindPrimRep doc ki = WARN( True
-                        , text "kindPrimRep defaulting to PtrRep on" <+> ppr ki $$ doc)
-                 PtrRep  -- this can happen legitimately for, e.g., Any
+kindPrimRep doc ki
+  = WARN( True, text "kindPrimRep defaulting to PtrRep on" <+> ppr ki $$ doc )
+    PtrRep  -- this can happen legitimately for, e.g., Any
