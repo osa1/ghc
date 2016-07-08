@@ -50,6 +50,10 @@ data RepType
 
   | UnaryRep UnaryType      -- Represented by a single value
 
+type RepType = Rep Type
+
+data Rep a = UnaryRep a | MultiRep [a]
+
 instance Outputable RepType where
   ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
   ppr (UbxSumRep rep)   = text "UbxSumRep" <+> ppr rep
@@ -93,7 +97,7 @@ repType ty
     go rec_nts (ForAllTy _ ty2)         -- Drop type foralls
       = go rec_nts ty2
 
-    go rec_nts (TyConApp tc tys)        -- Expand newtypes
+    go rec_nts ty@(TyConApp tc tys)        -- Expand newtypes
       | isNewTyCon tc
       , tys `lengthAtLeast` tyConArity tc
       , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
@@ -105,7 +109,7 @@ repType ty
       | isUnboxedSumTyCon tc
       = ubxSumRepType non_rr_tys
 
-      | isVoidRep (tyConPrimRep tc)
+      | isVoidRep (typePrimRep ty)
       = UbxTupleRep []   -- Represent /all/ void types by nothing at all
                          -- including Void#, State# a, etc
       where
@@ -317,8 +321,8 @@ tyConPrimRep tc
   where
     res_kind = tyConResKind tc
 
--- | Take a kind (of shape @TYPE rr@) and produce the 'PrimRep' of values
--- of types of this kind.
+-- | Take a kind (of shape @TYPE rr@) and produce the 'PrimRep'
+-- of values of types of this kind.
 kindPrimRep :: SDoc -> Kind -> PrimRep
 kindPrimRep doc ki
   | Just ki' <- coreViewOneStarKind ki

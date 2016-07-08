@@ -253,17 +253,26 @@ Is that because x bound to a singleton tuple, or are we renaming it?
 It makes a big difference:
 
   f :: (# Int #) -> (# Int #)
-  f x = case x of
-          ...
+  f x = x
+
+should unarise to
+
+  f :: (# Int #) -> (# Int #)
+  f (x :: Int) = (# x #)
+     -- Takes one argument, and returns it unevaluated
 
 vs
 
   g :: Int -> Int
-  g x = case x of
-          ...
+  g x = x
+
+should unarise to
+
+  g x = x  -- Takes one argument and evaluates it
 
 We decide by looking at x's type here.
 -}
+
 unariseExpr rho e@(StgApp f args)
   | null args
   , Just rep_args <- unarised_fun
