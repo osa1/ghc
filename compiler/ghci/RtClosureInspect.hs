@@ -810,11 +810,11 @@ extractSubTerms recurse clos = liftM thdOf3 . go 0 (nonPtrs clos)
             (ptr_i, ws, term0)  <- go_rep ptr_i ws ty (typePrimRep rep_ty)
             (ptr_i, ws, terms1) <- go ptr_i ws tys
             return (ptr_i, ws, term0 : terms1)
-          UbxTupleRep rep_tys -> do
+          MultiRep slot_tys -> do
+            let rep_tys = map slotTyToType slot_tys
             (ptr_i, ws, terms0) <- go_unary_types ptr_i ws rep_tys
             (ptr_i, ws, terms1) <- go ptr_i ws tys
             return (ptr_i, ws, unboxedTupleTerm ty terms0 : terms1)
-          UbxSumRep _ -> undefined -- FIXME
 
     go_unary_types ptr_i ws [] = return (ptr_i, ws, [])
     go_unary_types ptr_i ws (rep_ty:rep_tys) = do
@@ -924,11 +924,12 @@ findPtrTys i ty
   = case repType ty of
       UnaryRep rep_ty | typePrimRep rep_ty == PtrRep -> return (i + 1, [(i, ty)])
                       | otherwise                    -> return (i,     [])
-      UbxTupleRep rep_tys  -> foldM (\(i, extras) rep_ty -> if typePrimRep rep_ty == PtrRep
-                                                             then newVar liftedTypeKind >>= \tv -> return (i + 1, extras ++ [(i, tv)])
-                                                             else return (i, extras))
-                                    (i, []) rep_tys
-      UbxSumRep _ -> undefined -- FIXME
+      MultiRep slot_tys ->
+        foldM (\(i, extras) rep_ty ->
+                if typePrimRep rep_ty == PtrRep
+                  then newVar liftedTypeKind >>= \tv -> return (i + 1, extras ++ [(i, tv)])
+                  else return (i, extras))
+              (i, []) (map slotTyToType slot_tys)
 
 findPtrTyss :: Int
             -> [Type]

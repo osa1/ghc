@@ -126,10 +126,10 @@ lint_binds_help (binder, rhs)
 
 lintStgRhs :: StgRhs -> LintM (Maybe Type)   -- Just ty => type is exact
 
-lintStgRhs (StgRhsClosure _ _ _ _ [] expr _)
+lintStgRhs (StgRhsClosure _ _ _ _ [] expr)
   = lintStgExpr expr
 
-lintStgRhs (StgRhsClosure _ _ _ _ binders expr _)
+lintStgRhs (StgRhsClosure _ _ _ _ binders expr)
   = addLoc (LambdaBodyOf binders) $
       addInScopeVars binders $ runMaybeT $ do
         body_ty <- MaybeT $ lintStgExpr expr
@@ -174,7 +174,7 @@ lintStgExpr (StgOpApp _ args res_ty) = runMaybeT $ do
     _maybe_arg_tys <- mapM (MaybeT . lintStgArg) args
     return res_ty
 
-lintStgExpr (StgLam bndrs _ _) = do
+lintStgExpr (StgLam bndrs _) = do
     addErrL (text "Unexpected StgLam" <+> ppr bndrs)
     return Nothing
 
@@ -197,11 +197,10 @@ lintStgExpr (StgCase scrut bndr alts_type alts) = runMaybeT $ do
 
     in_scope <- MaybeT $ liftM Just $
      case alts_type of
-        AlgAlt tc    -> check_bndr tc >> return True
-        PrimAlt tc   -> check_bndr tc >> return True
-        UbxTupAlt _  -> return False -- Binder is always dead in this case
-        UbxSumAlt _  -> return False -- Same as UbxTupAlt
-        PolyAlt      -> return True
+        AlgAlt tc     -> check_bndr tc >> return True
+        PrimAlt tc    -> check_bndr tc >> return True
+        MultiValAlt _ -> return False -- Binder is always dead in this case
+        PolyAlt       -> return True
 
     MaybeT $ addInScopeVars [bndr | in_scope] $
              lintStgAlts alts scrut_ty
@@ -423,8 +422,8 @@ stgEqType orig_ty1 orig_ty2
   = gos (repType orig_ty1) (repType orig_ty2)
   where
     gos :: RepType -> RepType -> Bool
-    gos (UbxTupleRep tys1) (UbxTupleRep tys2)
-      = equalLength tys1 tys2 && and (zipWith go tys1 tys2)
+    gos (MultiRep slots1) (MultiRep slots2)
+      = slots1 == slots2
     gos (UnaryRep ty1) (UnaryRep ty2) = go ty1 ty2
     gos _ _ = False
 

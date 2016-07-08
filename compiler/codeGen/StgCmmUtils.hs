@@ -362,15 +362,12 @@ newUnboxedTupleRegs res_ty
         ; sequel <- getSequel
         ; regs <- choose_regs dflags sequel
         ; ASSERT( regs `equalLength` reps )
-          return (regs, map primRepForeignHint reps) }
+          return (regs, map slotForeignHint reps) }
   where
-    UbxTupleRep ty_args = repType res_ty
-    reps = [ rep
-           | ty <- ty_args
-           , let rep = typePrimRep ty
-           , not (isVoidRep rep) ]
+    MultiRep slots = repType res_ty
+    reps = filterOut isVoidSlot slots
     choose_regs _ (AssignTo regs _) = return regs
-    choose_regs dflags _            = mapM (newTemp . primRepCmmType dflags) reps
+    choose_regs dflags _            = mapM (newTemp . slotCmmType dflags) reps
 
 
 

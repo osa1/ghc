@@ -304,7 +304,7 @@ collect (_, e) = go [] e
   where
     go xs e | Just e' <- bcView e = go xs e'
     go xs (AnnLam x (_,e))
-      | UbxTupleRep _ <- repType (idType x)
+      | MultiRep _ <- repType (idType x)
       = unboxedTupleException
       | otherwise
       = go (x:xs) e
@@ -793,7 +793,7 @@ doCase  :: Word -> Sequel -> BCEnv
         -> Maybe Id  -- Just x <=> is an unboxed tuple case with scrut binder, don't enter the result
         -> BcM BCInstrList
 doCase d s p (_,scrut) bndr alts is_unboxed_tuple
-  | UbxTupleRep _ <- repType (idType bndr)
+  | MultiRep _ <- repType (idType bndr)
   = unboxedTupleException
   | otherwise
   = do
@@ -849,7 +849,7 @@ doCase d s p (_,scrut) bndr alts is_unboxed_tuple
            | null real_bndrs = do
                 rhs_code <- schemeE d_alts s p_alts rhs
                 return (my_discr alt, rhs_code)
-           | any (\bndr -> case repType (idType bndr) of UbxTupleRep _ -> True; _ -> False) bndrs
+           | any (\bndr -> case repType (idType bndr) of MultiRep _ -> True; _ -> False) bndrs
            = unboxedTupleException
            -- algebraic alt with some binders
            | otherwise =
@@ -1200,9 +1200,8 @@ maybe_getCCallReturnRep fn_ty
          maybe_r_rep_to_go
             = if isSingleton r_reps then Nothing else Just (r_reps !! 1)
          r_reps = case repType r_ty of
-                      UbxTupleRep reps -> map typePrimRep reps
-                      UbxSumRep sum_rep-> map typePrimRep (ubxSumFieldTypes sum_rep)
-                      UnaryRep _       -> blargh
+                      MultiRep slots -> map slotPrimRep slots
+                      UnaryRep _     -> blargh
          ok = ( ( r_reps `lengthIs` 2 && VoidRep == head r_reps)
                 || r_reps == [VoidRep] )
               && case maybe_r_rep_to_go of
@@ -1554,10 +1553,10 @@ isVoidArg _ = False
 bcIdUnaryType :: Id -> UnaryType
 bcIdUnaryType x = case repType (idType x) of
     UnaryRep rep_ty -> rep_ty
-    UbxTupleRep [rep_ty] -> rep_ty
-    UbxTupleRep [rep_ty1, rep_ty2]
-      | VoidRep <- typePrimRep rep_ty1 -> rep_ty2
-      | VoidRep <- typePrimRep rep_ty2 -> rep_ty1
+    MultiRep [slot_ty] -> slotTyToType slot_ty
+    MultiRep [slot_ty1, slot_ty2]
+      | VoidRep <- slotPrimRep slot_ty1 -> slotTyToType slot_ty2
+      | VoidRep <- slotPrimRep slot_ty2 -> slotTyToType slot_ty1
     _ -> pprPanic "bcIdUnaryType" (ppr x $$ ppr (idType x))
 
 -- See bug #1257

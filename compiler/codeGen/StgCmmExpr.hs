@@ -61,7 +61,7 @@ cgExpr  :: StgExpr -> FCode ReturnKind
 cgExpr (StgApp fun args)     = cgIdApp fun args
 
 {- seq# a s ==> a -}
-cgExpr (StgOpApp (StgPrimOp SeqOp) [StgVarArg a] _res_ty) =
+cgExpr (StgOpApp (StgPrimOp SeqOp) [StgVarArg a, _] _res_ty) =
   cgIdApp a []
 
 cgExpr (StgOpApp op args ty) = cgOpApp op args ty
@@ -140,7 +140,7 @@ cgLetNoEscapeRhsBody
     -> Id
     -> StgRhs
     -> FCode (CgIdInfo, FCode ())
-cgLetNoEscapeRhsBody local_cc bndr (StgRhsClosure cc _bi _ _upd args body _)
+cgLetNoEscapeRhsBody local_cc bndr (StgRhsClosure cc _bi _ _upd args body)
   = cgLetNoEscapeClosure bndr local_cc cc (nonVoidIds args) body
 cgLetNoEscapeRhsBody local_cc bndr (StgRhsCon cc con args ty_args)
   = cgLetNoEscapeClosure bndr local_cc cc [] (StgConApp con args ty_args)
@@ -529,7 +529,7 @@ chooseReturnBndrs :: Id -> AltType -> [StgAlt] -> [NonVoid Id]
 chooseReturnBndrs bndr (PrimAlt _) _alts
   = nonVoidIds [bndr]
 
-chooseReturnBndrs _bndr (UbxTupAlt n) [(_, ids, _)]
+chooseReturnBndrs _bndr (MultiValAlt n) [(_, ids, _)]
   = ASSERT2(n == length ids, ppr n $$ ppr ids $$ ppr _bndr)
     nonVoidIds ids      -- 'bndr' is not assigned!
 
@@ -549,7 +549,7 @@ cgAlts :: (GcPlan,ReturnKind) -> NonVoid Id -> AltType -> [StgAlt]
 cgAlts gc_plan _bndr PolyAlt [(_, _, rhs)]
   = maybeAltHeapCheck gc_plan (cgExpr rhs)
 
-cgAlts gc_plan _bndr (UbxTupAlt _) [(_, _, rhs)]
+cgAlts gc_plan _bndr (MultiValAlt _) [(_, _, rhs)]
   = maybeAltHeapCheck gc_plan (cgExpr rhs)
         -- Here bndrs are *already* in scope, so don't rebind them
 

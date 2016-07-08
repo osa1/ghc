@@ -5,11 +5,10 @@ import Outputable (Outputable)
 import TyCoRep (Type)
 
 data RepType
-  = UbxTupleRep [UnaryType]
-  | UbxSumRep UbxSumRepTy
+  = MultiRep [SlotTy]
   | UnaryRep UnaryType
 
-data UbxSumRepTy
+data SlotTy
 type UnaryType = Type
 
 flattenRepType :: RepType -> [UnaryType]
@@ -17,4 +16,3 @@ repType :: Type -> RepType
 typeRepArity :: Arity -> Type -> RepArity
 
 instance Outputable RepType
-instance Outputable UbxSumRepTy

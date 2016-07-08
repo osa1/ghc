@@ -1,9 +1,9 @@
-{-# LANGUAGE CPP, TupleSections #-}
+{-# LANGUAGE CPP #-}
 
 module RepType
   ( -- * Code generator views onto Types
     UnaryType, RepType(..), flattenRepType, repType,
-    isUnaryRep, isUnboxedTupleRep, isUnboxedSumRep,
+    isUnaryRep, isMultiRep,
 
     -- * Predicates on types
     isVoidTy, typePrimRep,
@@ -12,8 +12,8 @@ module RepType
     typeRepArity, tyConPrimRep,
 
     -- * Unboxed sum representation type
-    UbxSumRepTy, ubxSumFieldTypes, layout, typeSlotTy, SlotTy,
-    mkUbxSumRepTy, ubxSumSlots, slotTyToType, flattenSumRep
+    ubxSumRepType, layout, typeSlotTy, SlotTy (..), slotTyToType,
+    isVoidSlot, slotPrimRep
   ) where
 
 #include "HsVersions.h"
@@ -39,45 +39,35 @@ import qualified Data.IntSet as IS
 
 type UnaryType = Type  -- Always a value type; i.e. its kind is TYPE rr
                        ---  for some rr; moreover the rr is never a variable.
-                       -- Never an unboxed tuple, sum, or void type
+                       -- Never an unboxed tuple or sum.
 
 data RepType
-  = UbxTupleRep [UnaryType] -- Represented by multiple values
-                            -- Can be zero, one, or more
-                            -- (see Note [Nullary unboxed tuple])
-
-  | UbxSumRep UbxSumRepTy
-
-  | UnaryRep UnaryType      -- Represented by a single value
-
-type RepType = Rep Type
-
-data Rep a = UnaryRep a | MultiRep [a]
+  = MultiRep [SlotTy]   -- Represented by multiple values.
+                        -- INVARIANT: Never an empty list.
+  | UnaryRep UnaryType  -- Represented by a single value
 
 instance Outputable RepType where
-  ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
-  ppr (UbxSumRep rep)   = text "UbxSumRep" <+> ppr rep
-  ppr (UnaryRep ty)     = text "UnaryRep" <+> ppr ty
+  ppr (MultiRep slots) = text "MultiRep" <+> ppr slots
+  ppr (UnaryRep ty)    = text "UnaryRep" <+> ppr ty
+
+isMultiRep :: RepType -> Bool
+isMultiRep (MultiRep _) = True
+isMultiRep _            = False
 
 isUnaryRep :: RepType -> Bool
 isUnaryRep (UnaryRep _) = True
 isUnaryRep _            = False
 
-isUnboxedTupleRep :: RepType -> Bool
-isUnboxedTupleRep (UbxTupleRep _) = True
-isUnboxedTupleRep _               = False
-
-isUnboxedSumRep :: RepType -> Bool
-isUnboxedSumRep (UbxSumRep _) = True
-isUnboxedSumRep _             = False
-
 flattenRepType :: RepType -> [UnaryType]
-flattenRepType (UbxTupleRep tys) = tys
-flattenRepType (UbxSumRep sum_rep) = flattenSumRep sum_rep
-flattenRepType (UnaryRep ty) = [ty]
+flattenRepType (MultiRep slots) = map slotTyToType slots
+flattenRepType (UnaryRep ty)    = [ty]
 
--- | 'repType' figure out how a type will be represented
---   at runtime.  It looks through
+repTypeSlots :: RepType -> [SlotTy]
+repTypeSlots (MultiRep slots) = slots
+repTypeSlots (UnaryRep ty)    = [typeSlotTy ty]
+
+-- | 'repType' figure out how a type will be represented at runtime. It looks
+-- through
 --
 --      1. For-alls
 --      2. Synonyms
@@ -97,21 +87,18 @@ repType ty
     go rec_nts (ForAllTy _ ty2)         -- Drop type foralls
       = go rec_nts ty2
 
-    go rec_nts ty@(TyConApp tc tys)        -- Expand newtypes
+    go rec_nts (TyConApp tc tys)        -- Expand newtypes
       | isNewTyCon tc
       , tys `lengthAtLeast` tyConArity tc
       , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
       = go rec_nts' (newTyConInstRhs tc tys)
 
       | isUnboxedTupleTyCon tc
-      = UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
+      , let slots = concatMap (repTypeSlots . go rec_nts) non_rr_tys
+      = if null slots then UnaryRep voidPrimTy else MultiRep slots
 
       | isUnboxedSumTyCon tc
-      = ubxSumRepType non_rr_tys
-
-      | isVoidRep (typePrimRep ty)
-      = UbxTupleRep []   -- Represent /all/ void types by nothing at all
-                         -- including Void#, State# a, etc
+      = MultiRep (ubxSumRepType non_rr_tys)
       where
         -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
         non_rr_tys = dropRuntimeRepArgs tys
@@ -131,13 +118,10 @@ typeRepArity n ty = case repType ty of
   UnaryRep (FunTy arg res) -> length (flattenRepType (repType arg)) + typeRepArity (n - 1) res
   _ -> pprPanic "typeRepArity: arity greater than type can handle" (ppr (n, ty, repType ty))
 
+
+-- | True if the type has zero width.
 isVoidTy :: Type -> Bool
--- True if the type has zero width
-isVoidTy ty
-  | UbxTupleRep [] <- repType ty
-  = True
-  | otherwise
-  = False
+isVoidTy ty = typePrimRep ty == VoidRep
 
 
 {- **********************************************************************
@@ -147,20 +131,11 @@ isVoidTy ty
 *                                                                       *
 ********************************************************************** -}
 
-
--- | An unboxed sum is represented as its slots. Includes the tag.
--- INVARIANT: List is sorted, except the slot for tag always comes first.
-newtype UbxSumRepTy = UbxSumRepTy { ubxSumSlots :: [SlotTy] }
-
-ubxSumFieldTypes :: UbxSumRepTy -> [Type]
-ubxSumFieldTypes = map slotTyToType . ubxSumSlots
-
-instance Outputable UbxSumRepTy where
-  ppr (UbxSumRepTy slots) = text "UbxSumRepTy" <+> ppr slots
-
 -- | Given types of constructor arguments, return the unboxed sum rep type.
-mkUbxSumRepTy :: [Type] -> UbxSumRepTy
-mkUbxSumRepTy constrs0 =
+-- INVARIANT: Slots are sorted, except the at the head of the list we have the
+-- slot for the tag.
+ubxSumRepType :: [Type] -> [SlotTy]
+ubxSumRepType constrs0 =
   ASSERT2( length constrs0 > 1, ppr constrs0 ) -- otherwise it isn't a sum type
   let
     combine_alts
@@ -184,21 +159,25 @@ mkUbxSumRepTy constrs0 =
 
     -- Nesting unboxed tuples and sums is OK, so we need to flatten first.
     rep :: Type -> [SlotTy]
-    rep ty = case repType ty of
-               UbxTupleRep tys   -> sort (map typeSlotTy tys)
-               UbxSumRep sum_rep -> map typeSlotTy (flattenSumRep sum_rep)
-               UnaryRep ty'      -> [typeSlotTy ty']
+    rep ty
+      | isUnboxedSumType ty
+      = repTypeSlots (repType ty)
+      | otherwise
+      = sort (filterOut isVoidSlot (repTypeSlots (repType ty)))
 
-    sumRep = UbxSumRepTy (WordSlot : combine_alts (map rep constrs0))
+    sumRep = WordSlot : combine_alts (map rep constrs0)
   in
     sumRep
 
 layout :: [SlotTy]  -- Layout of sum. Does not include tag. The invariant of
-                    -- UbxSumRepTy holds.
+                    -- ubxSumRepTy holds.
        -> [SlotTy]  -- Slot types of things we want to map to locations in the
                     -- sum layout
        -> [Int]     -- Where to map 'things' in the sum layout
-layout sum_slots0 arg_slots0 = go arg_slots0 IS.empty
+layout sum_slots0 arg_slots0 =
+    ASSERT (not (any isVoidSlot sum_slots0))
+    ASSERT (not (any isVoidSlot arg_slots0))
+    go arg_slots0 IS.empty
   where
     go :: [SlotTy] -> IS.IntSet -> [Int]
     go [] _
@@ -227,10 +206,15 @@ layout sum_slots0 arg_slots0 = go arg_slots0 IS.empty
 --   - Word slots: Shared between IntRep, WordRep, Int64Rep, Word64Rep, AddrRep.
 --
 --   - Float slots: Shared between floating point types.
-
-data SlotTy = PtrSlot | WordSlot | Word64Slot | FloatSlot | DoubleSlot
+--
+--   - Void slots: Shared between void types. Not used in sums.
+data SlotTy = PtrSlot | WordSlot | Word64Slot | FloatSlot | DoubleSlot | VoidSlot
   deriving (Eq, Ord) -- Constructor order is important! We want same type of
                      -- slots with different sizes to be next to each other.
+
+isVoidSlot :: SlotTy -> Bool
+isVoidSlot VoidSlot = True
+isVoidSlot _        = False
 
 instance Outputable SlotTy where
   ppr PtrSlot    = text "PtrSlot"
@@ -238,12 +222,13 @@ instance Outputable SlotTy where
   ppr WordSlot   = text "WordSlot"
   ppr DoubleSlot = text "DoubleSlot"
   ppr FloatSlot  = text "FloatSlot"
+  ppr VoidSlot   = text "VoidSlot"
 
 typeSlotTy :: UnaryType -> SlotTy
-typeSlotTy ty = primRepSlot (typePrimRep ty)
+typeSlotTy = primRepSlot . typePrimRep
 
 primRepSlot :: PrimRep -> SlotTy
-primRepSlot VoidRep     = pprPanic "primRepSlot" (text "No slot for VoidRep")
+primRepSlot VoidRep     = VoidSlot
 primRepSlot PtrRep      = PtrSlot
 primRepSlot IntRep      = WordSlot
 primRepSlot WordRep     = WordSlot
@@ -261,6 +246,15 @@ slotTyToType Word64Slot = int64PrimTy
 slotTyToType WordSlot   = intPrimTy
 slotTyToType DoubleSlot = doublePrimTy
 slotTyToType FloatSlot  = floatPrimTy
+slotTyToType VoidSlot   = voidPrimTy
+
+slotPrimRep :: SlotTy -> PrimRep
+slotPrimRep PtrSlot     = PtrRep
+slotPrimRep Word64Slot  = Word64Rep
+slotPrimRep WordSlot    = WordRep
+slotPrimRep DoubleSlot  = DoubleRep
+slotPrimRep FloatSlot   = FloatRep
+slotPrimRep VoidSlot    = VoidRep
 
 -- | Returns the bigger type if one fits into the other. (commutative)
 fitsIn :: SlotTy -> SlotTy -> Maybe SlotTy
@@ -285,24 +279,12 @@ fitsIn ty1 ty2
     isFloatSlot FloatSlot  = True
     isFloatSlot _          = False
 
---------------------------------------------------------------------------------
 
-ubxSumRepType :: [Type] -> RepType
-ubxSumRepType = UbxSumRep . mkUbxSumRepTy
-
-flattenSumRep :: UbxSumRepTy -> [UnaryType]
-flattenSumRep = map slotTyToType . ubxSumSlots
-
-{-
-%************************************************************************
-%*                                                                      *
+{- **********************************************************************
+*                                                                       *
                    PrimRep
-*                                                                      *
-************************************************************************
--}
-
--- ToDo: this could be moved to the code generator, using splitTyConApp instead
--- of inspecting the type directly.
+*                                                                       *
+********************************************************************** -}
 
 -- | Discovers the primitive representation of a more abstract 'UnaryType'
 typePrimRep :: UnaryType -> PrimRep
