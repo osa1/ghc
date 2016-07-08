@@ -72,7 +72,7 @@ cgTopRhsClosure :: DynFlags
                 -> (CgIdInfo, FCode ())
 
 cgTopRhsClosure dflags rec id ccs _ upd_flag args body =
-  ASSERT2( idRepArity id == length args, ppr id )
+--   ASSERT2( idRepArity id == length args, ppr id )
   let closure_label = mkLocalClosureLabel (idName id) (idCafInfo id)
       cg_id_info    = litIdInfo dflags id lf_info (CmmLabel closure_label)
       lf_info       = mkClosureLFInfo dflags id TopLevel [] upd_flag args
@@ -212,7 +212,7 @@ cgRhs id (StgRhsCon cc con args _)
 
 {- See Note [GC recovery] in compiler/codeGen/StgCmmClosure.hs -}
 cgRhs id (StgRhsClosure cc bi fvs upd_flag args body _)
-  = ASSERT2( idRepArity id == length args, ppr id )
+  = -- ASSERT2( idRepArity id == length args, ppr id )
     do dflags <- getDynFlags
        mkRhsClosure dflags id cc bi (nonVoidIds fvs) upd_flag args body
 
