@@ -171,12 +171,10 @@ import DataCon
 import FastString (FastString, mkFastString)
 import Id
 import Literal (Literal (..))
-import MkId (voidPrimId)
 import MonadUtils (mapAccumLM)
 import Outputable
 import RepType
 import StgSyn
-import TyCon (isVoidRep)
 import Type
 import TysPrim (intPrimTyCon, intPrimTy)
 import TysWiredIn
@@ -185,7 +183,7 @@ import Util
 import VarEnv
 
 import Data.Bifunctor (second)
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (fromMaybe)
 import qualified Data.IntMap as IM
 
 --------------------------------------------------------------------------------
@@ -193,8 +191,13 @@ import qualified Data.IntMap as IM
 -- | A mapping from binders to the Ids they were expanded/renamed to.
 --
 --    x :-> [a,b,c] in rho
--- means
---    x is represented by the multi-value a,b,c
+--
+-- means x is represented by the multi-value a,b,c.
+--
+--    x:-> [a] in rho
+--
+-- means x is represented by singleton tuple or just by a depending on x's type
+-- (see Note [Tricky case for singleton tuples]).
 --
 -- INVARIANT: Ids in the range only have "unary" types.
 --            (i.e. no unboxed tuples or sums)
@@ -215,12 +218,7 @@ type InId       = Id
 type InStgAlt   = StgAlt
 
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
-unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
-  where
-    init_env = emptyVarEnv
-    -- See Note [Unarisation and nullary tuples]
---    nullary_tup = dataConWorkId unboxedUnitDataCon
---    init_env = unitVarEnv nullary_tup []
+unarise us binds = initUs_ us (mapM (unariseBinding emptyVarEnv) binds)
 
 unariseBinding :: UnariseEnv -> StgBinding -> UniqSM StgBinding
 unariseBinding rho (StgNonRec x rhs)
@@ -229,7 +227,7 @@ unariseBinding rho (StgRec xrhss)
   = StgRec <$> mapM (\(x, rhs) -> (x,) <$> unariseRhs rho x rhs) xrhss
 
 unariseRhs :: UnariseEnv -> Id -> StgRhs -> UniqSM StgRhs
-unariseRhs rho x (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
+unariseRhs rho _ (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
   = -- ASSERT2( length args == idArity x, ppr x $$ ppr args $$ ppr (idArity x) )
     do (rho', args1) <- unariseIdBinders rho args
        expr' <- unariseExpr rho' expr
@@ -237,7 +235,7 @@ unariseRhs rho x (StgRhsClosure ccs b_info fvs update_flag args expr body_ty)
        return ( -- ASSERT2( length args1 == idRepArity x, ppr x $$ ppr args1 $$ ppr (idRepArity x) )
                StgRhsClosure ccs b_info fvs' update_flag args1 expr' body_ty)
 
-unariseRhs rho x (StgRhsCon ccs con args ty_args)
+unariseRhs rho _ (StgRhsCon ccs con args ty_args)
   = ASSERT (not (isUnboxedTupleCon con || isUnboxedSumCon con))
     return (StgRhsCon ccs con (unariseArgs rho args) ty_args)
 
@@ -245,8 +243,8 @@ unariseRhs rho x (StgRhsCon ccs con args ty_args)
 
 unariseExpr :: UnariseEnv -> StgExpr -> UniqSM StgExpr
 
-{- Note [Tricky case for singleton tuples
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+{- Note [Tricky case for singleton tuples]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Tricky case! Suppose we have this mapping in rho:
 
   x :-> [y]
@@ -255,17 +253,21 @@ Is that because x bound to a singleton tuple, or are we renaming it?
 It makes a big difference:
 
   f :: (# Int #) -> (# Int #)
-  f x = x
+  f x = case x of
+          ...
+
 vs
+
   g :: Int -> Int
-  g x = x
+  g x = case x of
+          ...
 
 We decide by looking at x's type here.
 -}
 unariseExpr rho e@(StgApp f args)
   | null args
   , Just rep_args <- unarised_fun
-  , isMultiValBndr f || isVoidTy (idType f)  -- See Note [Tricky case for singeton tuples]
+  , isMultiValBndr f || isVoidTy (idType f)  -- See Note [Tricky case for singleton tuples]
                          -- TODO (osa): not sure about isVoidTy part
   = return (mkTuple rep_args)
   | otherwise
@@ -398,7 +400,7 @@ unariseAlt rho (con, xs, e)
 -- (i.e. generate LitAlts for the tag)
 unariseSumAlts :: UnariseEnv
                -> [StgArg] -- ^ sum components _excluding_ the tag bit.
-               -> [StgAlt]   -- ^ original alternative with sum LHS
+               -> [StgAlt] -- ^ original alternative with sum LHS
                -> UniqSM [StgAlt]
 unariseSumAlts env args alts
   = do alts' <- mapM (unariseSumAlt env args) alts
@@ -560,9 +562,6 @@ mkId = mkSysLocalOrCoVarM
 isMultiValBndr :: Id -> Bool
 isMultiValBndr x = isUnboxedTupleType (idType x) || isUnboxedSumType (idType x)
 
---filterOutVoidArgs :: [StgArg] -> [StgArg]
---filterOutVoidArgs = filter (not . isVoidRep . typePrimRep . stgArgType)
-
 mkTuple :: [StgArg] -> StgExpr
 mkTuple args  = StgConApp (tupleDataCon Unboxed (length args)) args (map stgArgType args)
 
@@ -577,7 +576,7 @@ mkDefaultLitAlt :: [StgAlt] -> [StgAlt]
 --    1# -> e1
 --    2# -> e2
 -- Since they are exhaustive, we can replace one with DEFAULT, to avoid
--- generating a final test.  Remember, the DEFAULT comes first if it exists
+-- generating a final test. Remember, the DEFAULT comes first if it exists.
 mkDefaultLitAlt [] = pprPanic "elimUbxSumExpr.mkDefaultAlt" (text "Empty alts")
 mkDefaultLitAlt alts@((DEFAULT, _, _) : _) = alts
 mkDefaultLitAlt ((LitAlt{}, [], rhs) : alts) = (DEFAULT, [], rhs) : alts
