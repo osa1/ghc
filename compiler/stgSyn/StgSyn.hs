@@ -201,10 +201,7 @@ primitives, and literals.
         -- which can't be let-bound first
   | StgConApp   DataCon
                 [GenStgArg occ] -- Saturated
-                [Type]          -- Type arguments to the DataCon. Necessary for
-                                -- transforming unboxed sums to tuples. Does NOT
-                                -- include RuntimeRep args. Null when the type
-                                -- is not a TyCon application.
+                [Type]          -- See Note [Types in StgConApp] in UnariseStg
 
   | StgOpApp    StgOp           -- Primitive op or foreign call
                 [GenStgArg occ] -- Saturated. Not rubbish.
@@ -414,14 +411,13 @@ The second flavour of right-hand-side is for constructors (simple but important)
         DataCon          -- Constructor. Never an unboxed tuple or sum, as those
                          -- are not allocated.
         [GenStgArg occ]  -- Args
-        [Type]           -- See the same argument in StgConApp.
 
 
 stgRhsArity :: StgRhs -> Int
 stgRhsArity (StgRhsClosure _ _ _ _ bndrs _)
   = ASSERT( all isId bndrs ) length bndrs
   -- The arity never includes type parameters, but they should have gone by now
-stgRhsArity (StgRhsCon _ _ _ _) = 0
+stgRhsArity (StgRhsCon _ _ _) = 0
 
 -- Note [CAF consistency]
 -- ~~~~~~~~~~~~~~~~~~~~~~
@@ -446,7 +442,7 @@ topRhsHasCafRefs :: GenStgRhs bndr Id -> Bool
 topRhsHasCafRefs (StgRhsClosure _ _ _ upd _ body)
   = -- See Note [CAF consistency]
     isUpdatable upd || exprHasCafRefs body
-topRhsHasCafRefs (StgRhsCon _ _ args _)
+topRhsHasCafRefs (StgRhsCon _ _ args)
   = any stgArgHasCafRefs args
 
 exprHasCafRefs :: GenStgExpr bndr Id -> Bool
@@ -478,7 +474,7 @@ bindHasCafRefs (StgRec binds)
 rhsHasCafRefs :: GenStgRhs bndr Id -> Bool
 rhsHasCafRefs (StgRhsClosure _ _ _ _ _ body)
   = exprHasCafRefs body
-rhsHasCafRefs (StgRhsCon _ _ args _)
+rhsHasCafRefs (StgRhsCon _ _ args)
   = any stgArgHasCafRefs args
 
 altHasCafRefs :: GenStgAlt bndr Id -> Bool
@@ -795,6 +791,6 @@ pprStgRhs (StgRhsClosure cc bi free_vars upd_flag args body)
                 char '\\' <> ppr upd_flag, brackets (interppSP args)])
          4 (ppr body)
 
-pprStgRhs (StgRhsCon cc con args _)
+pprStgRhs (StgRhsCon cc con args)
   = hcat [ ppr cc,
            space, ppr con, text "! ", brackets (interppSP args)]

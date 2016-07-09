@@ -135,7 +135,7 @@ lintStgRhs (StgRhsClosure _ _ _ _ binders expr)
         body_ty <- MaybeT $ lintStgExpr expr
         return (mkFunTys (map idType binders) body_ty)
 
-lintStgRhs rhs@(StgRhsCon _ con args _arg_tys) = do
+lintStgRhs rhs@(StgRhsCon _ con args) = do
     -- TODO: Check arg_tys
     when (isUnboxedTupleCon con || isUnboxedSumCon con) $
       addErrL (text "StgRhsCon is an unboxed tuple or sum application" $$

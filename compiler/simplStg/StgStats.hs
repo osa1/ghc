@@ -124,7 +124,7 @@ statBinding top (StgRec pairs)
 
 statRhs :: Bool -> (Id, StgRhs) -> StatEnv
 
-statRhs top (_, StgRhsCon _ _ _ _)
+statRhs top (_, StgRhsCon _ _ _)
   = countOne (ConstructorBinds top)
 
 statRhs top (_, StgRhsClosure _ _ fv u _ body)

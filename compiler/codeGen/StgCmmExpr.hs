@@ -142,8 +142,10 @@ cgLetNoEscapeRhsBody
     -> FCode (CgIdInfo, FCode ())
 cgLetNoEscapeRhsBody local_cc bndr (StgRhsClosure cc _bi _ _upd args body)
   = cgLetNoEscapeClosure bndr local_cc cc (nonVoidIds args) body
-cgLetNoEscapeRhsBody local_cc bndr (StgRhsCon cc con args ty_args)
-  = cgLetNoEscapeClosure bndr local_cc cc [] (StgConApp con args ty_args)
+cgLetNoEscapeRhsBody local_cc bndr (StgRhsCon cc con args)
+  = cgLetNoEscapeClosure bndr local_cc cc []
+      (StgConApp con args (pprPanic "cgLetNoEscapeRhsBody" $
+                           text "StgRhsCon doesn't have type args"))
         -- For a constructor RHS we want to generate a single chunk of
         -- code which can be jumped to from many places, which will
         -- return the constructor. It's easy; just behave as if it

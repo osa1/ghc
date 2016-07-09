@@ -125,6 +125,24 @@ Another example using the same type: (# | (# 2#, 3# #) | #). 2# fits in Word#,
 
   (# 2#, rubbish, 2#, 3# #).
 
+Note [Types in StgConApp]
+~~~~~~~~~~~~~~~~~~~~~~~~~
+Suppose we have this unboxed sum term:
+
+  (# 123 | #)
+
+What will be the unboxed tuple representation? We can't tell without knowing the
+type of this term. For example, these are all valid tuples for this:
+
+  (# 1#, 123 #)          -- when type is (# Int | String #)
+  (# 1#, 123, rubbish #) -- when type is (# Int | Float# #)
+  (# 1#, 123, rubbish, rubbish #)
+                         -- when type is (# Int | (# Int, Int, Int #) #)
+
+So we pass type arguments of the DataCon's TyCon in StgConApp to decide what
+layout to use. Note that unlifted values can't be let-bound, so we don't need
+types in StgRhsCon.
+
 Note [UnariseEnv can map to literals]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 To avoid redundant case expressions when unarising unboxed sums, UnariseEnv
@@ -243,9 +261,9 @@ unariseRhs rho (StgRhsClosure ccs b_info fvs update_flag args expr)
        let fvs' = [ v | StgVarArg v <- unariseIds rho fvs ]
        return (StgRhsClosure ccs b_info fvs' update_flag args1 expr')
 
-unariseRhs rho (StgRhsCon ccs con args ty_args)
+unariseRhs rho (StgRhsCon ccs con args)
   = ASSERT (not (isUnboxedTupleCon con || isUnboxedSumCon con))
-    return (StgRhsCon ccs con (unariseArgs rho args) ty_args)
+    return (StgRhsCon ccs con (unariseArgs rho args))
 
 --------------------------------------------------------------------------------
 

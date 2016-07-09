@@ -137,7 +137,7 @@ cgTopRhs :: DynFlags -> RecFlag -> Id -> StgRhs -> (CgIdInfo, FCode ())
         -- The Id is passed along for setting up a binding...
         -- It's already been externalised if necessary
 
-cgTopRhs dflags _rec bndr (StgRhsCon _cc con args _ty_args)
+cgTopRhs dflags _rec bndr (StgRhsCon _cc con args)
   = cgTopRhsCon dflags bndr con args
 
 cgTopRhs dflags rec bndr (StgRhsClosure cc bi fvs upd_flag args body)
