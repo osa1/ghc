@@ -4000,7 +4000,6 @@ glasgowExtsFlags = [
            , LangExt.TypeOperators
            , LangExt.TypeSynonymInstances
            , LangExt.UnboxedTuples
-           , LangExt.UnboxedSums
            , LangExt.UnicodeSyntax
            , LangExt.UnliftedFFITypes ]
 
