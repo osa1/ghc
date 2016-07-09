@@ -191,11 +191,11 @@ import qualified Data.IntMap as IM
 
 -- | A mapping from binders to the Ids they were expanded/renamed to.
 --
---    x :-> MultiArg [a,b,c] in rho
+--    x :-> Unarise [a,b,c] in rho
 --
 -- means x is represented by the multi-value a,b,c.
 --
---    x:-> MultiArg [a] in rho
+--    x:-> Unarise [a] in rho
 --
 -- means x is represented by singleton tuple.
 --
@@ -205,12 +205,17 @@ import qualified Data.IntMap as IM
 type UnariseEnv = VarEnv UnariseVal
 
 data UnariseVal
-  = Unarise [StgArg] -- Unarise to tuple. INVARIANT: Never an empty list.
+  = Unarise [StgArg] -- Unarise to tuple. INVARIANT: Never an empty list. Empty
+                     -- tuples are unarised to voidPrimId.
   | Rename   StgArg  -- Renaming. See NOTE [Renaming during unarisation].
 
 instance Outputable UnariseVal where
   ppr (Unarise args) = text "Unarise" <+> ppr args
   ppr (Rename arg)   = text "Rename" <+> ppr arg
+
+extendRho :: UnariseEnv -> Id -> UnariseVal -> UnariseEnv
+extendRho rho x (Unarise []) = extendVarEnv rho x (Rename voidArg)
+extendRho rho x val          = extendVarEnv rho x val
 
 --------------------------------------------------------------------------------
 
@@ -246,36 +251,6 @@ unariseRhs rho (StgRhsCon ccs con args ty_args)
 
 unariseExpr :: UnariseEnv -> StgExpr -> UniqSM StgExpr
 
-{- Note [Tricky case for singleton tuples]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Tricky case! Suppose we have this mapping in rho:
-
-  x :-> [y]
-
-Is that because x bound to a singleton tuple, or are we renaming it?
-It makes a big difference:
-
-  f :: (# Int #) -> (# Int #)
-  f x = x
-
-should unarise to
-
-  f :: (# Int #) -> (# Int #)
-  f (x :: Int) = (# x #)
-     -- Takes one argument, and returns it unevaluated
-
-vs
-
-  g :: Int -> Int
-  g x = x
-
-should unarise to
-
-  g x = x  -- Takes one argument and evaluates it
-
-We decide by looking at x's type here.
--}
-
 unariseExpr rho e@(StgApp f [])
   = case unariseId rho f of
       Just (Unarise args)
@@ -288,9 +263,8 @@ unariseExpr rho e@(StgApp f [])
         -> return e
 
 unariseExpr rho e@(StgApp f args)
-  | isMultiValBndr f -- TODO (osa): How can this happen? Shouln't this be a StgConApp instead?
-  = WARN ( True, text "What? Found an id with unboxed tuple/sum type in function position" )
-    return (mkTuple (unariseArgs rho args))
+  | isMultiValBndr f
+  = pprPanic "unariseExpr - StgApp" (ppr e)
   | otherwise
   = return (StgApp f' (unariseArgs rho args))
   where
@@ -344,7 +318,7 @@ unariseCase
 
 unariseCase rho (StgConApp con args _) bndr _ [(alt_con, bndrs, rhs)]
   | isUnboxedTupleCon con -- works for both sums and products!
-  = do let rho1 = extendVarEnv rho bndr (Unarise args)
+  = do let rho1 = extendRho rho bndr (Unarise args)
            rho2 | DEFAULT <- alt_con
                 = rho1
                 | isUnboxedSumBndr bndr
@@ -360,7 +334,7 @@ unariseCase rho scrut@(StgConApp _ args _) bndr _alt_Ty alts
   = do -- this won't be used but we need a scrutinee binder anyway
        let (tag_arg : real_args) = args
        tag_bndr <- mkId (mkFastString "tag") tagTy
-       let rho' = extendVarEnv rho bndr (Unarise args)
+       let rho' = extendRho rho bndr (Unarise args)
 
            scrut' = case tag_arg of
                       StgVarArg v     -> StgApp v []
@@ -376,7 +350,7 @@ unariseCase rho scrt bndr alt_ty alts
 
 --------------------------------------------------------------------------------
 
-unariseAlts :: UnariseEnv -> AltType -> Id -> [StgAlt] -> UniqSM [StgAlt]
+unariseAlts :: UnariseEnv -> AltType -> InId -> [StgAlt] -> UniqSM [StgAlt]
 unariseAlts rho (MultiValAlt n) bndr [(DEFAULT, [], e)]
   | isUnboxedTupleBndr bndr
   = do (rho', ys) <- unariseIdBinder rho bndr
@@ -387,7 +361,7 @@ unariseAlts rho (MultiValAlt n) bndr [(DataAlt _, ys, e)]
   | isUnboxedTupleBndr bndr
   = do MASSERT(n == length ys)
        (rho', ys') <- unariseIdBinders rho ys
-       let rho'' = extendVarEnv rho' bndr (Unarise (map StgVarArg ys'))
+       let rho'' = extendRho rho' bndr (Unarise (map StgVarArg ys'))
        e' <- unariseExpr rho'' e
        return [(DataAlt (tupleDataCon Unboxed n), ys', e')]
 
@@ -448,6 +422,104 @@ unariseSumAlt _ scrt alt
 
 --------------------------------------------------------------------------------
 
+mapTupleIdBinders
+  :: [InId]       -- Un-processed binders of a tuple alternative
+  -> [OutStgArg]  -- Arguments that form the tuple (after unarisation)
+  -> UnariseEnv
+  -> UnariseEnv
+mapTupleIdBinders ids args rho0
+  = let
+      id_arities :: [(Id, Int)]  -- For each binder, how many values will represent it
+      id_arities = map (\id -> (id, length (unariseIdType' id))) ids
+
+      map_ids :: UnariseEnv -> [(Id, Int)] -> [StgArg] -> UnariseEnv
+      map_ids rho [] _  = rho
+      map_ids _   _  [] = pprPanic "mapTupleIdBinders" (ppr ids $$ ppr args)
+      map_ids rho ((x, x_arity) : xs) args =
+        let
+          (x_args, args') = splitAt x_arity args
+
+          -- Careful with how to extend the rho. Some of the tests that catch
+          -- this error: cgrun064, ColpySmallArray.
+          rho'
+            | isMultiValBndr x
+            = extendRho rho x (Unarise x_args)
+            | otherwise
+            = ASSERT (x_args `lengthIs` 1)
+              extendRho rho x (Rename (head x_args))
+        in
+          map_ids rho' xs args'
+    in
+      ASSERT2 (sum (map snd id_arities) == length args, ppr id_arities $$ ppr args)
+      map_ids rho0 id_arities args
+
+mapSumIdBinders
+  :: [InId]      -- Binder of a sum alternative (remember that sum patterns
+                 -- only have one binder, so this list should be a singleton)
+  -> [OutStgArg] -- Arguments that form the sum (NOT including the tag).
+                 -- Should not have void arguments as sums don't allocate slots
+                 -- for voids in sums.
+  -> UnariseEnv
+  -> UnariseEnv
+
+mapSumIdBinders [id] sum_args rho
+  = let
+      arg_slots = map typeSlotTy (concatMap (flattenRepType . repType . stgArgType) sum_args)
+      id_slots  = filterOut isVoidSlot (map typeSlotTy (unariseIdType' id))
+
+      -- map non_void binders to arguments
+      layout'   = layout arg_slots id_slots
+
+      -- unarise id to a mix of non-void slots and voidPrimId
+      mapId :: [SlotTy] -> [Int] -> [StgArg]
+      mapId [] _ = []
+      mapId (s : ss) l@(i : is)
+        | isVoidSlot s = voidArg : mapId ss l
+        | otherwise    = (sum_args !! i) : mapId ss is
+      mapId _ [] = pprPanic "mapSumIdBinders.mapId" (ppr id <+> ppr (idType id) <+> ppr sum_args)
+    in
+      if | isMultiValBndr id
+          -> extendRho rho id (Unarise (mapId id_slots layout'))
+         | isVoidBndr id
+          -> extendRho rho id (Rename voidArg) -- no void args in sums
+         | otherwise
+          -> extendRho rho id (Rename (sum_args !! head layout'))
+
+mapSumIdBinders ids sum_args _
+  = pprPanic "mapIdSumBinders" (ppr ids $$ ppr sum_args)
+
+-- | Build a unboxed sum term from arguments of an alternative.
+mkUbxSum
+  :: DataCon      -- Sum data con
+  -> [Type]       -- Type arguments of the sum data con
+  -> [OutStgArg]  -- Actual arguments of the alternative
+  -> [OutStgArg]  -- Final tuple arguments
+mkUbxSum dc ty_args stg_args
+  = let
+      (_ : sum_slots) = ubxSumRepType ty_args
+        -- drop tag slot
+
+      nv_args = filterOut (isVoidTy . stgArgType) stg_args
+
+      tag = dataConTag dc
+
+      layout'  = layout sum_slots (map (typeSlotTy . stgArgType) nv_args)
+      tag_arg  = StgLitArg (MachInt (fromIntegral tag))
+      arg_idxs = IM.fromList (zipEqual "mkUbxSum" layout' nv_args)
+
+      mkTupArgs :: Int -> [SlotTy] -> IM.IntMap StgArg -> [StgArg]
+      mkTupArgs _ [] _
+        = []
+      mkTupArgs arg_idx (slot : slots_left) arg_map
+        | Just stg_arg <- IM.lookup arg_idx arg_map
+        = stg_arg : mkTupArgs (arg_idx + 1) slots_left arg_map
+        | otherwise
+        = StgRubbishArg (slotTyToType slot) : mkTupArgs (arg_idx + 1) slots_left arg_map
+    in
+      tag_arg : mkTupArgs 0 sum_slots arg_idxs
+
+--------------------------------------------------------------------------------
+
 unariseArg :: UnariseEnv -> StgArg -> [StgArg]
 unariseArg rho (StgVarArg x) = unariseId' rho x
 unariseArg _   arg           = [arg]
@@ -493,7 +565,7 @@ unariseIdBinder :: UnariseEnv -> Id -> UniqSM (UnariseEnv, [Id])
 unariseIdBinder rho x
   | Just tys <- unariseIdType x
   = do xs <- mkIds (mkFastString "us") tys
-       return (extendVarEnv rho x (Unarise (map StgVarArg xs)), xs)
+       return (extendRho rho x (Unarise (map StgVarArg xs)), xs)
   | otherwise
   = return (rho, [x])
 
@@ -511,104 +583,6 @@ mkIds fs tys = mapM (mkId fs) tys
 
 mkId :: FastString -> UnaryType -> UniqSM Id
 mkId = mkSysLocalOrCoVarM
-
---------------------------------------------------------------------------------
-
-mapTupleIdBinders
-  :: [InId]       -- Un-processed binders of a tuple alternative
-  -> [OutStgArg]  -- Arguments that form the tuple (after unarisation)
-  -> UnariseEnv
-  -> UnariseEnv
-mapTupleIdBinders ids args rho0
-  = let
-      id_arities :: [(Id, Int)]  -- For each binder, how many values will represent it
-      id_arities = map (\id -> (id, length (unariseIdType' id))) ids
-
-      map_ids :: UnariseEnv -> [(Id, Int)] -> [StgArg] -> UnariseEnv
-      map_ids rho [] _  = rho
-      map_ids _   _  [] = pprPanic "mapTupleIdBinders" (ppr ids $$ ppr args)
-      map_ids rho ((x, x_arity) : xs) args =
-        let
-          (x_args, args') = splitAt x_arity args
-
-          -- Careful with how to extend the rho. Some of the tests that catch
-          -- this error: cgrun064, ColpySmallArray.
-          rho'
-            | isMultiValBndr x
-            = extendVarEnv rho x (Unarise x_args)
-            | otherwise
-            = ASSERT (x_args `lengthIs` 1)
-              extendVarEnv rho x (Rename (head x_args))
-        in
-          map_ids rho' xs args'
-    in
-      ASSERT2 (sum (map snd id_arities) == length args, ppr id_arities $$ ppr args)
-      map_ids rho0 id_arities args
-
-mapSumIdBinders
-  :: [InId]      -- Binder of a sum alternative (remember that sum patterns
-                 -- only have one binder, so this list should be a singleton)
-  -> [OutStgArg] -- Arguments that form the sum (NOT including the tag).
-                 -- Should not have void arguments as sums don't allocate slots
-                 -- for voids in sums.
-  -> UnariseEnv
-  -> UnariseEnv
-
-mapSumIdBinders [id] sum_args rho
-  = let
-      arg_slots = map typeSlotTy (concatMap (flattenRepType . repType . stgArgType) sum_args)
-      id_slots  = filterOut isVoidSlot (map typeSlotTy (unariseIdType' id))
-
-      -- map non_void binders to arguments
-      layout'   = layout arg_slots id_slots
-
-      -- unarise id to a mix of non-void slots and voidPrimId
-      mapId :: [SlotTy] -> [Int] -> [StgArg]
-      mapId [] _ = []
-      mapId (s : ss) l@(i : is)
-        | isVoidSlot s = voidArg : mapId ss l
-        | otherwise    = (sum_args !! i) : mapId ss is
-      mapId _ [] = pprPanic "mapSumIdBinders.mapId" (ppr id <+> ppr (idType id) <+> ppr sum_args)
-    in
-      if | isMultiValBndr id
-          -> extendVarEnv rho id (Unarise (mapId id_slots layout'))
-         | isVoidBndr id
-          -> pprTrace "void arg" (ppr id) $ extendVarEnv rho id (Rename voidArg) -- no void args in sums
-         | otherwise
-          -> extendVarEnv rho id (Rename (sum_args !! head layout'))
-
-mapSumIdBinders ids sum_args _
-  = pprPanic "mapIdSumBinders" (ppr ids $$ ppr sum_args)
-
--- | Build a unboxed sum term from arguments of an alternative.
-mkUbxSum
-  :: DataCon      -- Sum data con
-  -> [Type]       -- Type arguments of the sum data con
-  -> [OutStgArg]  -- Actual arguments of the alternative
-  -> [OutStgArg]  -- Final tuple arguments
-mkUbxSum dc ty_args stg_args
-  = let
-      (_ : sum_slots) = ubxSumRepType ty_args
-        -- drop tag slot
-
-      nv_args = filterOut (isVoidTy . stgArgType) stg_args
-
-      tag = dataConTag dc
-
-      layout'  = layout sum_slots (map (typeSlotTy . stgArgType) nv_args)
-      tag_arg  = StgLitArg (MachInt (fromIntegral tag))
-      arg_idxs = IM.fromList (zipEqual "mkUbxSum" layout' nv_args)
-
-      mkTupArgs :: Int -> [SlotTy] -> IM.IntMap StgArg -> [StgArg]
-      mkTupArgs _ [] _
-        = []
-      mkTupArgs arg_idx (slot : slots_left) arg_map
-        | Just stg_arg <- IM.lookup arg_idx arg_map
-        = stg_arg : mkTupArgs (arg_idx + 1) slots_left arg_map
-        | otherwise
-        = StgRubbishArg (slotTyToType slot) : mkTupArgs (arg_idx + 1) slots_left arg_map
-    in
-      tag_arg : mkTupArgs 0 sum_slots arg_idxs
 
 --------------------------------------------------------------------------------
 
