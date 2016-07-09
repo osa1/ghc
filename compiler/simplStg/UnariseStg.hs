@@ -159,7 +159,7 @@ corresponds to the number of (possibly-void) *registers* arguments will arrive
 in.
 -}
 
-{-# LANGUAGE CPP, TupleSections #-}
+{-# LANGUAGE CPP, TupleSections, MultiWayIf #-}
 
 module UnariseStg (unarise) where
 
@@ -461,6 +461,7 @@ unariseId rho x = lookupVarEnv rho x
 unariseId' :: UnariseEnv -> Id -> [StgArg]
 unariseId' rho x
   = case unariseId rho x of
+      Just (Unarise [])   -> [voidArg]
       Just (Unarise args) -> args
       Just (Rename arg)   -> [arg]
       Nothing             -> [StgVarArg x]
@@ -547,17 +548,34 @@ mapTupleIdBinders ids args rho0
 mapSumIdBinders
   :: [InId]      -- Binder of a sum alternative (remember that sum patterns
                  -- only have one binder, so this list should be a singleton)
-  -> [OutStgArg] -- Arguments that form the sum (NOT including the tag)
+  -> [OutStgArg] -- Arguments that form the sum (NOT including the tag).
+                 -- Should not have void arguments as sums don't allocate slots
+                 -- for voids in sums.
   -> UnariseEnv
   -> UnariseEnv
 
 mapSumIdBinders [id] sum_args rho
   = let
       arg_slots = map typeSlotTy (concatMap (flattenRepType . repType . stgArgType) sum_args)
-      id_slots  = map typeSlotTy (unariseIdType' id)
+      id_slots  = filterOut isVoidSlot (map typeSlotTy (unariseIdType' id))
+
+      -- map non_void binders to arguments
       layout'   = layout arg_slots id_slots
+
+      -- unarise id to a mix of non-void slots and voidPrimId
+      mapId :: [SlotTy] -> [Int] -> [StgArg]
+      mapId [] _ = []
+      mapId (s : ss) l@(i : is)
+        | isVoidSlot s = voidArg : mapId ss l
+        | otherwise    = (sum_args !! i) : mapId ss is
+      mapId _ [] = pprPanic "mapSumIdBinders.mapId" (ppr id <+> ppr (idType id) <+> ppr sum_args)
     in
-      extendVarEnv rho id (Unarise [ sum_args !! i | i <- layout' ])
+      if | isMultiValBndr id
+          -> extendVarEnv rho id (Unarise (mapId id_slots layout'))
+         | isVoidBndr id
+          -> pprTrace "void arg" (ppr id) $ extendVarEnv rho id (Rename voidArg) -- no void args in sums
+         | otherwise
+          -> extendVarEnv rho id (Rename (sum_args !! head layout'))
 
 mapSumIdBinders ids sum_args _
   = pprPanic "mapIdSumBinders" (ppr ids $$ ppr sum_args)
@@ -573,11 +591,13 @@ mkUbxSum dc ty_args stg_args
       (_ : sum_slots) = ubxSumRepType ty_args
         -- drop tag slot
 
+      nv_args = filterOut (isVoidTy . stgArgType) stg_args
+
       tag = dataConTag dc
 
-      layout'  = layout sum_slots (map (typeSlotTy . stgArgType) stg_args)
+      layout'  = layout sum_slots (map (typeSlotTy . stgArgType) nv_args)
       tag_arg  = StgLitArg (MachInt (fromIntegral tag))
-      arg_idxs = IM.fromList (zipEqual "mkUbxSum" layout' stg_args)
+      arg_idxs = IM.fromList (zipEqual "mkUbxSum" layout' nv_args)
 
       mkTupArgs :: Int -> [SlotTy] -> IM.IntMap StgArg -> [StgArg]
       mkTupArgs _ [] _
@@ -600,6 +620,9 @@ isUnboxedSumBndr = isUnboxedSumType . idType
 
 isUnboxedTupleBndr :: Id -> Bool
 isUnboxedTupleBndr = isUnboxedTupleType . idType
+
+isVoidBndr :: Id -> Bool
+isVoidBndr = isVoidTy . idType
 
 mkTuple :: [StgArg] -> StgExpr
 mkTuple args  = StgConApp (tupleDataCon Unboxed (length args)) args (map stgArgType args)
