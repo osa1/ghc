@@ -51,9 +51,9 @@ Suppose that a variable x : (# t1, t2 #).
        - It scrutinises an unboxed tuple or unboxed sum
 
        - The scrutinee is a variable (or when it is an explicit tuple, but the
-         simplifier emiminates those)
+         simplifier eliminates those)
 
-    The case alterntative (there can be only one) can be one of these two
+    The case alternative (there can be only one) can be one of these two
     things:
 
       - An unboxed tuple pattern. (note that number of binders in the pattern
