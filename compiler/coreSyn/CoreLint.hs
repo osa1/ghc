@@ -1405,7 +1405,7 @@ lintCoercion co@(UnivCo prov r ty1 ty2)
               validateCoercion (typePrimRep t1) (typePrimRep t2)
            (MultiRep rep1, MultiRep rep2) ->
               checkWarnL (rep1 == rep2) (report "multi values with different reps")
-           _  -> addWarnL (report "unboxed tuple and ordinary type")
+           _  -> addWarnL (report "multi rep and unary rep")
      validateCoercion :: PrimRep -> PrimRep -> LintM ()
      validateCoercion rep1 rep2
        = do { dflags <- getDynFlags
