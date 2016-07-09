@@ -215,6 +215,7 @@ instance Outputable UnariseVal where
 --------------------------------------------------------------------------------
 
 type OutStgExpr = StgExpr
+type OutStgArg  = StgArg
 type InId       = Id
 type InStgAlt   = StgAlt
 
@@ -513,8 +514,8 @@ mkId = mkSysLocalOrCoVarM
 --------------------------------------------------------------------------------
 
 mapTupleIdBinders
-  :: [Id]         -- Un-processed binders of a tuple alternative
-  -> [StgArg]     -- Arguments that form the tuple (after unarisation)
+  :: [InId]       -- Un-processed binders of a tuple alternative
+  -> [OutStgArg]  -- Arguments that form the tuple (after unarisation)
   -> UnariseEnv
   -> UnariseEnv
 mapTupleIdBinders ids args rho0
@@ -544,9 +545,9 @@ mapTupleIdBinders ids args rho0
       map_ids rho0 id_arities args
 
 mapSumIdBinders
-  :: [Id]        -- Binder of a sum alternative (remember that sum patterns
-                 -- only have one binder)
-  -> [StgArg]    -- Arguments that form the sum (NOT including the tag)
+  :: [InId]      -- Binder of a sum alternative (remember that sum patterns
+                 -- only have one binder, so this list should be a singleton)
+  -> [OutStgArg] -- Arguments that form the sum (NOT including the tag)
   -> UnariseEnv
   -> UnariseEnv
 
@@ -563,10 +564,10 @@ mapSumIdBinders ids sum_args _
 
 -- | Build a unboxed sum term from arguments of an alternative.
 mkUbxSum
-  :: DataCon   -- Sum data con
-  -> [Type]    -- Type arguments of the sum data con
-  -> [StgArg]  -- Actual arguments of the alternative
-  -> [StgArg]  -- Final tuple arguments
+  :: DataCon      -- Sum data con
+  -> [Type]       -- Type arguments of the sum data con
+  -> [OutStgArg]  -- Actual arguments of the alternative
+  -> [OutStgArg]  -- Final tuple arguments
 mkUbxSum dc ty_args stg_args
   = let
       (_ : sum_slots) = ubxSumRepType ty_args
