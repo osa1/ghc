@@ -440,7 +440,7 @@ mapTupleIdBinders ids args rho0
           (x_args, args') = splitAt x_arity args
 
           -- Careful with how to extend the rho. Some of the tests that catch
-          -- this error: cgrun064, ColpySmallArray.
+          -- this error: cgrun064, CopySmallArray.
           rho'
             | isMultiValBndr x
             = extendRho rho x (Unarise x_args)
