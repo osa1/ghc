@@ -499,7 +499,7 @@ unariseIdType :: Id -> Maybe [Type]
 unariseIdType x =
   case repType (idType x) of
     UnaryRep _     -> Nothing
-    MultiRep slots -> Just (map slotTyToType slots)
+    MultiRep slots -> ASSERT(not (null slots)) Just (map slotTyToType slots)
 
 unariseIdType' :: Id -> [Type]
 unariseIdType' x = fromMaybe [idType x] (unariseIdType x)
@@ -526,8 +526,19 @@ mapTupleIdBinders ids args rho0
       map_ids rho [] _  = rho
       map_ids _   _  [] = pprPanic "mapTupleIdBinders" (ppr ids $$ ppr args)
       map_ids rho ((x, x_arity) : xs) args =
-        let (x_args, args') = splitAt x_arity args
-         in map_ids (extendVarEnv rho x (Unarise x_args)) xs args'
+        let
+          (x_args, args') = splitAt x_arity args
+
+          -- Careful with how to extend the rho. Some of the tests that catch
+          -- this error: cgrun064, ColpySmallArray.
+          rho'
+            | isMultiValBndr x
+            = extendVarEnv rho x (Unarise x_args)
+            | otherwise
+            = ASSERT (x_args `lengthIs` 1)
+              extendVarEnv rho x (Rename (head x_args))
+        in
+          map_ids rho' xs args'
     in
       ASSERT2 (sum (map snd id_arities) == length args, ppr id_arities $$ ppr args)
       map_ids rho0 id_arities args
