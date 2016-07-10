@@ -42,7 +42,7 @@ type UnaryType = Type  -- Always a value type; i.e. its kind is TYPE rr
                        -- Never an unboxed tuple or sum.
 
 data RepType
-  = MultiRep [SlotTy]   -- Represented by multiple values.
+  = MultiRep [SlotTy]   -- Represented by multiple values (e.g. unboxed tuple or sum)
                         -- INVARIANT: Never an empty list.
   | UnaryRep UnaryType  -- Represented by a single value
 
