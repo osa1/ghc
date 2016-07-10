@@ -53,8 +53,6 @@ main = do
     performMajorGC
 
     -- make sure pointers in unboxed sums are really roots
-    -- (FIXME: I need RTS to clear old fromspace/new tospace to make sure this
-    -- is working as intended)
     putStrLn (showEither1 e1_1)
   where
     -- boxed types only
