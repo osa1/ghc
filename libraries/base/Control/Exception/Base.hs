@@ -23,7 +23,6 @@ module Control.Exception.Base (
         Exception(..),
         IOException,
         ArithException(..),
-        RubbishEntryError(..),
         ArrayException(..),
         AssertionFailed(..),
         SomeAsyncException(..), AsyncException(..),
@@ -94,7 +93,7 @@ module Control.Exception.Base (
         -- * Calls for GHC runtime
         recSelError, recConError, irrefutPatError, runtimeError,
         nonExhaustiveGuardsError, patError, noMethodBindingError,
-        absentError, typeError, rubbishEntryError,
+        absentError, typeError,
         nonTermination, nestedAtomically,
   ) where
 
@@ -385,16 +384,6 @@ instance Exception TypeError
 
 -----
 
--- | A Rubbish value has been used.
-data RubbishEntryError = RubbishEntryError
-
-instance Exception RubbishEntryError
-
-instance Show RubbishEntryError where
-  showsPrec _ RubbishEntryError = showString "rubbish entered"
-
------
-
 -- |Thrown when the runtime system detects that the computation is
 -- guaranteed not to terminate. Note that there is no guarantee that
 -- the runtime system will notice whether any given computation is
@@ -439,9 +428,6 @@ recConError              s = throw (RecConError      (untangle s "Missing field 
 noMethodBindingError     s = throw (NoMethodError    (untangle s "No instance nor default method for class operation"))
 patError                 s = throw (PatternMatchFail (untangle s "Non-exhaustive patterns in"))
 typeError                s = throw (TypeError        (unpackCStringUtf8# s))
-
-rubbishEntryError :: a
-rubbishEntryError = throw RubbishEntryError
 
 -- GHC's RTS calls this
 nonTermination :: SomeException

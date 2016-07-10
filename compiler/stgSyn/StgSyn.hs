@@ -100,7 +100,6 @@ data GenStgArg occ
     -- code, but it may be a GC root (i.e. used by GC) if the type is boxed.
   | StgRubbishArg Type
 
-
 -- | Does this constructor application refer to
 -- anything in a different *Windows* DLL?
 -- If so, we can't allocate it statically

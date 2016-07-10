@@ -22,12 +22,11 @@ module MkGraph
 where
 
 import BlockId
-import CLabel (mkClosureLabel)
+import CLabel (mkRUBBISH_ENTRY_infoLabel)
 import Cmm
 import CmmCallConv
 import CmmSwitch (SwitchTargets)
 import CmmUtils (cmmArgType)
-import Id (idCafInfo, idName)
 import TyCon (isGcPtrRep)
 import RepType (typePrimRep)
 
@@ -35,7 +34,6 @@ import Compiler.Hoopl hiding (Unique, (<*>), mkFirst, mkMiddle, mkLast, mkLabel,
 import DynFlags
 import FastString
 import ForeignCall
-import MkCore (rUBBISH_ENTRY_ERROR_ID)
 import OrdList
 import SMRep (ByteOff)
 import UniqSupply
@@ -436,5 +434,4 @@ toCall e cont updfr_off res_space arg_space regs =
 
 --------------
 rubbishExpr :: CmmExpr
-rubbishExpr = CmmLit (CmmLabel (mkClosureLabel (idName rUBBISH_ENTRY_ERROR_ID)
-                                               (idCafInfo rUBBISH_ENTRY_ERROR_ID)))
+rubbishExpr = CmmLit (CmmLabel mkRUBBISH_ENTRY_infoLabel)
