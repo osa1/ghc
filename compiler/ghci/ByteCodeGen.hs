@@ -305,7 +305,7 @@ collect (_, e) = go [] e
     go xs e | Just e' <- bcView e = go xs e'
     go xs (AnnLam x (_,e))
       | MultiRep _ <- repType (idType x)
-      = unboxedTupleException
+      = multiRepException
       | otherwise
       = go (x:xs) e
     go xs not_lambda = (reverse xs, not_lambda)
@@ -648,14 +648,14 @@ schemeT d s p app
 
 
    -- Case 2: Constructor application
-   | Just con <- maybe_saturated_dcon,
-     isUnboxedTupleCon con
+   | Just con <- maybe_saturated_dcon
+   , isUnboxedTupleCon con || isUnboxedSumCon con
    = case args_r_to_l of
         [arg1,arg2] | isVAtom arg1 ->
                   unboxedTupleReturn d s p arg2
         [arg1,arg2] | isVAtom arg2 ->
                   unboxedTupleReturn d s p arg1
-        _other -> unboxedTupleException
+        _other -> multiRepException
 
    -- Case 3: Ordinary data constructor
    | Just con <- maybe_saturated_dcon
@@ -794,7 +794,7 @@ doCase  :: Word -> Sequel -> BCEnv
         -> BcM BCInstrList
 doCase d s p (_,scrut) bndr alts is_unboxed_tuple
   | MultiRep _ <- repType (idType bndr)
-  = unboxedTupleException
+  = multiRepException
   | otherwise
   = do
      dflags <- getDynFlags
@@ -850,7 +850,7 @@ doCase d s p (_,scrut) bndr alts is_unboxed_tuple
                 rhs_code <- schemeE d_alts s p_alts rhs
                 return (my_discr alt, rhs_code)
            | any (\bndr -> case repType (idType bndr) of MultiRep _ -> True; _ -> False) bndrs
-           = unboxedTupleException
+           = multiRepException
            -- algebraic alt with some binders
            | otherwise =
              let
@@ -873,8 +873,8 @@ doCase d s p (_,scrut) bndr alts is_unboxed_tuple
 
         my_discr (DEFAULT, _, _) = NoDiscr {-shouldn't really happen-}
         my_discr (DataAlt dc, _, _)
-           | isUnboxedTupleCon dc
-           = unboxedTupleException
+           | isUnboxedTupleCon dc || isUnboxedSumCon dc
+           = multiRepException
            | otherwise
            = DiscrP (fromIntegral (dataConTag dc - fIRST_TAG))
         my_discr (LitAlt l, _, _)
@@ -1560,9 +1560,9 @@ bcIdUnaryType x = case repType (idType x) of
     _ -> pprPanic "bcIdUnaryType" (ppr x $$ ppr (idType x))
 
 -- See bug #1257
-unboxedTupleException :: a
-unboxedTupleException = throwGhcException (ProgramError
-  ("Error: bytecode compiler can't handle unboxed tuples.\n"++
+multiRepException :: a
+multiRepException = throwGhcException (ProgramError
+  ("Error: bytecode compiler can't handle unboxed tuples and sums.\n"++
    "  Possibly due to foreign import/export decls in source.\n"++
    "  Workaround: use -fobject-code, or compile this module to .o separately."))
 
