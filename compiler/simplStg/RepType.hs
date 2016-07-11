@@ -13,7 +13,7 @@ module RepType
 
     -- * Unboxed sum representation type
     ubxSumRepType, layout, typeSlotTy, SlotTy (..), slotTyToType,
-    isVoidSlot, slotPrimRep
+    isVoidSlot, slotPrimRep, repTypeSlots
   ) where
 
 #include "HsVersions.h"

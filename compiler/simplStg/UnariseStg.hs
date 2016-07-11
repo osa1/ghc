@@ -281,9 +281,6 @@ unariseExpr rho e@(StgApp f [])
         -> return e
 
 unariseExpr rho e@(StgApp f args)
-  | isMultiValBndr f
-  = pprPanic "unariseExpr - StgApp" (ppr e)
-  | otherwise
   = return (StgApp f' (unariseArgs rho args))
   where
     f' = case unariseId rho f of
@@ -447,20 +444,19 @@ mapTupleIdBinders
   -> UnariseEnv
 mapTupleIdBinders ids args rho0
   = let
-      id_arities :: [(Id, Int)]  -- For each binder, how many values will represent it
-      id_arities = map (\id -> (id, length (unariseIdType' id))) ids
+      ids_unarised :: [(Id, RepType)]
+      ids_unarised = map (\id -> (id, repType (idType id))) ids
 
-      map_ids :: UnariseEnv -> [(Id, Int)] -> [StgArg] -> UnariseEnv
+      map_ids :: UnariseEnv -> [(Id, RepType)] -> [StgArg] -> UnariseEnv
       map_ids rho [] _  = rho
       map_ids _   _  [] = pprPanic "mapTupleIdBinders" (ppr ids $$ ppr args)
-      map_ids rho ((x, x_arity) : xs) args =
+      map_ids rho ((x, x_rep) : xs) args =
         let
+          x_arity = length (repTypeSlots x_rep)
           (x_args, args') = splitAt x_arity args
 
-          -- Careful with how to extend the rho. Some of the tests that catch
-          -- this error: cgrun064, CopySmallArray.
           rho'
-            | isMultiValBndr x
+            | isMultiRep x_rep
             = extendRho rho x (Unarise x_args)
             | otherwise
             = ASSERT (x_args `lengthIs` 1)
@@ -468,8 +464,7 @@ mapTupleIdBinders ids args rho0
         in
           map_ids rho' xs args'
     in
-      ASSERT2 (sum (map snd id_arities) == length args, ppr id_arities $$ ppr args)
-      map_ids rho0 id_arities args
+      map_ids rho0 ids_unarised args
 
 mapSumIdBinders
   :: [InId]      -- Binder of a sum alternative (remember that sum patterns
@@ -482,7 +477,7 @@ mapSumIdBinders
 
 mapSumIdBinders [id] sum_args rho
   = let
-      arg_slots = map typeSlotTy (concatMap (flattenRepType . repType . stgArgType) sum_args)
+      arg_slots = concatMap (repTypeSlots . repType . stgArgType) sum_args
       id_slots  = filterOut isVoidSlot (map typeSlotTy (unariseIdType' id))
 
       -- map non_void binders to arguments
