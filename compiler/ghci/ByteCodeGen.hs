@@ -304,7 +304,7 @@ collect (_, e) = go [] e
   where
     go xs e | Just e' <- bcView e = go xs e'
     go xs (AnnLam x (_,e))
-      | MultiRep _ <- repType (idType x)
+      | MultiRep (_:_) <- repType (idType x)
       = multiRepException
       | otherwise
       = go (x:xs) e
@@ -793,7 +793,7 @@ doCase  :: Word -> Sequel -> BCEnv
         -> Maybe Id  -- Just x <=> is an unboxed tuple case with scrut binder, don't enter the result
         -> BcM BCInstrList
 doCase d s p (_,scrut) bndr alts is_unboxed_tuple
-  | MultiRep _ <- repType (idType bndr)
+  | MultiRep (_:_) <- repType (idType bndr)
   = multiRepException
   | otherwise
   = do
@@ -849,7 +849,7 @@ doCase d s p (_,scrut) bndr alts is_unboxed_tuple
            | null real_bndrs = do
                 rhs_code <- schemeE d_alts s p_alts rhs
                 return (my_discr alt, rhs_code)
-           | any (\bndr -> case repType (idType bndr) of MultiRep _ -> True; _ -> False) bndrs
+           | any (\bndr -> case repType (idType bndr) of MultiRep (_:_) -> True; _ -> False) bndrs
            = multiRepException
            -- algebraic alt with some binders
            | otherwise =
@@ -1551,12 +1551,11 @@ isVoidArg V = True
 isVoidArg _ = False
 
 bcIdUnaryType :: Id -> UnaryType
-bcIdUnaryType x = case repType (idType x) of
-    UnaryRep rep_ty -> rep_ty
-    MultiRep [slot_ty] -> slotTyToType slot_ty
-    MultiRep [slot_ty1, slot_ty2]
-      | VoidRep <- slotPrimRep slot_ty1 -> slotTyToType slot_ty2
-      | VoidRep <- slotPrimRep slot_ty2 -> slotTyToType slot_ty1
+bcIdUnaryType x = case flattenRepType (repType (idType x)) of
+    [rep_ty] -> rep_ty
+    [ty1, ty2]
+      | VoidRep <- typePrimRep ty1 -> ty2
+      | VoidRep <- typePrimRep ty2 -> ty1
     _ -> pprPanic "bcIdUnaryType" (ppr x $$ ppr (idType x))
 
 -- See bug #1257

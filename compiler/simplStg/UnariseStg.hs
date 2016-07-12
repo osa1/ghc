@@ -237,10 +237,6 @@ instance Outputable UnariseVal where
   ppr (Unarise args) = text "Unarise" <+> ppr args
   ppr (Rename arg)   = text "Rename" <+> ppr arg
 
-extendRho :: UnariseEnv -> Id -> UnariseVal -> UnariseEnv
-extendRho rho x (Unarise []) = extendVarEnv rho x (Rename voidArg)
-extendRho rho x val          = extendVarEnv rho x val
-
 --------------------------------------------------------------------------------
 
 type OutStgExpr = StgExpr
@@ -293,7 +289,9 @@ unariseExpr rho e@(StgApp f [])
         -> return (mkTuple args)
       Just (Rename (StgVarArg f'))
         -> return (StgApp f' [])
-      Just (Rename arg)
+      Just (Rename (StgLitArg f'))
+        -> return (StgLit f')
+      Just (Rename arg@(StgRubbishArg {}))
         -> pprPanic "unariseExpr - app1" (ppr e $$ ppr arg)
       Nothing
         -> return e
@@ -383,7 +381,7 @@ elimCase rho args bndr (MultiValAlt _) alts
   = do let (tag_arg : real_args) = args
        tag_bndr <- mkId (mkFastString "tag") tagTy
           -- this won't be used but we need a binder anyway
-       let rho1 = extendRho rho bndr (Unarise (filterOutVoids args))
+       let rho1 = extendVarEnv rho bndr (Unarise (filterOutVoids args))
            scrut' = case tag_arg of
                       StgVarArg v     -> StgApp v []
                       StgLitArg l     -> StgLit l
@@ -408,7 +406,7 @@ unariseAlts rho (MultiValAlt n) bndr [(DEFAULT, [], e)]
 unariseAlts rho (MultiValAlt n) bndr [(DataAlt _, ys, e)]
   | isUnboxedTupleBndr bndr
   = do (rho', ys') <- unariseIdBinders rho ys
-       let rho'' = extendRho rho' bndr (Unarise (map StgVarArg ys'))
+       let rho'' = extendVarEnv rho' bndr (Unarise (map StgVarArg ys'))
        e' <- unariseExpr rho'' e
        return [(DataAlt (tupleDataCon Unboxed n), ys', e')]
 
@@ -492,10 +490,10 @@ mapTupleIdBinders ids args0 rho0
 
           rho'
             | isMultiRep x_rep
-            = extendRho rho x (Unarise x_args)
+            = extendVarEnv rho x (Unarise x_args)
             | otherwise
             = ASSERT (x_args `lengthIs` 1)
-              extendRho rho x (Rename (head x_args))
+              extendVarEnv rho x (Rename (head x_args))
         in
           map_ids rho' xs args'
     in
@@ -516,10 +514,10 @@ mapSumIdBinders [id] args0 rho0
       layout1   = layout arg_slots id_slots
     in
       if | isMultiValBndr id
-          -> extendRho rho0 id (Unarise [ nv_args !! i | i <- layout1 ])
+          -> extendVarEnv rho0 id (Unarise [ nv_args !! i | i <- layout1 ])
          | otherwise
           -> ASSERT(layout1 `lengthIs` 1)
-             extendRho rho0 id (Rename (nv_args !! head layout1))
+             extendVarEnv rho0 id (Rename (nv_args !! head layout1))
 
 mapSumIdBinders ids sum_args _
   = pprPanic "mapSumIdBinders" (ppr ids $$ ppr sum_args)
@@ -605,7 +603,7 @@ unariseIdBinder rho x
         return (extendVarEnv rho x (Unarise []), [voidArgId])
       Just tys -> do
         xs <- mkIds (mkFastString "us") tys
-        return (extendRho rho x (Unarise (map StgVarArg xs)), xs)
+        return (extendVarEnv rho x (Unarise (map StgVarArg xs)), xs)
 
 unariseIdType :: Id -> Maybe [Type]
 unariseIdType x =
