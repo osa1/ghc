@@ -229,8 +229,7 @@ import qualified Data.IntMap as IM
 type UnariseEnv = VarEnv UnariseVal
 
 data UnariseVal
-  = Unarise [StgArg] -- Unarise to tuple. INVARIANT: Never an empty list. Empty
-                     -- tuples are unarised to voidPrimId.
+  = Unarise [StgArg] -- Unarise to tuple.
   | Rename   StgArg  -- Renaming. See NOTE [Renaming during unarisation].
 
 instance Outputable UnariseVal where
@@ -240,10 +239,10 @@ instance Outputable UnariseVal where
 --------------------------------------------------------------------------------
 
 type OutStgExpr = StgExpr
-type OutStgArg  = StgArg
 type InId       = Id
 type InStgAlt   = StgAlt
-type StgArgOut  = StgArg
+type InStgArg   = StgArg
+type OutStgArg  = StgArg
 
 unarise :: UniqSupply -> [StgBinding] -> [StgBinding]
 unarise us binds = initUs_ us (mapM (unariseBinding init_env) binds)
@@ -270,6 +269,7 @@ unariseRhs rho (StgRhsCon ccs con args)
 
 --------------------------------------------------------------------------------
 
+unariseMulti_maybe :: UnariseEnv -> DataCon -> [InStgArg] -> [Type] -> Maybe [StgArg]
 unariseMulti_maybe rho dc args ty_args
   | isUnboxedTupleCon dc
   = Just (unariseArgs rho args)
@@ -278,7 +278,7 @@ unariseMulti_maybe rho dc args ty_args
   , let args1 = ASSERT (isSingleton args) (unariseArgs rho args)
   = Just (mkUbxSum dc ty_args args1)
 
-  | othewrise
+  | otherwise
   = Nothing
 
 unariseExpr :: UnariseEnv -> StgExpr -> UniqSM StgExpr
@@ -310,7 +310,7 @@ unariseExpr _ (StgLit l)
   = return (StgLit l)
 
 unariseExpr rho (StgConApp dc args ty_args)
-  | Just args' <- unariseMulti_maybe dc args ty_args
+  | Just args' <- unariseMulti_maybe rho dc args ty_args
   = return (mkTuple args')
 
   | otherwise
@@ -329,19 +329,11 @@ unariseExpr rho (StgCase scrut bndr alt_ty alts)
   , Just (Unarise xs) <- unariseId rho v
   = elimCase rho xs bndr alt_ty alts
 
-{-
-  -- this can happen for example when we unarise a sum to a literal
-  | StgApp v [] <- scrut
-  , Just (Rename v') <- unariseId rho v
-  , MultiValAlt _ <- alt_ty
-  = elimCase rho [v'] bndr alt_ty alts
--}
-
   -- Handle strict lets for tuples and sums:
   --   case (# a,b #) of r -> rhs
   -- and analogously for sums
-  | StgConApp dc args _ <- scrut
-  , Just args' <- unariseMulti_maybe dc args ty_args
+  | StgConApp dc args ty_args <- scrut
+  , Just args' <- unariseMulti_maybe rho dc args ty_args
   = elimCase rho args' bndr alt_ty alts
 
   -- general case
@@ -362,7 +354,7 @@ unariseExpr rho (StgTick tick e)
 
 --------------------------------------------------------------------------------
 
-elimCase :: UnariseEnv -> [StgArgOut] -> InId -> AltType -> [InStgAlt] -> UniqSM OutStgExpr
+elimCase :: UnariseEnv -> [OutStgArg] -> InId -> AltType -> [InStgAlt] -> UniqSM OutStgExpr
 
 elimCase rho args bndr (MultiValAlt _) [(_, bndrs, rhs)]
   = do let rho1 = extendVarEnv rho bndr (Unarise (filterOutVoids args))

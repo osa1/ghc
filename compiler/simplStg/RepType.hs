@@ -58,16 +58,23 @@ isUnaryRep :: RepType -> Bool
 isUnaryRep (UnaryRep _) = True
 isUnaryRep _            = False
 
-repTypeSlots :: RepType -> [SlotTy]
-repTypeSlots (MultiRep slots) = slots
-repTypeSlots (UnaryRep ty)    = maybeToList (typeSlotTy ty)
+flattenRepType :: RepType -> [UnaryType]
+flattenRepType (MultiRep [])    = [voidPrimTy]
+flattenRepType (MultiRep slots) = map slotTyToType slots
+flattenRepType (UnaryRep ty)    = [ty]
 
+{- TODO: Use this instead of flattenRepType
 repTypeArgs :: Type -> [UnaryType]
 -- INVARIANT: the result list is never empty
 repTypeArgs ty = case repType ty of
                     MultiRep []    -> [voidPrimTy]
                     MultiRep slots -> map slotTyToType slots
                     UnaryRep ty    -> [ty]
+-}
+
+repTypeSlots :: RepType -> [SlotTy]
+repTypeSlots (MultiRep slots) = slots
+repTypeSlots (UnaryRep ty)    = maybeToList (typeSlotTy ty)
 
 -- | 'repType' figure out how a type will be represented at runtime. It looks
 -- through
@@ -78,10 +85,6 @@ repTypeArgs ty = case repType ty of
 --      4. All newtypes, including recursive ones, but not newtype families
 --      5. Casts
 --
--- (repType ty) returns MultiRep [] if ty consists only of void types,
---  e.g.   (# #)
---         (# (# #), Void# #)
--- etc
 repType :: Type -> RepType
 repType ty
   = go initRecTc ty
