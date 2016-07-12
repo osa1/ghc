@@ -211,13 +211,16 @@ import qualified Data.IntMap as IM
 --
 --    x :-> Unarise [a,b,c] in rho
 --
--- means (i)  x's RepType is a MultiRep, or equivalently
---            x's type is an unboxed tuple or sum, or a void type
+-- iff  x's RepType is a MultiRep, or equivalently
+--      x's type is an unboxed tuple or sum, or a void type
 --
---       (ii) x is represented by the multi-value a,b,c.
+--    x :-> Rename x'
 --
+-- iff x's RepType is UnaryRep, or equivalently
+--     x's type is not (unboxed tuple, sum, void)
+--
+-- So
 --    x:-> Unarise [a] in rho
---
 -- means x is represented by singleton tuple.
 --
 -- INVARIANT: Ids in the range only have "unary" types.
@@ -271,6 +274,17 @@ unariseRhs rho (StgRhsCon ccs con args)
 
 --------------------------------------------------------------------------------
 
+unariseMulti_maybe rho dc args ty_args
+  | isUnboxedTupleCon dc
+  = Just (unariseArgs rho args)
+
+  | isUnboxedSumCon dc
+  , let args1 = ASSERT (isSingleton args) (unariseArgs rho args)
+  = Just (mkUbxSum dc ty_args args1)
+
+  | othewrise
+  = Nothing
+
 unariseExpr :: UnariseEnv -> StgExpr -> UniqSM StgExpr
 
 unariseExpr rho e@(StgApp f [])
@@ -298,13 +312,8 @@ unariseExpr _ (StgLit l)
   = return (StgLit l)
 
 unariseExpr rho (StgConApp dc args ty_args)
-  | isUnboxedTupleCon dc
-  , let args' = unariseArgs rho args
+  | Just args' <- unariseMulti_maybe dc args ty_args
   = return (mkTuple args')
-
-  | isUnboxedSumCon dc
-  , let args1 = ASSERT (isSingleton args) (unariseArgs rho args)
-  = return (mkTuple (mkUbxSum dc ty_args args1))
 
   | otherwise
   , let args' = unariseArgs rho args
@@ -322,22 +331,19 @@ unariseExpr rho (StgCase scrut bndr alt_ty alts)
   , Just (Unarise xs) <- unariseId rho v
   = elimCase rho xs bndr alt_ty alts
 
+{-
   -- this can happen for example when we unarise a sum to a literal
   | StgApp v [] <- scrut
   , Just (Rename v') <- unariseId rho v
   , MultiValAlt _ <- alt_ty
   = elimCase rho [v'] bndr alt_ty alts
+-}
 
-  -- eliminate explicit tuples
+  -- Handle strict lets for tuples and sums:
+  --   case (# a,b #) of r -> rhs
+  -- and analogously for sums
   | StgConApp dc args _ <- scrut
-  , isUnboxedTupleCon dc
-  , args' <- unariseArgs rho args
-  = elimCase rho args' bndr alt_ty alts
-
-  -- eliminate explicit sums
-  | StgConApp dc args arg_tys <- scrut
-  , isUnboxedSumCon dc
-  , args' <- mkUbxSum dc arg_tys (unariseArgs rho args)
+  , Just args' <- unariseMulti_maybe dc args ty_args
   = elimCase rho args' bndr alt_ty alts
 
   -- general case
