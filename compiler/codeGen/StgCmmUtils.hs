@@ -364,8 +364,7 @@ newUnboxedTupleRegs res_ty
         ; ASSERT( regs `equalLength` reps )
           return (regs, map slotForeignHint reps) }
   where
-    MultiRep slots = repType res_ty
-    reps = filterOut isVoidSlot slots
+    MultiRep reps = repType res_ty
     choose_regs _ (AssignTo regs _) = return regs
     choose_regs dflags _            = mapM (newTemp . slotCmmType dflags) reps
 

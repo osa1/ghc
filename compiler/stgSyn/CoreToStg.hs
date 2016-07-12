@@ -452,8 +452,7 @@ mkStgAltType bndr alts = case repType (idType bndr) of
                 | otherwise          -> ASSERT2( _is_poly_alt_tycon tc, ppr tc )
                                         PolyAlt
         Nothing                      -> PolyAlt
-    MultiRep slots -> ASSERT(not (null slots))
-                      MultiValAlt (length slots)
+    MultiRep slots -> MultiValAlt (length slots)
   where
    _is_poly_alt_tycon tc
         =  isFunTyCon tc

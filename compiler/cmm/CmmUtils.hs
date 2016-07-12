@@ -111,7 +111,6 @@ slotCmmType dflags WordSlot   = bWord dflags
 slotCmmType _      Word64Slot = b64
 slotCmmType _      FloatSlot  = f32
 slotCmmType _      DoubleSlot = f64
-slotCmmType _      VoidSlot   = pprPanic "slotCmmType" (text "VoidSlot")
 
 primElemRepCmmType :: PrimElemRep -> CmmType
 primElemRepCmmType Int8ElemRep   = b8
@@ -150,7 +149,6 @@ slotForeignHint WordSlot      = NoHint
 slotForeignHint Word64Slot    = NoHint
 slotForeignHint FloatSlot     = NoHint
 slotForeignHint DoubleSlot    = NoHint
-slotForeignHint VoidSlot      = pprPanic "slotForeignHint" (text "VoidSlot")
 
 typeForeignHint :: UnaryType -> ForeignHint
 typeForeignHint = primRepForeignHint . typePrimRep

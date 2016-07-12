@@ -13,7 +13,7 @@ module RepType
 
     -- * Unboxed sum representation type
     ubxSumRepType, layout, typeSlotTy, SlotTy (..), slotTyToType,
-    isVoidSlot, slotPrimRep, repTypeSlots
+    slotPrimRep, repTypeSlots
   ) where
 
 #include "HsVersions.h"
@@ -29,6 +29,7 @@ import TysWiredIn
 import Util
 
 import Data.List (foldl', sort)
+import Data.Maybe (maybeToList)
 import qualified Data.IntSet as IS
 
 {- **********************************************************************
@@ -43,7 +44,6 @@ type UnaryType = Type  -- Always a value type; i.e. its kind is TYPE rr
 
 data RepType
   = MultiRep [SlotTy]   -- Represented by multiple values (e.g. unboxed tuple or sum)
-                        -- INVARIANT: Never an empty list.
   | UnaryRep UnaryType  -- Represented by a single value
 
 instance Outputable RepType where
@@ -64,7 +64,7 @@ flattenRepType (UnaryRep ty)    = [ty]
 
 repTypeSlots :: RepType -> [SlotTy]
 repTypeSlots (MultiRep slots) = slots
-repTypeSlots (UnaryRep ty)    = [typeSlotTy ty]
+repTypeSlots (UnaryRep ty)    = maybeToList (typeSlotTy ty)
 
 -- | 'repType' figure out how a type will be represented at runtime. It looks
 -- through
@@ -87,18 +87,20 @@ repType ty
     go rec_nts (ForAllTy _ ty2)         -- Drop type foralls
       = go rec_nts ty2
 
-    go rec_nts (TyConApp tc tys)        -- Expand newtypes
+    go rec_nts ty@(TyConApp tc tys)        -- Expand newtypes
       | isNewTyCon tc
       , tys `lengthAtLeast` tyConArity tc
       , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
       = go rec_nts' (newTyConInstRhs tc tys)
 
       | isUnboxedTupleTyCon tc
-      , let slots = concatMap (repTypeSlots . go rec_nts) non_rr_tys
-      = if null slots then UnaryRep voidPrimTy else MultiRep slots
+      = MultiRep (concatMap (repTypeSlots . go rec_nts) non_rr_tys)
 
       | isUnboxedSumTyCon tc
       = MultiRep (ubxSumRepType non_rr_tys)
+
+      | isVoidTy ty
+      = MultiRep []
       where
         -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
         non_rr_tys = dropRuntimeRepArgs tys
@@ -163,7 +165,7 @@ ubxSumRepType constrs0 =
       | isUnboxedSumType ty
       = repTypeSlots (repType ty)
       | otherwise
-      = sort (filterOut isVoidSlot (repTypeSlots (repType ty)))
+      = sort (repTypeSlots (repType ty))
 
     sumRep = WordSlot : combine_alts (map rep constrs0)
   in
@@ -175,8 +177,6 @@ layout :: [SlotTy]  -- Layout of sum. Does not include tag. The invariant of
                     -- sum layout
        -> [Int]     -- Where to map 'things' in the sum layout
 layout sum_slots0 arg_slots0 =
-    ASSERT (not (any isVoidSlot sum_slots0))
-    ASSERT (not (any isVoidSlot arg_slots0))
     go arg_slots0 IS.empty
   where
     go :: [SlotTy] -> IS.IntSet -> [Int]
@@ -208,13 +208,9 @@ layout sum_slots0 arg_slots0 =
 --   - Float slots: Shared between floating point types.
 --
 --   - Void slots: Shared between void types. Not used in sums.
-data SlotTy = PtrSlot | WordSlot | Word64Slot | FloatSlot | DoubleSlot | VoidSlot
+data SlotTy = PtrSlot | WordSlot | Word64Slot | FloatSlot | DoubleSlot
   deriving (Eq, Ord) -- Constructor order is important! We want same type of
                      -- slots with different sizes to be next to each other.
-
-isVoidSlot :: SlotTy -> Bool
-isVoidSlot VoidSlot = True
-isVoidSlot _        = False
 
 instance Outputable SlotTy where
   ppr PtrSlot    = text "PtrSlot"
@@ -222,13 +218,16 @@ instance Outputable SlotTy where
   ppr WordSlot   = text "WordSlot"
   ppr DoubleSlot = text "DoubleSlot"
   ppr FloatSlot  = text "FloatSlot"
-  ppr VoidSlot   = text "VoidSlot"
 
-typeSlotTy :: UnaryType -> SlotTy
-typeSlotTy = primRepSlot . typePrimRep
+typeSlotTy :: UnaryType -> Maybe SlotTy
+typeSlotTy ty
+  | isVoidTy ty
+  = Nothing
+  | otherwise
+  = Just (primRepSlot (typePrimRep ty))
 
 primRepSlot :: PrimRep -> SlotTy
-primRepSlot VoidRep     = VoidSlot
+primRepSlot VoidRep     = pprPanic "primRepSlot" (text "No slot for VoidRep")
 primRepSlot PtrRep      = PtrSlot
 primRepSlot IntRep      = WordSlot
 primRepSlot WordRep     = WordSlot
@@ -246,7 +245,6 @@ slotTyToType Word64Slot = int64PrimTy
 slotTyToType WordSlot   = intPrimTy
 slotTyToType DoubleSlot = doublePrimTy
 slotTyToType FloatSlot  = floatPrimTy
-slotTyToType VoidSlot   = voidPrimTy
 
 slotPrimRep :: SlotTy -> PrimRep
 slotPrimRep PtrSlot     = PtrRep
@@ -254,7 +252,6 @@ slotPrimRep Word64Slot  = Word64Rep
 slotPrimRep WordSlot    = WordRep
 slotPrimRep DoubleSlot  = DoubleRep
 slotPrimRep FloatSlot   = FloatRep
-slotPrimRep VoidSlot    = VoidRep
 
 -- | Returns the bigger type if one fits into the other. (commutative)
 fitsIn :: SlotTy -> SlotTy -> Maybe SlotTy
