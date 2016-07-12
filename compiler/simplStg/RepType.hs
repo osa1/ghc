@@ -59,6 +59,7 @@ isUnaryRep (UnaryRep _) = True
 isUnaryRep _            = False
 
 flattenRepType :: RepType -> [UnaryType]
+flattenRepType (MultiRep [])    = [voidPrimTy]
 flattenRepType (MultiRep slots) = map slotTyToType slots
 flattenRepType (UnaryRep ty)    = [ty]
 

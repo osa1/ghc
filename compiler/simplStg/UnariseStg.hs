@@ -317,25 +317,30 @@ unariseExpr _ e@StgLam{}
   = pprPanic "unariseExpr: found lambda" (ppr e)
 
 unariseExpr rho (StgCase scrut bndr alt_ty alts)
+  -- a tuple/sum binders in the scrutinee can always be eliminated
   | StgApp v [] <- scrut
   , Just (Unarise xs) <- unariseId rho v
   = elimCase rho xs bndr alt_ty alts
 
+  -- this can happen for example when we unarise a sum to a literal
   | StgApp v [] <- scrut
   , Just (Rename v') <- unariseId rho v
   , MultiValAlt _ <- alt_ty
   = elimCase rho [v'] bndr alt_ty alts
 
-  | StgConApp dc args arg_tys <- scrut
-  , isUnboxedSumCon dc
-  , args' <- mkUbxSum dc arg_tys (unariseArgs rho args)
-  = elimCase rho args' bndr alt_ty alts
-
+  -- eliminate explicit tuples
   | StgConApp dc args _ <- scrut
   , isUnboxedTupleCon dc
   , args' <- unariseArgs rho args
   = elimCase rho args' bndr alt_ty alts
 
+  -- eliminate explicit sums
+  | StgConApp dc args arg_tys <- scrut
+  , isUnboxedSumCon dc
+  , args' <- mkUbxSum dc arg_tys (unariseArgs rho args)
+  = elimCase rho args' bndr alt_ty alts
+
+  -- general case
   | otherwise
   = do scrut' <- unariseExpr rho scrut
        alts'  <- unariseAlts rho alt_ty bndr alts
