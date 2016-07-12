@@ -211,7 +211,10 @@ import qualified Data.IntMap as IM
 --
 --    x :-> Unarise [a,b,c] in rho
 --
--- means x is represented by the multi-value a,b,c.
+-- means (i)  x's RepType is a MultiRep, or equivalently
+--            x's type is an unboxed tuple or sum, or a void type
+--
+--       (ii) x is represented by the multi-value a,b,c.
 --
 --    x:-> Unarise [a] in rho
 --
@@ -286,7 +289,9 @@ unariseExpr rho e@(StgApp f args)
     f' = case unariseId rho f of
            Just (Rename (StgVarArg f')) -> f'
            Nothing -> f
-           err -> pprPanic "unariseExpr - app2" (ppr e $$ ppr err)
+           Just (Unarise {}) -> pprPanic "unariseExpr - app2" (ppr e $$ ppr err)
+               -- Can't happen because 'args' is non-empty, and
+               -- a tuple or sum cannot be applied to anything
 
 unariseExpr _ (StgLit l)
   = return (StgLit l)
@@ -310,9 +315,15 @@ unariseExpr rho (StgOpApp op args ty)
 unariseExpr _ e@StgLam{}
   = pprPanic "unariseExpr: found lambda" (ppr e)
 
-unariseExpr rho (StgCase e bndr alt_ty alts)
-  = do e' <- unariseExpr rho e
-       unariseCase rho e' bndr alt_ty alts
+unariseExpr rho (StgCase scrut bndr alt_ty alts)
+  | StgApp v [] <- scrut
+  , Just (Unarise xs) <- unariseId rho v
+  = elimCase xs bndr alts_ty alts
+
+  | othewrise
+  = do scrut' <- unariseExpr rho scrut
+       alts'  <- unariseAlts rho alt_ty bndr alts
+       return (StgCase scrut' bndr alt_ty alts')
 
 unariseExpr rho (StgLet bind e)
   = StgLet <$> unariseBinding rho bind <*> unariseExpr rho e
@@ -360,8 +371,7 @@ unariseCase rho scrut@(StgConApp _ args _) bndr _alt_Ty alts
        return (StgCase scrut' tag_bndr tagAltTy alts')
 
 unariseCase rho scrt bndr alt_ty alts
-  = do alts' <- unariseAlts rho alt_ty bndr alts
-       return (StgCase scrt bndr alt_ty alts')
+  = pprPanic ...
 
 --------------------------------------------------------------------------------
 
@@ -480,8 +490,8 @@ mapSumIdBinders [id] sum_args rho
       arg_slots = concatMap (repTypeSlots . repType . stgArgType) sum_args
       id_slots  = filterOut isVoidSlot (map typeSlotTy (unariseIdType' id))
 
-      -- map non_void binders to arguments
-      layout'   = layout arg_slots id_slots
+      -- map non_void binders to arguments 
+     layout'   = layout arg_slots id_slots
 
       -- unarise id to a mix of non-void slots and voidPrimId
       mapId :: [SlotTy] -> [Int] -> [StgArg]
