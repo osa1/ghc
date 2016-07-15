@@ -270,13 +270,14 @@ import Control.Arrow    ( first, second )
 -- Some examples of type classifications that may make this a bit clearer are:
 --
 -- @
--- Type         primitive       boxed           lifted          algebraic
+-- Type          primitive       boxed           lifted          algebraic
 -- -----------------------------------------------------------------------------
--- Int#         Yes             No              No              No
--- ByteArray#   Yes             Yes             No              No
--- (\# a, b \#)   Yes             No              No              Yes
--- (  a, b  )   No              Yes             Yes             Yes
--- [a]          No              Yes             Yes             Yes
+-- Int#          Yes             No              No              No
+-- ByteArray#    Yes             Yes             No              No
+-- (\# a, b \#)  Yes             No              No              Yes
+-- (\# a | b \#) Yes             No              No              Yes
+-- (  a, b  )    No              Yes             Yes             Yes
+-- [a]           No              Yes             Yes             Yes
 -- @
 
 -- $representation_types

@@ -528,7 +528,8 @@ isUnliftedLPat (L _ (SumPat _ _ _ _))       = True
 isUnliftedLPat _                            = False
 
 isUnliftedHsBind :: HsBind id -> Bool
--- A pattern binding with an outermost bang or unboxed tuple must be matched strictly
+-- A pattern binding with an outermost bang or unboxed tuple or sum must be
+-- matched strictly.
 -- Defined in this module because HsPat is above HsBinds in the import graph
 isUnliftedHsBind (PatBind { pat_lhs = p }) = isUnliftedLPat p
 isUnliftedHsBind _                         = False

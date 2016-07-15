@@ -489,7 +489,7 @@ hasNoBinding :: Id -> Bool
 hasNoBinding id = case Var.idDetails id of
                         PrimOpId _       -> True        -- See Note [Primop wrappers]
                         FCallId _        -> True
-                        DataConWorkId dc -> isUnboxedTupleCon dc
+                        DataConWorkId dc -> isUnboxedTupleCon dc || isUnboxedSumCon dc
                         _                -> False
 
 isImplicitId :: Id -> Bool

@@ -196,7 +196,7 @@ primitives, and literals.
 
   | StgLit      Literal
 
-        -- StgConApp is vital for returning unboxed tuples
+        -- StgConApp is vital for returning unboxed tuples or sums
         -- which can't be let-bound first
   | StgConApp   DataCon
                 [GenStgArg occ] -- Saturated

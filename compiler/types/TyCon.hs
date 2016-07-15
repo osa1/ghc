@@ -1587,8 +1587,9 @@ isDataTyCon :: TyCon -> Bool
 -- @case@ expressions, and they get info tables allocated for them.
 --
 -- Generally, the function will be true for all @data@ types and false
--- for @newtype@s, unboxed tuples and type family 'TyCon's. But it is
--- not guaranteed to return @True@ in all cases that it could.
+-- for @newtype@s, unboxed tuples, unboxed sums and type family
+-- 'TyCon's. But it is not guaranteed to return @True@ in all cases
+-- that it could.
 --
 -- NB: for a data type family, only the /instance/ 'TyCon's
 --     get an info table.  The family declaration 'TyCon' does not

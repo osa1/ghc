@@ -2430,7 +2430,7 @@ boxedMarshalableTyCon tc
 
 legalFIPrimArgTyCon :: DynFlags -> TyCon -> Validity
 -- Check args of 'foreign import prim', only allow simple unlifted types.
--- Strictly speaking it is unnecessary to ban unboxed tuples here since
+-- Strictly speaking it is unnecessary to ban unboxed tuples and sums here since
 -- currently they're of the wrong kind to use in function args anyway.
 legalFIPrimArgTyCon dflags tc
   | isUnliftedTyCon tc
@@ -2445,7 +2445,6 @@ legalFIPrimResultTyCon :: DynFlags -> TyCon -> Validity
 legalFIPrimResultTyCon dflags tc
   | isUnliftedTyCon tc
   , (isUnboxedTupleTyCon tc
-     || isUnboxedSumTyCon tc
      || case tyConPrimRep tc of      -- Note [Marshalling VoidRep]
            VoidRep -> False
            _       -> True)

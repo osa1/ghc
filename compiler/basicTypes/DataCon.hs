@@ -981,7 +981,7 @@ dataConRepArity (MkData { dcRepArity = arity }) = arity
 
 
 -- | The number of fields in the /representation/ of the constructor
--- AFTER taking into account the unpacking of any unboxed tuple fields
+-- AFTER taking into account the unpacking of any unboxed tuple and sum fields
 dataConRepRepArity :: DataCon -> RepArity
 dataConRepRepArity dc = typeRepArity (dataConRepArity dc) (dataConRepType dc)
 
