@@ -58,6 +58,7 @@ isUnaryRep :: RepType -> Bool
 isUnaryRep (UnaryRep _) = True
 isUnaryRep _            = False
 
+-- INVARIANT: Never returns an empty list.
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (MultiRep [])    = [voidPrimTy]
 flattenRepType (MultiRep slots) = map slotTyToType slots

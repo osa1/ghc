@@ -411,7 +411,6 @@ The second flavour of right-hand-side is for constructors (simple but important)
                          -- are not allocated.
         [GenStgArg occ]  -- Args
 
-
 stgRhsArity :: StgRhs -> Int
 stgRhsArity (StgRhsClosure _ _ _ _ bndrs _)
   = ASSERT( all isId bndrs ) length bndrs

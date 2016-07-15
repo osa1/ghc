@@ -524,10 +524,12 @@ getFCallArgs args
   = do  { mb_cmms <- mapM get args
         ; return (catMaybes mb_cmms) }
   where
+    get arg@(StgRubbishArg{})
+            = pprPanic "getFCallArgs" (text "Rubbish arg in foreign call:" <+> ppr arg)
     get arg | isVoidRep arg_rep
             = return Nothing
             | otherwise
-            = do { CmmExprArg cmm <- getArgAmode (NonVoid arg) -- TODO (osa): Not sure about this part
+            = do { cmm <- getArgAmode_no_rubbish (NonVoid arg)
                  ; dflags <- getDynFlags
                  ; return (Just (add_shim dflags arg_ty cmm, hint)) }
             where

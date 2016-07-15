@@ -441,7 +441,7 @@ unscramble dflags vertices = mapM_ do_component components
         (reg, _) `mustFollow` (_, rhs) = regUsedIn' dflags (CmmLocal reg) rhs
 
 regUsedIn' :: DynFlags -> CmmReg -> CmmArg -> Bool
-regUsedIn' _ _ (CmmRubbishArg _) = False
+regUsedIn' _      _   (CmmRubbishArg _) = False
 regUsedIn' dflags reg (CmmExprArg expr) = regUsedIn dflags reg expr
 
 -------------------------------------------------------------------------
