@@ -586,8 +586,8 @@ getPrimOpResultInfo op
                          where
                            tc = tyConAppTyCon ty
                         -- All primops return a tycon-app result
-                        -- The tycon can be an unboxed tuple, though, which
-                        -- gives rise to a ReturnAlg
+                        -- The tycon can be an unboxed tuple or sum, though,
+                        -- which gives rise to a ReturnAlg
 
 {-
 We do not currently make use of whether primops are commutable.

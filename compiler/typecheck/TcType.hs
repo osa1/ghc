@@ -2318,9 +2318,9 @@ isFFIPrimArgumentTy dflags ty
   | otherwise  = checkRepTyCon (legalFIPrimArgTyCon dflags) ty
 
 isFFIPrimResultTy :: DynFlags -> Type -> Validity
--- Checks for valid result type for a 'foreign import prim'
--- Currently it must be an unlifted type, including unboxed tuples,
--- or the well-known type Any.
+-- Checks for valid result type for a 'foreign import prim' Currently
+-- it must be an unlifted type, including unboxed tuples, unboxed
+-- sums, or the well-known type Any.
 isFFIPrimResultTy dflags ty
   | isAnyTy ty = IsValid
   | otherwise = checkRepTyCon (legalFIPrimResultTyCon dflags) ty
@@ -2441,10 +2441,11 @@ legalFIPrimArgTyCon dflags tc
 
 legalFIPrimResultTyCon :: DynFlags -> TyCon -> Validity
 -- Check result type of 'foreign import prim'. Allow simple unlifted
--- types and also unboxed tuple result types '... -> (# , , #)'
+-- types and also unboxed tuple and sum result types.
 legalFIPrimResultTyCon dflags tc
   | isUnliftedTyCon tc
   , (isUnboxedTupleTyCon tc
+     || isUnboxedSumTyCon tc
      || case tyConPrimRep tc of      -- Note [Marshalling VoidRep]
            VoidRep -> False
            _       -> True)
