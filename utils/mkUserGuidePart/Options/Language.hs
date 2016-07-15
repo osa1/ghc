@@ -729,7 +729,7 @@ languageOptions =
          , flagDescription = "Enable :ref: `unboxed sums <unboxed-sums>`."
          , flagType = DynamicFlag
          , flagReverse = "-XNoUnboxedSums"
-         , flagSince = "8.3"
+         , flagSince = "8.2.1"
          }
   , flag { flagName = "-XUndecidableInstances"
          , flagDescription =
