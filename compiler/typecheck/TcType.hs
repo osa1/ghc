@@ -2444,11 +2444,8 @@ legalFIPrimResultTyCon :: DynFlags -> TyCon -> Validity
 -- types and also unboxed tuple and sum result types.
 legalFIPrimResultTyCon dflags tc
   | isUnliftedTyCon tc
-  , (isUnboxedTupleTyCon tc
-     || isUnboxedSumTyCon tc
-     || case tyConPrimRep tc of      -- Note [Marshalling VoidRep]
-           VoidRep -> False
-           _       -> True)
+  , isUnboxedTupleTyCon tc || isUnboxedSumTyCon tc
+     || tyConPrimRep tc /= VoidRep   -- Note [Marshalling VoidRep]
   = validIfUnliftedFFITypes dflags
 
   | otherwise
