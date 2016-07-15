@@ -304,7 +304,7 @@ collect (_, e) = go [] e
   where
     go xs e | Just e' <- bcView e = go xs e'
     go xs (AnnLam x (_,e))
-      | flattenRepType (repType (idType x)) `lengthExceeds` 1
+      | repTypeArgs (idType x) `lengthExceeds` 1
       = multiValException
       | otherwise
       = go (x:xs) e
@@ -534,8 +534,8 @@ schemeE d s p (AnnCase (_,scrut) _ _ []) = schemeE d s p scrut
 
 schemeE d s p (AnnCase scrut bndr _ [(DataAlt dc, [bind1, bind2], rhs)])
    | isUnboxedTupleCon dc -- handles pairs with one void argument (e.g. state token)
-   , [rep_ty1] <- flattenRepType (repType (idType bind1))
-   , [rep_ty2] <- flattenRepType (repType (idType bind2))
+   , [rep_ty1] <- repTypeArgs (idType bind1)
+   , [rep_ty2] <- repTypeArgs (idType bind2)
         -- Convert
         --      case .... of x { (# V'd-thing, a #) -> ... }
         -- to
@@ -555,12 +555,12 @@ schemeE d s p (AnnCase scrut bndr _ [(DataAlt dc, [bind1, bind2], rhs)])
 
 schemeE d s p (AnnCase scrut bndr _ [(DataAlt dc, [bind1], rhs)])
    | isUnboxedTupleCon dc
-   , flattenRepType (repType (idType bndr)) `lengthIs` 1 -- handles unit tuples
+   , repTypeArgs (idType bndr) `lengthIs` 1 -- handles unit tuples
    = doCase d s p scrut bind1 [(DEFAULT, [], rhs)] (Just bndr)
 
 schemeE d s p (AnnCase scrut bndr _ alt@[(DEFAULT, [], _)])
    | isUnboxedTupleType (idType bndr)
-   , [ty] <- flattenRepType (repType (idType bndr)) -- handles unit tuples
+   , [ty] <- repTypeArgs (idType bndr) -- handles unit tuples
    = doCase d s p scrut (bndr `setIdType` ty) alt (Just bndr)
 
 schemeE d s p (AnnCase scrut bndr _ alts)
@@ -774,7 +774,7 @@ doCase  :: Word -> Sequel -> BCEnv
         -> Maybe Id  -- Just x <=> is an unboxed tuple case with scrut binder, don't enter the result
         -> BcM BCInstrList
 doCase d s p (_,scrut) bndr alts is_unboxed_tuple
-  | flattenRepType (repType (idType bndr)) `lengthExceeds` 1
+  | repTypeArgs (idType bndr) `lengthExceeds` 1
   = multiValException
   | otherwise
   = do
@@ -951,7 +951,7 @@ generateCCall d0 s p (CCallSpec target cconv safety) fn args_r_to_l
 
          pargs _ [] = return []
          pargs d (a:az)
-            = let [arg_ty] = flattenRepType (repType (exprType (deAnnotate' a)))
+            = let [arg_ty] = repTypeArgs (exprType (deAnnotate' a))
 
               in case tyConAppTyCon_maybe arg_ty of
                     -- Don't push the FO; instead push the Addr# it
@@ -1176,14 +1176,14 @@ maybe_getCCallReturnRep :: Type -> Maybe PrimRep
 maybe_getCCallReturnRep fn_ty
    = let
        (_a_tys, r_ty) = splitFunTys (dropForAlls fn_ty)
-       r_reps = flattenRepType (repType r_ty)
+       r_reps = repTypeArgs r_ty
 
        blargh :: a -- Used at more than one type
        blargh = pprPanic "maybe_getCCallReturn: can't handle:"
                          (pprType fn_ty)
      in
        case r_reps of
-         [] -> panic "empty flattenRepType"
+         [] -> panic "empty repTypeArgs"
          [ty]
            | typePrimRep ty == PtrRep
             -> blargh
@@ -1205,7 +1205,7 @@ maybe_is_tagToEnum_call app
   = Nothing
   where
     extract_constr_Names ty
-           | [rep_ty] <- flattenRepType (repType ty)
+           | [rep_ty] <- repTypeArgs ty
            , Just tyc <- tyConAppTyCon_maybe rep_ty
            , isDataTyCon tyc
            = map (getName . dataConWorkId) (tyConDataCons tyc)
@@ -1306,7 +1306,7 @@ pushAtom _ _ (AnnCoercion {})   -- Coercions are zero-width things,
    = return (nilOL, 0)          -- treated just like a variable V
 
 pushAtom d p (AnnVar v)
-   | [rep_ty] <- flattenRepType (repType (idType v))
+   | [rep_ty] <- repTypeArgs (idType v)
    , V <- typeArgRep rep_ty
    = return (nilOL, 0)
 
@@ -1528,7 +1528,7 @@ isVoidArg V = True
 isVoidArg _ = False
 
 bcIdUnaryType :: Id -> UnaryType
-bcIdUnaryType x = case flattenRepType (repType (idType x)) of
+bcIdUnaryType x = case repTypeArgs (idType x) of
     [rep_ty] -> rep_ty
     _ -> pprPanic "bcIdUnaryType" (ppr x $$ ppr (idType x))
 

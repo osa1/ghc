@@ -247,7 +247,7 @@ cgDataCon data_con
 
             arg_reps :: [(PrimRep, UnaryType)]
             arg_reps = [(typePrimRep rep_ty, rep_ty) | ty <- dataConRepArgTys data_con
-                                                     , rep_ty <- flattenRepType (repType ty)]
+                                                     , rep_ty <- repTypeArgs ty]
 
             -- Dynamic closure code for non-nullary constructors only
         ; when (not (isNullaryRepDataCon data_con))

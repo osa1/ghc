@@ -805,7 +805,7 @@ extractSubTerms recurse clos = liftM thdOf3 . go 0 (nonPtrs clos)
            (ptr_i, ws, terms1) <- go ptr_i ws tys
            return (ptr_i, ws, unboxedTupleTerm ty terms0 : terms1)
       | otherwise
-      = case flattenRepType (repType ty) of
+      = case repTypeArgs ty of
           [rep_ty] ->  do
             (ptr_i, ws, term0)  <- go_rep ptr_i ws ty (typePrimRep rep_ty)
             (ptr_i, ws, terms1) <- go ptr_i ws tys
@@ -920,7 +920,7 @@ findPtrTys i ty
   = findPtrTyss i elem_tys
 
   | otherwise
-  = -- Can't directly call flattenRepType here -- we lose type information in
+  = -- Can't directly call repTypeArgs here -- we lose type information in
     -- some cases (e.g. singleton tuples)
     case repType ty of
       UnaryRep rep_ty | typePrimRep rep_ty == PtrRep -> return (i + 1, [(i, ty)])

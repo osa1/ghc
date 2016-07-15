@@ -11,7 +11,6 @@ data RepType
 data SlotTy
 type UnaryType = Type
 
-flattenRepType :: RepType -> [UnaryType]
 repType :: Type -> RepType
 typeRepArity :: Arity -> Type -> RepArity
 

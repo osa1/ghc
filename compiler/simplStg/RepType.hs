@@ -2,7 +2,7 @@
 
 module RepType
   ( -- * Code generator views onto Types
-    UnaryType, RepType(..), flattenRepType, repType,
+    UnaryType, RepType(..), repType, repTypeArgs,
     isUnaryRep, isMultiRep,
 
     -- * Predicates on types
@@ -58,20 +58,12 @@ isUnaryRep :: RepType -> Bool
 isUnaryRep (UnaryRep _) = True
 isUnaryRep _            = False
 
--- INVARIANT: Never returns an empty list.
-flattenRepType :: RepType -> [UnaryType]
-flattenRepType (MultiRep [])    = [voidPrimTy]
-flattenRepType (MultiRep slots) = map slotTyToType slots
-flattenRepType (UnaryRep ty)    = [ty]
-
-{- TODO: Use this instead of flattenRepType
+-- INVARIANT: the result list is never empty.
 repTypeArgs :: Type -> [UnaryType]
--- INVARIANT: the result list is never empty
 repTypeArgs ty = case repType ty of
                     MultiRep []    -> [voidPrimTy]
                     MultiRep slots -> map slotTyToType slots
                     UnaryRep ty    -> [ty]
--}
 
 repTypeSlots :: RepType -> [SlotTy]
 repTypeSlots (MultiRep slots) = slots
@@ -128,7 +120,7 @@ repType ty
 typeRepArity :: Arity -> Type -> RepArity
 typeRepArity 0 _ = 0
 typeRepArity n ty = case repType ty of
-  UnaryRep (FunTy arg res) -> length (flattenRepType (repType arg)) + typeRepArity (n - 1) res
+  UnaryRep (FunTy arg res) -> length (repTypeArgs arg) + typeRepArity (n - 1) res
   _ -> pprPanic "typeRepArity: arity greater than type can handle" (ppr (n, ty, repType ty))
 
 
