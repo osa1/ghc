@@ -2383,7 +2383,7 @@ tup_exprs :: { SumOrTuple }
                                 ; return (Tuple ((sL1 $1 (Present $1)) : snd $2)) } }
 
            | texp bars
-                          {% do { mapM_ (\ll -> addAnnotation ll AnnComma ll) (fst $2)
+                          {% do { mapM_ (\ll -> addAnnotation ll AnnVbar ll) (fst $2)
                                 ; return (Sum 1  (snd $2 + 1) $1) } }
 
            | commas tup_tail
@@ -2393,6 +2393,7 @@ tup_exprs :: { SumOrTuple }
 
            | bars texp bars0
                 {% do { mapM_ (\ll -> addAnnotation ll AnnVbar ll) (fst $1)
+                      ; mapM_ (\ll -> addAnnotation ll AnnVbar ll) (fst $3)
                       ; return (Sum (snd $1 + 1) (snd $1 + snd $3 + 1) $2) } }
 
 -- Always starts with commas; always follows an expr
