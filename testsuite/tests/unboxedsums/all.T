@@ -16,3 +16,10 @@ test('thunk', only_ways(['normal']), compile_and_run, [''])
 test('T12375', only_ways(['normal']), compile_and_run, [''])
 test('empty_sum', only_ways(['normal']), compile_and_run, [''])
 test('sum_rr', normal, compile_fail, [''])
+
+# TODO: Need to run this in --slow mode only
+# test('sum_api_annots',
+#      [only_ways(['normal']),
+#       extra_files([ "unboxedsums" + str(i) + ".hs" for i in range(1, 12) ])],
+#      run_command,
+#      ['$MAKE -s --no-print-directory sum_api_annots'])
