@@ -177,7 +177,7 @@ corresponds to the number of (possibly-void) *registers* arguments will arrive
 in.
 -}
 
-{-# LANGUAGE CPP, TupleSections, MultiWayIf #-}
+{-# LANGUAGE CPP, TupleSections #-}
 
 module UnariseStg (unarise) where
 
@@ -269,18 +269,6 @@ unariseRhs rho (StgRhsCon ccs con args)
 
 --------------------------------------------------------------------------------
 
-unariseMulti_maybe :: UnariseEnv -> DataCon -> [InStgArg] -> [Type] -> Maybe [StgArg]
-unariseMulti_maybe rho dc args ty_args
-  | isUnboxedTupleCon dc
-  = Just (unariseArgs rho args)
-
-  | isUnboxedSumCon dc
-  , let args1 = ASSERT (isSingleton args) (unariseArgs rho args)
-  = Just (mkUbxSum dc ty_args args1)
-
-  | otherwise
-  = Nothing
-
 unariseExpr :: UnariseEnv -> StgExpr -> UniqSM StgExpr
 
 unariseExpr rho e@(StgApp f [])
@@ -351,6 +339,18 @@ unariseExpr rho (StgLetNoEscape bind e)
 
 unariseExpr rho (StgTick tick e)
   = StgTick tick <$> unariseExpr rho e
+
+unariseMulti_maybe :: UnariseEnv -> DataCon -> [InStgArg] -> [Type] -> Maybe [StgArg]
+unariseMulti_maybe rho dc args ty_args
+  | isUnboxedTupleCon dc
+  = Just (unariseArgs rho args)
+
+  | isUnboxedSumCon dc
+  , let args1 = ASSERT (isSingleton args) (unariseArgs rho args)
+  = Just (mkUbxSum dc ty_args args1)
+
+  | otherwise
+  = Nothing
 
 --------------------------------------------------------------------------------
 
@@ -505,10 +505,9 @@ mapSumIdBinders [id] args0 rho0
       id_slots  = mapMaybe typeSlotTy (unariseIdType' id)
       layout1   = layout arg_slots id_slots
     in
-      if | isMultiValBndr id
-          -> extendVarEnv rho0 id (Unarise [ nv_args !! i | i <- layout1 ])
-         | otherwise
-          -> ASSERT(layout1 `lengthIs` 1)
+      if isMultiValBndr id
+        then extendVarEnv rho0 id (Unarise [ nv_args !! i | i <- layout1 ])
+        else ASSERT(layout1 `lengthIs` 1)
              extendVarEnv rho0 id (Rename (nv_args !! head layout1))
 
 mapSumIdBinders ids sum_args _
