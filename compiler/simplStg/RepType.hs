@@ -92,7 +92,7 @@ repType ty
     go rec_nts (ForAllTy _ ty2)         -- Drop type foralls
       = go rec_nts ty2
 
-    go rec_nts ty@(TyConApp tc tys)        -- Expand newtypes
+    go rec_nts ty@(TyConApp tc tys)     -- Expand newtypes
       | isNewTyCon tc
       , tys `lengthAtLeast` tyConArity tc
       , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
@@ -142,12 +142,16 @@ type SortedSlotTys = [SlotTy]
 
 -- | Given the arguments of a sum type constructor application,
 --   return the unboxed sum rep type.
--- E.g.   (# Int | Mabye Int | (# Int, Bool #) #)
---      We call (ubxSumRepType [ Int, Maybe Int, (# Int,Bool #) ]),
---      which returns [Tag#, PtrSlot, PtrSlot]
 --
--- INVARIANT: Result slots are sorted (via Ord SlotTy), except that at
--- the head of the list we have the slot for the tag.
+-- E.g.
+--
+--   (# Int | Maybe Int | (# Int, Bool #) #)
+--
+-- We call `ubxSumRepType [ Int, Maybe Int, (# Int,Bool #) ]`,
+-- which returns [Tag#, PtrSlot, PtrSlot]
+--
+-- INVARIANT: Result slots are sorted (via Ord SlotTy), except that at the head
+-- of the list we have the slot for the tag.
 ubxSumRepType :: [Type] -> [SlotTy]
 ubxSumRepType constrs0 =
   ASSERT2( length constrs0 > 1, ppr constrs0 ) -- otherwise it isn't a sum type
@@ -179,11 +183,11 @@ ubxSumRepType constrs0 =
   in
     sumRep
 
-layout :: SortedSlotTys  -- Layout of sum. Does not include tag.
-                         -- We assume that they are in increasing order
-       -> [SlotTy]  -- Slot types of things we want to map to locations in the
-                    -- sum layout
-       -> [Int]     -- Where to map 'things' in the sum layout
+layout :: SortedSlotTys -- Layout of sum. Does not include tag.
+                        -- We assume that they are in increasing order
+       -> [SlotTy]      -- Slot types of things we want to map to locations in the
+                        -- sum layout
+       -> [Int]         -- Where to map 'things' in the sum layout
 layout sum_slots0 arg_slots0 =
     go arg_slots0 IS.empty
   where
