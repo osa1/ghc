@@ -18,7 +18,10 @@ import {-# SOURCE #-} TcMatches ( tcGRHSsPat, tcMatchesFun )
 import {-# SOURCE #-} TcExpr  ( tcMonoExpr )
 import {-# SOURCE #-} TcPatSyn ( tcInferPatSynDecl, tcCheckPatSynDecl
                                , tcPatSynBuilderBind )
+import CoreSyn (Tickish (..))
+import CostCentre (mkUserCC)
 import DynFlags
+import FastString
 import HsSyn
 import HscTypes( isHsBootOrSig )
 import TcSigs
@@ -57,6 +60,7 @@ import BasicTypes
 import Outputable
 import PrelNames( gHC_PRIM, ipClassName )
 import TcValidity (checkValidType)
+import Unique (getUnique)
 import UniqFM
 import qualified GHC.LanguageExtensions as LangExt
 
@@ -659,11 +663,12 @@ tcPolyCheck prag_fn
        ; spec_prags <- tcSpecPrags poly_id prag_sigs
        ; poly_id    <- addInlinePrags poly_id prag_sigs
 
+       ; mod <- getModule
        ; let bind' = FunBind { fun_id      = L nm_loc mono_id
                              , fun_matches = matches'
                              , fun_co_fn   = co_fn
                              , bind_fvs    = placeHolderNamesTc
-                             , fun_tick    = [] }
+                             , fun_tick    = funBindTicks nm_loc mono_id mod prag_sigs }
 
              abs_bind = L loc $ AbsBindsSig
                         { abs_sig_export  = poly_id
@@ -677,6 +682,21 @@ tcPolyCheck prag_fn
 
 tcPolyCheck _prag_fn sig bind
   = pprPanic "tcPolyCheck" (ppr sig $$ ppr bind)
+
+funBindTicks :: SrcSpan -> TcId -> Module -> [LSig Name] -> [Tickish TcId]
+funBindTicks loc fun_id mod sigs
+  | (cc_str : _) <- [ cc_name | L _ (SCCFunSig _ cc_name) <- sigs ]
+      -- TODO: Multiple cost centres ignored silently
+  , let cc_name
+          | Just cc_str' <- cc_str
+          = moduleNameFS (moduleName mod) `appendFS` consFS '.' (sl_fs cc_str')
+          | otherwise
+          = moduleNameFS (moduleName mod) `appendFS` consFS '.' (getOccFS (Var.varName fun_id))
+        cc
+          = mkUserCC cc_name mod loc (getUnique fun_id)
+  = [ProfNote cc True True]
+  | otherwise
+  = []
 
 {- Note [Instantiate sig with fresh variables]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
