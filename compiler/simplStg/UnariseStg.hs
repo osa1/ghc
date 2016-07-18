@@ -211,7 +211,7 @@ import qualified Data.IntMap as IM
 --
 --    x :-> Unarise [a,b,c] in rho
 --
--- iff  x's RepType is a MultiRep, or equivalently
+-- iff  x's repType is a MultiRep, or equivalently
 --      x's type is an unboxed tuple or sum, or a void type
 --
 --    x :-> Rename x'
@@ -229,8 +229,11 @@ import qualified Data.IntMap as IM
 type UnariseEnv = VarEnv UnariseVal
 
 data UnariseVal
-  = Unarise [StgArg] -- Unarise to tuple.
-  | Rename   StgArg  -- Renaming. See NOTE [Renaming during unarisation].
+  = Unarise [OutStgArg] -- Unarise to tuple.
+                        -- The list is empty for zero-width variables
+                        -- None of the OutStgArgs are zero-width
+
+  | Rename   OutStgArg  -- Renaming. See NOTE [Renaming during unarisation].
 
 instance Outputable UnariseVal where
   ppr (Unarise args) = text "Unarise" <+> ppr args

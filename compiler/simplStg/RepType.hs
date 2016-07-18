@@ -41,10 +41,12 @@ import qualified Data.IntSet as IS
 type UnaryType = Type  -- Always a value type; i.e. its kind is TYPE rr
                        ---  for some rr; moreover the rr is never a variable.
                        -- Never an unboxed tuple or sum.
+                       -- Can be Void# (but not (# #))
 
 data RepType
   = MultiRep [SlotTy]   -- Represented by multiple values (e.g. unboxed tuple or sum)
-  | UnaryRep UnaryType  -- Represented by a single value
+  | UnaryRep UnaryType  -- Represented by a single value; but never Void#, or any
+                        -- other zero-width type (isVoidTy)
 
 instance Outputable RepType where
   ppr (MultiRep slots) = text "MultiRep" <+> ppr slots
@@ -136,19 +138,25 @@ isVoidTy ty = typePrimRep ty == VoidRep
 *                                                                       *
 ********************************************************************** -}
 
--- | Given types of constructor arguments, return the unboxed sum rep type.
--- INVARIANT: Slots are sorted, except the at the head of the list we have the
--- slot for the tag.
+type SortedSlotTys = [SlotTy]
+
+-- | Given the arguments of a sum type constructor application,
+--   return the unboxed sum rep type.
+-- E.g.   (# Int | Mabye Int | (# Int, Bool #) #)
+--      We call (ubxSumRepType [ Int, Maybe Int, (# Int,Bool #) ]),
+--      which returns [Tag#, PtrSlot, PtrSlot]
+--
+-- INVARIANT: Result slots are sorted (via Ord SlotTy), except that at
+-- the head of the list we have the slot for the tag.
 ubxSumRepType :: [Type] -> [SlotTy]
 ubxSumRepType constrs0 =
   ASSERT2( length constrs0 > 1, ppr constrs0 ) -- otherwise it isn't a sum type
   let
-    combine_alts
-      :: [[SlotTy]]  -- slots of constructors
-      -> [SlotTy]    -- final slots
+    combine_alts :: [SortedSlotTys]  -- slots of constructors
+                 -> SortedSlotTys    -- final slots
     combine_alts constrs = foldl' merge [] constrs
 
-    merge :: [SlotTy] -> [SlotTy] -> [SlotTy]
+    merge :: SortedSlotTys -> SortedSlotTys -> SortedSlotTys
     merge existing_slots []
       = existing_slots
     merge [] needed_slots
@@ -163,19 +171,16 @@ ubxSumRepType constrs0 =
         es : merge ess (s : ss)
 
     -- Nesting unboxed tuples and sums is OK, so we need to flatten first.
-    rep :: Type -> [SlotTy]
-    rep ty
-      | isUnboxedSumType ty
-      = repTypeSlots (repType ty)
-      | otherwise
-      = sort (repTypeSlots (repType ty))
+    rep :: Type -> SortedSlotTys
+    rep ty = sort (repTypeSlots (repType ty))
 
     sumRep = WordSlot : combine_alts (map rep constrs0)
+             -- WordSlot: for the tag of the sum
   in
     sumRep
 
-layout :: [SlotTy]  -- Layout of sum. Does not include tag. The invariant of
-                    -- ubxSumRepTy holds.
+layout :: SortedSlotTys  -- Layout of sum. Does not include tag.
+                         -- We assume that they are in increasing order
        -> [SlotTy]  -- Slot types of things we want to map to locations in the
                     -- sum layout
        -> [Int]     -- Where to map 'things' in the sum layout
@@ -189,7 +194,7 @@ layout sum_slots0 arg_slots0 =
       = let slot_idx = findSlot arg 0 sum_slots0 used
          in slot_idx : go args (IS.insert slot_idx used)
 
-    findSlot :: SlotTy -> Int -> [SlotTy] -> IS.IntSet -> Int
+    findSlot :: SlotTy -> Int -> SortedSlotTys -> IS.IntSet -> Int
     findSlot arg slot_idx (slot : slots) useds
       | not (IS.member slot_idx useds)
       , Just slot == arg `fitsIn` slot
@@ -212,8 +217,12 @@ layout sum_slots0 arg_slots0 =
 --
 --   - Void slots: Shared between void types. Not used in sums.
 data SlotTy = PtrSlot | WordSlot | Word64Slot | FloatSlot | DoubleSlot
-  deriving (Eq, Ord) -- Constructor order is important! We want same type of
-                     -- slots with different sizes to be next to each other.
+  deriving (Eq, Ord)
+    -- Constructor order is important! If slot A could fit into slot B
+    -- then slot A must occur first.  E.g.  FloatSlot before DoubleSlot
+    --
+    -- We are assuming that WordSlot is smaller than or equal to Word64Slot
+    -- (would not be true on a 128-bit machine)
 
 instance Outputable SlotTy where
   ppr PtrSlot    = text "PtrSlot"
