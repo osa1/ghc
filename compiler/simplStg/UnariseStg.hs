@@ -25,7 +25,7 @@ Suppose that a variable x : (# t1, t2 #).
 
   * At the binding site for x, make up fresh vars  x1:t1, x2:t2
 
-  * Extend the UnariseEnv   x :-> [x1,x2]
+  * Extend the UnariseEnv   x :-> MultiVal [x1,x2]
 
   * Replace the binding with a curried binding for x1,x2
 
@@ -56,16 +56,15 @@ Suppose that a variable x : (# t1, t2 #).
     The case alternative (there can be only one) can be one of these two
     things:
 
-      - An unboxed tuple pattern. (note that number of binders in the pattern
-        will be the same as number of arguments in the scrutinee) e.g.
+      - An unboxed tuple pattern. e.g.
 
           case v of x { (# x1, x2, x3 #) -> ... }
 
         Scrutinee has to be in form `(# t1, t2, t3 #)` so we just extend the
         environment with
 
-          x :-> [t1,t2,t3]
-          x1 :-> [t1], x2 :-> [t2], x3 :-> [t3]
+          x :-> MultiVal [t1,t2,t3]
+          x1 :-> UnaryVal t1, x2 :-> UnaryVal t2, x3 :-> UnaryVal t3
 
       - A DEFAULT alternative. Just the same, without the bindings for x1,x2,x3
 
@@ -156,7 +155,7 @@ needs to map variables to literals too. Suppose we have this Core:
     _ -> f y
   }
 
-  ==> (Unarise)
+  ==> (MultiVal)
 
   case (# 1#, x #) of [x1, x2] {
     _ -> f x1 x2
@@ -164,7 +163,7 @@ needs to map variables to literals too. Suppose we have this Core:
 
 To eliminate this case expression we need to map x1 to 1# in UnariseEnv:
 
-  x1 :-> [1#], x2 :-> [x]
+  x1 :-> UnaryVal 1#, x2 :-> UnaryVal x
 
 so that `f x1 x2` becomes `f 1# x`.
 
@@ -209,21 +208,21 @@ import qualified Data.IntMap as IM
 
 -- | A mapping from binders to the Ids they were expanded/renamed to.
 --
---   x :-> Unarise [a,b,c] in rho
+--   x :-> MultiVal [a,b,c] in rho
 --
 -- iff  x's repType is a MultiRep, or equivalently
---      x's type is an unboxed tuple or sum.
+--      x's type is an unboxed tuple, sum or void.
 --
---    x :-> Rename x'
+--    x :-> UnaryVal x'
 --
--- iff x's RepType is UnaryRep or void, or equivalently
---     x's type is not unboxed tuple or sum.
+-- iff x's RepType is UnaryRep or equivalently
+--     x's type is not unboxed tuple, sum or void.
 --
 -- So
---     x :-> Unarise [a] in rho
+--     x :-> MultiVal [a] in rho
 -- means x is represented by singleton tuple.
 --
---     x :-> Unarise [] in rho
+--     x :-> MultiVal [] in rho
 -- means x is void.
 --
 -- INVARIANT: OutStgArgs in the range only have NvUnaryTypes
@@ -232,26 +231,27 @@ import qualified Data.IntMap as IM
 type UnariseEnv = VarEnv UnariseVal
 
 data UnariseVal
-  = MultiVal [OutStgArg] -- Unarise to tuple. Can be empty list (void).
+  = MultiVal [OutStgArg] -- MultiVal to tuple. Can be empty list (void).
   | UnaryVal OutStgArg   -- See NOTE [Renaming during unarisation].
 
 instance Outputable UnariseVal where
-  ppr (Unarise args) = text "Unarise" <+> ppr args
-  ppr (Rename arg)   = text "Rename" <+> ppr arg
+  ppr (MultiVal args) = text "MultiVal" <+> ppr args
+  ppr (UnaryVal arg)   = text "UnaryVal" <+> ppr arg
 
 -- | Extend the environment, checking the UnariseEnv invariant.
 extendRho :: UnariseEnv -> Id -> UnariseVal -> UnariseEnv
-extendRho rho x (Unarise args)
-  = ASSERT (all (isNvUnaryType . stgArgType)) args))
-    extendVarEnv rho x (Unarise args)
-extendRho rho x (Rename val)
+extendRho rho x (MultiVal args)
+  = ASSERT (all (isNvUnaryType . stgArgType) args)
+    extendVarEnv rho x (MultiVal args)
+extendRho rho x (UnaryVal val)
   = ASSERT (isNvUnaryType (stgArgType val))
-    extendVarEnv rho x val
+    extendVarEnv rho x (UnaryVal val)
 
 --------------------------------------------------------------------------------
 
 type OutStgExpr = StgExpr
 type InId       = Id
+type OutId      = Id
 type InStgAlt   = StgAlt
 type InStgArg   = StgArg
 type OutStgArg  = StgArg
@@ -282,13 +282,13 @@ unariseExpr :: UnariseEnv -> StgExpr -> UniqSM StgExpr
 
 unariseExpr rho e@(StgApp f [])
   = case lookupVarEnv rho f of
-      Just (Unarise args)  -- Including empty tuples
+      Just (MultiVal args)  -- Including empty tuples
         -> return (mkTuple args)
-      Just (Rename (StgVarArg f'))
+      Just (UnaryVal (StgVarArg f'))
         -> return (StgApp f' [])
-      Just (Rename (StgLitArg f'))
+      Just (UnaryVal (StgLitArg f'))
         -> return (StgLit f')
-      Just (Rename arg@(StgRubbishArg {}))
+      Just (UnaryVal arg@(StgRubbishArg {}))
         -> pprPanic "unariseExpr - app1" (ppr e $$ ppr arg)
       Nothing
         -> return e
@@ -297,7 +297,7 @@ unariseExpr rho e@(StgApp f args)
   = return (StgApp f' (unariseFunArgs rho args))
   where
     f' = case lookupVarEnv rho f of
-           Just (Rename (StgVarArg f')) -> f'
+           Just (UnaryVal (StgVarArg f')) -> f'
            Nothing -> f
            err -> pprPanic "unariseExpr - app2" (ppr e $$ ppr err)
                -- Can't happen because 'args' is non-empty, and
@@ -323,7 +323,7 @@ unariseExpr _ e@StgLam{}
 unariseExpr rho (StgCase scrut bndr alt_ty alts)
   -- a tuple/sum binders in the scrutinee can always be eliminated
   | StgApp v [] <- scrut
-  , Just (Unarise xs) <- lookupVarEnv rho v
+  , Just (MultiVal xs) <- lookupVarEnv rho v
   = elimCase rho xs bndr alt_ty alts
 
   -- Handle strict lets for tuples and sums:
@@ -369,7 +369,7 @@ elimCase :: UnariseEnv
          -> InId -> AltType -> [InStgAlt] -> UniqSM OutStgExpr
 
 elimCase rho args bndr (MultiValAlt _) [(_, bndrs, rhs)]
-  = do let rho1 = extendRho rho bndr (Unarise args)
+  = do let rho1 = extendRho rho bndr (MultiVal args)
            rho2
              | isUnboxedTupleBndr bndr
              = mapTupleIdBinders bndrs args rho1
@@ -385,7 +385,7 @@ elimCase rho args bndr (MultiValAlt _) alts
   = do let (tag_arg : real_args) = args
        tag_bndr <- mkId (mkFastString "tag") tagTy
           -- this won't be used but we need a binder anyway
-       let rho1 = extendRho rho bndr (Unarise args)
+       let rho1 = extendRho rho bndr (MultiVal args)
            scrut' = case tag_arg of
                       StgVarArg v     -> StgApp v []
                       StgLitArg l     -> StgLit l
@@ -411,7 +411,7 @@ unariseAlts rho (MultiValAlt n) bndr [(DataAlt _, ys, e)]
   | isUnboxedTupleBndr bndr
   = do (rho', ys1) <- unariseConArgBinders rho ys
        MASSERT(n == length ys1)
-       let rho'' = extendRho rho' bndr (Unarise (map StgVarArg ys1))
+       let rho'' = extendRho rho' bndr (MultiVal (map StgVarArg ys1))
        e' <- unariseExpr rho'' e
        return [(DataAlt (tupleDataCon Unboxed n), ys1, e')]
 
@@ -496,10 +496,10 @@ mapTupleIdBinders ids args0 rho0
 
           rho'
             | isMultiRep x_rep
-            = extendRho rho x (Unarise x_args)
+            = extendRho rho x (MultiVal x_args)
             | otherwise
             = ASSERT (x_args `lengthIs` 1)
-              extendRho rho x (Rename (head x_args))
+              extendRho rho x (UnaryVal (head x_args))
         in
           map_ids rho' xs args'
     in
@@ -521,9 +521,9 @@ mapSumIdBinders [id] args rho0
       layout1   = layout arg_slots id_slots
     in
       if isMultiValBndr id
-        then extendRho rho0 id (Unarise [ args !! i | i <- layout1 ])
+        then extendRho rho0 id (MultiVal [ args !! i | i <- layout1 ])
         else ASSERT(layout1 `lengthIs` 1)
-             extendRho rho0 id (Rename (args !! head layout1))
+             extendRho rho0 id (UnaryVal (args !! head layout1))
 
 mapSumIdBinders ids sum_args _
   = pprPanic "mapSumIdBinders" (ppr ids $$ ppr sum_args)
@@ -583,7 +583,7 @@ For arguments (StgArg) and binders (Id) we have two kind of unarisation:
 
     When unarising <body>, we extend the environment with these binders:
 
-      x :-> Unarise [], y :-> Unarise [], z :-> Unarise []
+      x :-> MultiVal [], y :-> MultiVal [], z :-> MultiVal []
 
     Because their rep types are `MultiRep []` (aka. void). This means that when
     we see `x` in a function argument position, we actually replace it with a
@@ -598,21 +598,21 @@ For arguments (StgArg) and binders (Id) we have two kind of unarisation:
         (# x1, x2, x3 #) -> <RHS>
       }
 
-   We know that y can't be void, because we don't scrutinize voids, so x will
-   be unarised to some number of arguments, and those arguments will have at
-   least one non-void thing. So in the rho we will have something like:
+    We know that y can't be void, because we don't scrutinize voids, so x will
+    be unarised to some number of arguments, and those arguments will have at
+    least one non-void thing. So in the rho we will have something like:
 
-     x :-> Unarise [xu1, xu2]
+      x :-> MultiVal [xu1, xu2]
 
-   Now, after we eliminate void binders in the pattern, we get exactly the same
-   number of binders, and extend rho again with these:
+    Now, after we eliminate void binders in the pattern, we get exactly the same
+    number of binders, and extend rho again with these:
 
-     x1 :-> Rename xu1
-     x2 :-> Unarise [] -- x2 was void
-     x3 :-> Rename xu2
+      x1 :-> UnaryVal xu1
+      x2 :-> MultiVal [] -- x2 is void
+      x3 :-> UnaryVal xu2
 
-   Now when we see x2 in a function argument position or in return position, we
-   generate void#. In constructor argument position, we just remove it.
+    Now when we see x2 in a function argument position or in return position, we
+    generate void#. In constructor argument position, we just remove it.
 
 So in short, when we have a void id,
 
@@ -625,13 +625,13 @@ So in short, when we have a void id,
 
 --------------------------------------------------------------------------------
 
--- | Unarise a function argument. Never returns an empty list.
+-- | MultiVal a function argument. Never returns an empty list.
 unariseFunArg :: UnariseEnv -> StgArg -> [StgArg]
 unariseFunArg rho (StgVarArg x) =
   case lookupVarEnv rho x of
-    Just (Unarise []) -> [voidArg]   -- NB: do not remove void args
-    Just (Unarise as) -> as
-    Just (Rename arg) -> [arg]
+    Just (MultiVal []) -> [voidArg]   -- NB: do not remove void args
+    Just (MultiVal as) -> as
+    Just (UnaryVal arg) -> [arg]
     Nothing           -> [StgVarArg x]
 unariseFunArg _ arg = [arg]
 
@@ -646,20 +646,20 @@ unariseFunArgBinder :: UnariseEnv -> Id -> UniqSM (UnariseEnv, [Id])
 unariseFunArgBinder rho x  =
   case repType (idType x) of
     UnaryRep _     -> return (rho, [x])
-    MultiRep []    -> return (extendRho rho x (Unarise []), [voidArgId])
+    MultiRep []    -> return (extendRho rho x (MultiVal []), [voidArgId])
                             -- NB: do not remove void binders
     MultiRep slots -> do
       xs <- mkIds (mkFastString "us") (map slotTyToType slots)
-      return (extendRho rho x (Unarise (map StgVarArg xs)), xs)
+      return (extendRho rho x (MultiVal (map StgVarArg xs)), xs)
 
 --------------------------------------------------------------------------------
 
--- | Unarise a DataCon argument. Returns an empty list when argument is void.
+-- | MultiVal a DataCon argument. Returns an empty list when argument is void.
 unariseConArg :: UnariseEnv -> InStgArg -> [OutStgArg]
 unariseConArg rho (StgVarArg x) =
   case lookupVarEnv rho x of
-    Just (Rename arg) -> [arg]
-    Just (Unarise as) -> as       -- 'as' can be empty
+    Just (UnaryVal arg) -> [arg]
+    Just (MultiVal as) -> as       -- 'as' can be empty
     Nothing
       | isVoidTy (idType x) -> [] -- e.g. C realWorld#
                                   -- Here realWorld# is not in the envt, but
@@ -679,11 +679,11 @@ unariseConArgBinder rho x =
     UnaryRep _     -> return (rho, [x])
     MultiRep slots -> do
       xs <- mkIds (mkFastString "us") (map slotTyToType slots)
-      return (extendRho rho x (Unarise (map StgVarArg xs)), xs)
+      return (extendRho rho x (MultiVal (map StgVarArg xs)), xs)
 
-unariseFreeVars :: UnariseEnv -> [InId] -> [OuId]
-unariseFreeVars env fvs
- = [ v | fv <- fvs, StgVarArg v <- unariseFreeVar rho fvs ]
+unariseFreeVars :: UnariseEnv -> [InId] -> [OutId]
+unariseFreeVars rho fvs
+ = [ v | fv <- fvs, StgVarArg v <- unariseFreeVar rho fv ]
    -- Notice that we filter out any StgLitArgs
    -- e.g.   case e of (x :: (# Int | Bool #))
    --           (# v | #) ->  ... let {g = \y. ..x...} in ...
@@ -691,13 +691,13 @@ unariseFreeVars env fvs
    --     Here 'x' is free in g's closure, and the env will have
    --       x :-> [1, v]
    --     we want to capture 'v', but not 1, in the free vars
-a
+
 unariseFreeVar :: UnariseEnv -> Id -> [StgArg]
 unariseFreeVar rho x =
   case lookupVarEnv rho x of
-    Just (Unarise args) -> args
-    Just (Rename arg)   -> [arg]
-    Nothing             -> [StgVarArg x]
+    Just (MultiVal args) -> args
+    Just (UnaryVal arg)  -> [arg]
+    Nothing              -> [StgVarArg x]
 
 --------------------------------------------------------------------------------
 
@@ -726,7 +726,7 @@ tagTy :: Type
 tagTy = intPrimTy
 
 voidArg :: StgArg
-voidArg = StgRubbishArg voidTy
+voidArg = StgVarArg voidPrimId
 
 mkDefaultLitAlt :: [StgAlt] -> [StgAlt]
 -- We have an exhauseive list of literal alternatives

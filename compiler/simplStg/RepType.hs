@@ -2,8 +2,8 @@
 
 module RepType
   ( -- * Code generator views onto Types
-    UnaryType, RepType(..), repType, repTypeArgs,
-    isUnaryRep, isMultiRep,
+    UnaryType, NvUnaryType, isNvUnaryType,
+    RepType(..), repType, repTypeArgs, isUnaryRep, isMultiRep,
 
     -- * Predicates on types
     isVoidTy, typePrimRep,
@@ -47,6 +47,12 @@ type UnaryType   = Type
      --
      --   UnaryType   : never an unboxed tuple or sum;
      --                 can be Void# (but not (# #))
+
+isNvUnaryType :: Type -> Bool
+isNvUnaryType ty
+  = case repType ty of
+      UnaryRep _  -> True
+      MultiRep ss -> not (null ss)
 
 data RepType
   = MultiRep [SlotTy]     -- Represented by multiple values (e.g. unboxed tuple or sum)
