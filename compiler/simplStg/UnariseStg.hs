@@ -629,10 +629,10 @@ So in short, when we have a void id,
 unariseFunArg :: UnariseEnv -> StgArg -> [StgArg]
 unariseFunArg rho (StgVarArg x) =
   case lookupVarEnv rho x of
-    Just (MultiVal []) -> [voidArg]   -- NB: do not remove void args
-    Just (MultiVal as) -> as
+    Just (MultiVal [])  -> [voidArg]   -- NB: do not remove void args
+    Just (MultiVal as)  -> as
     Just (UnaryVal arg) -> [arg]
-    Nothing           -> [StgVarArg x]
+    Nothing             -> [StgVarArg x]
 unariseFunArg _ arg = [arg]
 
 unariseFunArgs :: UnariseEnv -> [StgArg] -> [StgArg]

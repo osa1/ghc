@@ -560,7 +560,9 @@ schemeE d s p (AnnCase scrut bndr _ [(DataAlt dc, [bind1], rhs)])
 
 schemeE d s p (AnnCase scrut bndr _ alt@[(DEFAULT, [], _)])
    | isUnboxedTupleType (idType bndr)
-   , [ty] <- repTypeArgs (idType bndr) -- handles unit tuples
+   , [ty] <- repTypeArgs (idType bndr)
+       -- handles any pattern with a single non-void binder; in particular I/O
+       -- monad returns (# RealWorld#, a #)
    = doCase d s p scrut (bndr `setIdType` ty) alt (Just bndr)
 
 schemeE d s p (AnnCase scrut bndr _ alts)
