@@ -1195,8 +1195,7 @@ def simple_run(name, way, prog, extra_run_opts):
     else:
         stderr = in_testdir(name, 'run.stderr')
 
-    my_rts_flags = rts_flags(way, extra_run_opts)
-    print("my_rts_flags", my_rts_flags, "way", way)
+    my_rts_flags = rts_flags(way)
 
     stats_file = name + '.stats'
     if opts.stats_range_fields:
@@ -1239,9 +1238,8 @@ def simple_run(name, way, prog, extra_run_opts):
 
     return checkStats(name, way, stats_file, opts.stats_range_fields)
 
-def rts_flags(way, extra_run_opts):
+def rts_flags(way):
     args = config.way_rts_flags.get(way, [])
-    args.append(extra_run_opts)
     return '+RTS {0} -RTS'.format(' '.join(args)) if args else ''
 
 # -----------------------------------------------------------------------------

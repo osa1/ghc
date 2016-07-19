@@ -114,6 +114,6 @@ test('T11978a',
      compile_and_run, [''])
 
 test('toplevel_scc_1',
-     [only_ways(['normal']), req_profiling, extra_run_opts('-p')],
+     [extra_ways(['prof_no_auto']), only_ways(['prof_no_auto'])],
      compile_and_run,
      ['-prof'])

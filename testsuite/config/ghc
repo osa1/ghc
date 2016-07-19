@@ -76,6 +76,7 @@ config.way_flags = {
     'optllvm'      : ['-O', '-fllvm'],
     'debugllvm'    : ['-fllvm', '-keep-llvm-files'],
     'prof'         : ['-prof', '-static', '-fprof-auto', '-fasm'],
+    'prof_no_auto' : ['-prof', '-static', '-fasm'],
     'profasm'      : ['-O', '-prof', '-static', '-fprof-auto'],
     'profthreaded' : ['-O', '-prof', '-static', '-fprof-auto', '-threaded'],
     'ghci'         : ['--interactive', '-v0', '-ignore-dot-ghci', '-fno-ghci-history', '+RTS', '-I0.1', '-RTS'],
@@ -111,6 +112,7 @@ config.way_rts_flags = {
     'optllvm'      : [],
     'debugllvm'    : [],
     'prof'         : ['-p'],
+    'prof_no_auto' : ['-p'],
     'profasm'      : ['-hc', '-p'], # test heap profiling too
     'profthreaded' : ['-p'],
     'ghci'         : [],
@@ -139,7 +141,7 @@ config.way_rts_flags = {
 # expect_broken_for().
 
 prof_ways     = [x[0] for x in config.way_flags.items()
-                      if '-prof' in x[1]]
+                      if '-prof' in x[1] and 'prof_no_auto' != x[0]]
 
 threaded_ways = [x[0] for x in config.way_flags.items()
                       if '-threaded' in x[1] or 'ghci' == x[0]]

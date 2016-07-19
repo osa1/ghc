@@ -685,15 +685,16 @@ tcPolyCheck _prag_fn sig bind
 
 funBindTicks :: SrcSpan -> TcId -> Module -> [LSig Name] -> [Tickish TcId]
 funBindTicks loc fun_id mod sigs
-  | (cc_str : _) <- [ cc_name | L _ (SCCFunSig _ cc_name) <- sigs ]
-      -- TODO: Multiple cost centres ignored silently
-  , let cc_name
-          | Just cc_str' <- cc_str
-          = moduleNameFS (moduleName mod) `appendFS` consFS '.' (sl_fs cc_str')
+  | (mb_cc_str : _) <- [ cc_name | L _ (SCCFunSig _ cc_name) <- sigs ]
+      -- this can only be a singleton list, as duplicate pragmas are rejected
+      -- by the renamer
+  , let cc_str
+          | Just cc_str <- mb_cc_str
+          = sl_fs cc_str
           | otherwise
-          = moduleNameFS (moduleName mod) `appendFS` consFS '.' (getOccFS (Var.varName fun_id))
-        cc
-          = mkUserCC cc_name mod loc (getUnique fun_id)
+          = getOccFS (Var.varName fun_id)
+        cc_name = moduleNameFS (moduleName mod) `appendFS` consFS '.' cc_str
+        cc = mkUserCC cc_name mod loc (getUnique fun_id)
   = [ProfNote cc True True]
   | otherwise
   = []
