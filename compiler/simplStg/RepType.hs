@@ -38,15 +38,20 @@ import qualified Data.IntSet as IS
 *                                                                       *
 ********************************************************************** -}
 
-type UnaryType = Type  -- Always a value type; i.e. its kind is TYPE rr
-                       ---  for some rr; moreover the rr is never a variable.
-                       -- Never an unboxed tuple or sum.
-                       -- Can be Void# (but not (# #))
+type NvUnaryType = Type
+type UnaryType   = Type
+     -- Both are always a value type; i.e. its kind is TYPE rr
+     -- for some rr; moreover the rr is never a variable.
+     --
+     --   NvUnaryType : never an unboxed tuple or sum, or void
+     --
+     --   UnaryType   : never an unboxed tuple or sum;
+     --                 can be Void# (but not (# #))
 
 data RepType
-  = MultiRep [SlotTy]   -- Represented by multiple values (e.g. unboxed tuple or sum)
-  | UnaryRep UnaryType  -- Represented by a single value; but never Void#, or any
-                        -- other zero-width type (isVoidTy)
+  = MultiRep [SlotTy]     -- Represented by multiple values (e.g. unboxed tuple or sum)
+  | UnaryRep NvUnaryType  -- Represented by a single value; but never Void#, or any
+                          -- other zero-width type (isVoidTy)
 
 instance Outputable RepType where
   ppr (MultiRep slots) = text "MultiRep" <+> ppr slots
