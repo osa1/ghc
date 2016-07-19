@@ -975,7 +975,7 @@ okHsSig ctxt (L _ sig)
      (MinimalSig {}, ClsDeclCtxt {}) -> True
      (MinimalSig {}, _)              -> False
 
-     (SCCFunSig {}, HsBootCtxt {}) -> False -- FIXME(osa): Not sure about this part
+     (SCCFunSig {}, HsBootCtxt {}) -> False
      (SCCFunSig {}, _)             -> True
 
 -------------------
