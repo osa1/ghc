@@ -40,7 +40,7 @@ import Id
 import PrimOp
 import TyCon
 import Type
-import RepType          ( isVoidTy )
+import RepType          ( isVoidTy, countConRepArgs )
 import CostCentre       ( CostCentreStack, currentCCS )
 import Maybes
 import Util
@@ -675,7 +675,8 @@ cgConApp con stg_args
        ; emitReturn arg_exprs }
 
   | otherwise   --  Boxed constructors; allocate and return
-  = do  { (idinfo, fcode_init) <- buildDynCon (dataConWorkId con) False
+  = ASSERT2( stg_args `lengthIs` countConRepArgs con, ppr con <> parens (ppr (countConRepArgs con)) <+> ppr stg_args )
+    do  { (idinfo, fcode_init) <- buildDynCon (dataConWorkId con) False
                                      currentCCS con stg_args
                 -- The first "con" says that the name bound to this
                 -- closure is is "con", which is a bit of a fudge, but

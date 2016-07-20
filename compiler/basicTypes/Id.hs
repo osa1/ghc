@@ -40,7 +40,7 @@ module Id (
         mkWorkerId,
 
         -- ** Taking an Id apart
-        idName, idType, idUnique, idInfo, idDetails, idRepArity,
+        idName, idType, idUnique, idInfo, idDetails,
         recordSelectorTyCon,
 
         -- ** Modifying an Id
@@ -137,7 +137,6 @@ import UniqSupply
 import FastString
 import Util
 import StaticFlags
-import {-# SOURCE #-} RepType (typeRepArity)
 
 -- infixl so you can say (id `set` a `set` b)
 infixl  1 `setIdUnfoldingLazily`,
@@ -566,9 +565,6 @@ idCallArity id = callArityInfo (idInfo id)
 
 setIdCallArity :: Id -> Arity -> Id
 setIdCallArity id arity = modifyIdInfo (`setCallArityInfo` arity) id
-
-idRepArity :: Id -> RepArity
-idRepArity x = typeRepArity (idArity x) (idType x)
 
 -- | Returns true if an application to n args would diverge
 isBottomingId :: Id -> Bool

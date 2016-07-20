@@ -81,7 +81,6 @@ import Binary
 import UniqSet
 import UniqFM
 import Unique( mkAlphaTyVarUnique )
-import {-# SOURCE #-} RepType ( typeRepArity )
 
 import qualified Data.Data as Data
 import Data.Char

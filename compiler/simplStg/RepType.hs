@@ -9,7 +9,7 @@ module RepType
     isVoidTy, typePrimRep,
 
     -- * Type representation for the code generator
-    typeRepArity, tyConPrimRep,
+    countConRepArgs, idFunRepArity, tyConPrimRep,
 
     -- * Unboxed sum representation type
     ubxSumRepType, layout, typeSlotTy, SlotTy (..), slotTyToType,
@@ -19,6 +19,8 @@ module RepType
 #include "HsVersions.h"
 
 import BasicTypes (Arity, RepArity)
+import DataCon
+import Id
 import Outputable
 import PrelNames
 import TyCon
@@ -130,12 +132,29 @@ repType ty
     go _ ty = UnaryRep ty
 
 
-typeRepArity :: Arity -> Type -> RepArity
-typeRepArity 0 _ = 0
-typeRepArity n ty = case repType ty of
-  UnaryRep (FunTy arg res) -> length (repTypeArgs arg) + typeRepArity (n - 1) res
-  _ -> pprPanic "typeRepArity: arity greater than type can handle" (ppr (n, ty, repType ty))
+idFunRepArity :: Id -> RepArity
+idFunRepArity x = countFunRepArgs (idArity x) (idType x)
 
+countFunRepArgs :: Arity -> Type -> RepArity
+countFunRepArgs 0 _
+  = 0
+countFunRepArgs n ty
+  | UnaryRep (FunTy arg res) <- repType ty
+  = length (repTypeArgs arg) + countFunRepArgs (n - 1) res
+  | otherwise
+  = pprPanic "countFunRepArgs: arity greater than type can handle" (ppr (n, ty, repType ty))
+
+countConRepArgs :: DataCon -> RepArity
+countConRepArgs dc = go (dataConRepArity dc) (dataConRepType dc)
+  where
+    go :: Arity -> Type -> RepArity
+    go 0 _
+      = 0
+    go n ty
+      | UnaryRep (FunTy arg res) <- repType ty
+      = length (repTypeSlots (repType arg)) + go (n - 1) res
+      | otherwise
+      = pprPanic "countConRepArgs: arity greater than type can handle" (ppr (n, ty, repType ty))
 
 -- | True if the type has zero width.
 isVoidTy :: Type -> Bool

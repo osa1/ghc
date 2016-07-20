@@ -38,6 +38,7 @@ import DataCon
 import DynFlags
 import FastString
 import Id
+import RepType (countConRepArgs)
 import Literal
 import PrelInfo
 import Outputable
@@ -72,6 +73,7 @@ cgTopRhsCon dflags id con args =
         ; when (platformOS (targetPlatform dflags) == OSMinGW32) $
               -- Windows DLLs have a problem with static cross-DLL refs.
               ASSERT( not (isDllConApp dflags this_mod con args) ) return ()
+        ; ASSERT( args `lengthIs` countConRepArgs con ) return ()
 
         -- LAY IT OUT
         ; let

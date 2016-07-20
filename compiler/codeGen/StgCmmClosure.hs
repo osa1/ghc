@@ -287,7 +287,7 @@ mkLFImported id
   | otherwise
   = mkLFArgument id -- Not sure of exact arity
   where
-    arity = idRepArity id
+    arity = idFunRepArity id
 
 -----------------------------------------------------
 --                Dynamic pointer tagging
