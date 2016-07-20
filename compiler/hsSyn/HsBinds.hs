@@ -796,6 +796,14 @@ data Sig name
   | MinimalSig SourceText (LBooleanFormula (Located name))
                -- Note [Pragma source text] in BasicTypes
 
+        -- | A "set cost centre" pragma for declarations
+        --
+        -- > {-# SCC funName #-}
+        --
+        -- or
+        --
+        -- > {-# SCC funName "cost_centre_name" #-}
+
   | SCCFunSig  SourceText      -- Note [Pragma source text] in BasicTypes
                (Located name)  -- Function name
                (Maybe StringLiteral)
