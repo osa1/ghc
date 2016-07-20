@@ -933,9 +933,9 @@ renameSig ctxt sig@(PatSynSig vs ty)
     ty_ctxt = GenericCtx (text "a pattern synonym signature for"
                           <+> ppr_sig_bndrs vs)
 
-renameSig ctxt sig@(SCCFunSig v s)
+renameSig ctxt sig@(SCCFunSig st v s)
   = do  { new_v <- lookupSigOccRn ctxt sig v
-        ; return (SCCFunSig new_v s, emptyFVs) }
+        ; return (SCCFunSig st new_v s, emptyFVs) }
 
 ppr_sig_bndrs :: [Located RdrName] -> SDoc
 ppr_sig_bndrs bs = quotes (pprWithCommas ppr bs)
@@ -996,7 +996,7 @@ findDupSigs sigs
     expand_sig sig@(TypeSig ns _)            = [(n,sig) | n <- ns]
     expand_sig sig@(ClassOpSig _ ns _)       = [(n,sig) | n <- ns]
     expand_sig sig@(PatSynSig ns  _ )        = [(n,sig) | n <- ns]
-    expand_sig sig@(SCCFunSig n _)           = [(n,sig)]
+    expand_sig sig@(SCCFunSig _ n _)         = [(n,sig)]
     expand_sig _ = []
 
     matching_sig (L _ n1,sig1) (L _ n2,sig2)       = n1 == n2 && mtch sig1 sig2

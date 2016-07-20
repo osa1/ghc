@@ -796,7 +796,8 @@ data Sig name
   | MinimalSig SourceText (LBooleanFormula (Located name))
                -- Note [Pragma source text] in BasicTypes
 
-  | SCCFunSig  (Located name)  -- Function name
+  | SCCFunSig  SourceText      -- Note [Pragma source text] in BasicTypes
+               (Located name)  -- Function name
                (Maybe StringLiteral)
 
 deriving instance (DataId name) => Data (Sig name)
@@ -912,9 +913,9 @@ ppr_sig (SpecInstSig _ ty)
 ppr_sig (MinimalSig _ bf)         = pragBrackets (pprMinimalSig bf)
 ppr_sig (PatSynSig names sig_ty)
   = text "pattern" <+> pprVarSig (map unLoc names) (ppr sig_ty)
-ppr_sig (SCCFunSig fn Nothing)
+ppr_sig (SCCFunSig _ fn Nothing)
   = pragBrackets (text "SCC" <+> ppr fn)
-ppr_sig (SCCFunSig fn (Just str))
+ppr_sig (SCCFunSig _ fn (Just str))
   = pragBrackets (text "SCC" <+> ppr fn <+> ppr (sl_st str))
 
 instance OutputableBndr name => Outputable (FixitySig name) where

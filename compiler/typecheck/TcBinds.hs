@@ -685,7 +685,7 @@ tcPolyCheck _prag_fn sig bind
 
 funBindTicks :: SrcSpan -> TcId -> Module -> [LSig Name] -> [Tickish TcId]
 funBindTicks loc fun_id mod sigs
-  | (mb_cc_str : _) <- [ cc_name | L _ (SCCFunSig _ cc_name) <- sigs ]
+  | (mb_cc_str : _) <- [ cc_name | L _ (SCCFunSig _ _ cc_name) <- sigs ]
       -- this can only be a singleton list, as duplicate pragmas are rejected
       -- by the renamer
   , let cc_str
