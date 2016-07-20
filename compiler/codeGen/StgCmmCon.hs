@@ -72,7 +72,6 @@ cgTopRhsCon dflags id con args =
         ; when (platformOS (targetPlatform dflags) == OSMinGW32) $
               -- Windows DLLs have a problem with static cross-DLL refs.
               ASSERT( not (isDllConApp dflags this_mod con args) ) return ()
-        ; ASSERT( args `lengthIs` dataConRepRepArity con ) return ()
 
         -- LAY IT OUT
         ; let
@@ -114,7 +113,8 @@ cgTopRhsCon dflags id con args =
 
 buildDynCon :: Id                 -- Name of the thing to which this constr will
                                   -- be bound
-            -> Bool   -- is it genuinely bound to that name, or just for profiling?
+            -> Bool               -- is it genuinely bound to that name, or just
+                                  -- for profiling?
             -> CostCentreStack    -- Where to grab cost centre from;
                                   -- current CCS if currentOrSubsumedCCS
             -> DataCon            -- The data constructor
@@ -156,6 +156,7 @@ premature looking at the args will cause the compiler to black-hole!
 -- at all.
 
 buildDynCon' dflags _ binder _ _cc con []
+  | isNullaryRepDataCon con
   = return (litIdInfo dflags binder (mkConLFInfo con)
                 (CmmLabel (mkClosureLabel (dataConName con) (idCafInfo binder))),
             return mkNop)

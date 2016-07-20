@@ -39,7 +39,7 @@ module DataCon (
         dataConInstOrigArgTys, dataConRepArgTys,
         dataConFieldLabels, dataConFieldType,
         dataConSrcBangs,
-        dataConSourceArity, dataConRepArity, dataConRepRepArity,
+        dataConSourceArity, dataConRepArity,
         dataConIsInfix,
         dataConWorkId, dataConWrapId, dataConWrapId_maybe,
         dataConImplicitTyThings,
@@ -978,12 +978,6 @@ dataConSourceArity (MkData { dcSourceArity = arity }) = arity
 -- the extra ones are the existentially quantified dictionaries
 dataConRepArity :: DataCon -> Arity
 dataConRepArity (MkData { dcRepArity = arity }) = arity
-
-
--- | The number of fields in the /representation/ of the constructor
--- AFTER taking into account the unpacking of any unboxed tuple and sum fields
-dataConRepRepArity :: DataCon -> RepArity
-dataConRepRepArity dc = typeRepArity (dataConRepArity dc) (dataConRepType dc)
 
 -- | Return whether there are any argument types for this 'DataCon's original source type
 isNullarySrcDataCon :: DataCon -> Bool
