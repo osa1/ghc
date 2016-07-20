@@ -36,7 +36,7 @@ Compiler
 
 - Support for adding cost centres to declarations is added. The same `SCC`
   syntax can be used, in addition to a new form for specifying the cost centre
-  name. See the user manual for examples.
+  name. See :ref:`scc-pragma` for examples.
 
 GHCi
 ~~~~
