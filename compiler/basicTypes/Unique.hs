@@ -381,7 +381,6 @@ mkTupleDataConUnique Unboxed        a = mkUnique '8' (3*a)
 mkSumTyConUnique :: Arity -> Unique
 mkSumTyConUnique arity = mkUnique 'z' (sumUniqsOccupied arity)
 
--- Unique generation for sums
 mkSumDataConUnique :: ConTagZ -> Arity -> Unique
 mkSumDataConUnique alt arity
   | alt >= arity
