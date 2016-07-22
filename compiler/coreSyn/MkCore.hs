@@ -22,6 +22,7 @@ module MkCore (
         -- * Constructing small tuples
         mkCoreVarTup, mkCoreVarTupTy, mkCoreTup, mkCoreUbxTup,
         mkCoreTupBoxity,
+        mkCoreUbxSum, mkUbxSumAltTy,
 
         -- * Constructing big tuples
         mkBigCoreVarTup, mkBigCoreVarTup1,
@@ -355,6 +356,21 @@ mkCoreUbxTup tys exps
 mkCoreTupBoxity :: Boxity -> [CoreExpr] -> CoreExpr
 mkCoreTupBoxity Boxed   exps = mkCoreTup exps
 mkCoreTupBoxity Unboxed exps = mkCoreUbxTup (map exprType exps) exps
+
+mkCoreUbxSum :: [Type] -> ConTag -> CoreExpr -> CoreExpr
+mkCoreUbxSum alt_tys alt arg
+  = ASSERT( alt >= 1 && alt <= length alt_tys )
+    mkCoreConApps (sumDataCon alt (length alt_tys))
+      (map (Type . getRuntimeRep "mkCoreUbxSum") alt_tys ++
+       map Type alt_tys ++
+       [arg])
+
+-- | Every alternative of an unboxed sum has exactly one field, and we use
+-- unboxed tuples when we need more than one fields. This generates an unboxed
+-- tuple when necessary, to be used in unboxed sum alts.
+mkUbxSumAltTy :: [Type] -> Type
+mkUbxSumAltTy [ty] = ty
+mkUbxSumAltTy tys  = mkTupleTy Unboxed tys
 
 -- | Build a big tuple holding the specified variables
 -- One-tuples are flattened; see Note [Flattening one-tuples]

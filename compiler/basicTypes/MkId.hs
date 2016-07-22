@@ -48,7 +48,7 @@ import FamInstEnv
 import Coercion
 import TcType
 import MkCore
-import CoreUtils        ( exprType, mkCast )
+import CoreUtils        ( exprType, mkCast, coreAltsType )
 import CoreUnfold
 import Literal
 import TyCon
@@ -76,6 +76,7 @@ import FastString
 import ListSetOps
 import qualified GHC.LanguageExtensions as LangExt
 
+import Data.List        ( zipWith4 )
 import Data.Maybe       ( maybeToList )
 
 {-
@@ -722,7 +723,8 @@ dataConArgUnpack arg_ty
       -- A recursive newtype might mean that
       -- 'arg_ty' is a newtype
   , let rep_tys = dataConInstArgTys con tc_args
-  = ASSERT( isVanillaDataCon con )
+  = -- unpack a product type
+    ASSERT( isVanillaDataCon con )
     ( rep_tys `zip` dataConRepStrictness con
     ,( \ arg_id ->
        do { rep_ids <- mapM newLocal rep_tys
@@ -735,6 +737,84 @@ dataConArgUnpack arg_ty
           ; return (rep_ids, Var (dataConWorkId con)
                              `mkTyApps` (substTysUnchecked subst tc_args)
                              `mkVarApps` rep_ids ) } ) )
+
+  | Just (tc, tc_args) <- splitTyConApp_maybe arg_ty
+  = -- unpack a sum type
+    let
+      cons = tyConDataCons tc
+      ubx_sum_arity = length cons
+      src_tys = map (\con -> dataConInstArgTys con tc_args) cons
+      sum_alt_tys = map mkUbxSumAltTy src_tys
+      sum_ty = mkSumTy sum_alt_tys
+
+      unboxer :: Unboxer
+      unboxer arg_id = do
+        con_arg_binders <- mapM (mapM newLocal) src_tys
+        ubx_sum_bndr <- newLocal sum_ty
+
+        let
+          mkUbxSumAlt :: Int -> DataCon -> [Var] -> CoreAlt
+          mkUbxSumAlt alt con [] =
+            ( DataAlt con, [],
+              mkCoreUbxSum sum_alt_tys alt (Var (dataConWorkId (tupleDataCon Unboxed 0))) )
+
+          mkUbxSumAlt alt con [bndr] =
+            ( DataAlt con, [bndr], mkCoreUbxSum sum_alt_tys alt (Var bndr) )
+
+          mkUbxSumAlt alt con bndrs =
+            let tuple = mkCoreUbxTup (map idType bndrs) (map Var bndrs)
+             in ( DataAlt con, bndrs, mkCoreUbxSum sum_alt_tys alt tuple )
+
+          ubxSum :: CoreExpr
+          ubxSum =
+            let alts = zipWith3 mkUbxSumAlt [ 1 .. ] cons con_arg_binders
+             in Case (Var arg_id) arg_id (coreAltsType alts) alts
+
+          unbox_fn :: CoreExpr -> CoreExpr
+          unbox_fn body =
+            Case ubxSum ubx_sum_bndr (exprType body) [ ( DEFAULT, [], body ) ]
+
+        return ([ubx_sum_bndr], unbox_fn)
+
+      boxer :: Boxer
+      boxer = Boxer $ \ subst -> do
+                unboxed_field_id <- newLocal (TcType.substTy subst sum_ty)
+                tuple_bndrs <- mapM (newLocal . TcType.substTy subst) sum_alt_tys
+
+                let tc_args' = substTys subst tc_args
+                    arg_ty' = substTy subst arg_ty
+
+                con_arg_binders <-
+                  mapM (mapM newLocal . map (TcType.substTy subst)) src_tys
+
+                let mkSumAlt :: Int -> DataCon -> Var -> [Var] -> CoreAlt
+                    mkSumAlt alt con tuple_bndr [] =
+                      ( DataAlt (sumDataCon alt ubx_sum_arity), [tuple_bndr],
+                        Var (dataConWorkId con) `mkTyApps` tc_args' )
+
+                    mkSumAlt alt con _ [datacon_bndr] =
+                      ( DataAlt (sumDataCon alt ubx_sum_arity), [datacon_bndr],
+                        Var (dataConWorkId con) `mkTyApps`  tc_args'
+                                                `mkVarApps` [datacon_bndr] )
+
+                    mkSumAlt alt con tuple_bndr datacon_bndrs =
+                      ( DataAlt (sumDataCon alt ubx_sum_arity), [tuple_bndr],
+                        Case (Var tuple_bndr) tuple_bndr arg_ty'
+                          [ ( DataAlt (tupleDataCon Unboxed (length datacon_bndrs)), datacon_bndrs,
+                              Var (dataConWorkId con) `mkTyApps`  tc_args'
+                                                      `mkVarApps` datacon_bndrs ) ] )
+
+                return ( [unboxed_field_id],
+                         Case (Var unboxed_field_id) unboxed_field_id arg_ty'
+                              (zipWith4 mkSumAlt [ 1 .. ] cons tuple_bndrs con_arg_binders) )
+    in
+      ( [ (sum_ty, MarkedStrict) ] -- NOTE(osa): I don't completely understand
+                                   -- this part. The idea: Unpacked variant will
+                                   -- be one field only, and the type of the
+                                   -- field will be an unboxed sum. It's strict,
+                                   -- because it's a hash type.
+      , ( unboxer, boxer ) )
+
   | otherwise
   = pprPanic "dataConArgUnpack" (ppr arg_ty)
     -- An interface file specified Unpacked, but we couldn't unpack it
@@ -747,31 +827,36 @@ isUnpackableType :: DynFlags -> FamInstEnvs -> Type -> Bool
 -- end up relying on ourselves!
 isUnpackableType dflags fam_envs ty
   | Just (tc, _) <- splitTyConApp_maybe ty
-  , Just con <- tyConSingleAlgDataCon_maybe tc
-  , isVanillaDataCon con
-  = ok_con_args (unitNameSet (getName tc)) con
+  , let cons = tyConDataCons tc
+  , cons `lengthAtLeast` 1 -- apparently some types have no constructors
+  , all isVanillaDataCon cons -- TODO (osa): Why do we need that?
+  = all (ok_con_args (unitNameSet (getName tc))) cons
   | otherwise
   = False
   where
+    ok_arg :: NameSet -> (Type, HsSrcBang) -> Bool
     ok_arg tcs (ty, bang) = not (attempt_unpack bang) || ok_ty tcs norm_ty
         where
           norm_ty = topNormaliseType fam_envs ty
+
+    ok_ty :: NameSet -> Type -> Bool
     ok_ty tcs ty
       | Just (tc, _) <- splitTyConApp_maybe ty
       , let tc_name = getName tc
-      =  not (tc_name `elemNameSet` tcs)
-      && case tyConSingleAlgDataCon_maybe tc of
-            Just con | isVanillaDataCon con
-                    -> ok_con_args (tcs `extendNameSet` getName tc) con
-            _ -> True
+      , cons@(_ : _) <- tyConDataCons tc
+      = not (tc_name `elemNameSet` tcs)
+        && all (\con -> isVanillaDataCon con &&
+                        ok_con_args (tcs `extendNameSet` getName tc) con) cons
       | otherwise
       = True
 
+    ok_con_args :: NameSet -> DataCon -> Bool
     ok_con_args tcs con
        = all (ok_arg tcs) (dataConOrigArgTys con `zip` dataConSrcBangs con)
          -- NB: dataConSrcBangs gives the *user* request;
          -- We'd get a black hole if we used dataConImplBangs
 
+    attempt_unpack :: HsSrcBang -> Bool
     attempt_unpack (HsSrcBang _ SrcUnpack NoSrcStrict)
       = xopt LangExt.StrictData dflags
     attempt_unpack (HsSrcBang _ SrcUnpack SrcStrict)
