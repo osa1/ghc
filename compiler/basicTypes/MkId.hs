@@ -645,14 +645,18 @@ dataConSrcToImplBang dflags fam_envs arg_ty
   , isUnpackableType dflags fam_envs arg_ty'
   , (rep_tys, _) <- dataConArgUnpack arg_ty'
   , case unpk_prag of
-      NoSrcUnpack ->
-        gopt Opt_UnboxStrictFields dflags
-            || (gopt Opt_UnboxSmallStrictFields dflags
-                && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
+      NoSrcUnpack
+        | Just (tc, _) <- splitTyConApp_maybe arg_ty'
+        , length (tyConDataCons tc) >= 2
+        -> False -- don't unpack sum types without explicit UNPACK
+        | otherwise
+        -> gopt Opt_UnboxStrictFields dflags
+               || (gopt Opt_UnboxSmallStrictFields dflags
+                   && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
       srcUnpack -> isSrcUnpacked srcUnpack
   = case mb_co of
-      Nothing     -> HsUnpack Nothing
-      Just (co,_) -> HsUnpack (Just co)
+      Nothing     -> pprTrace "unpacking" (ppr arg_ty) $ HsUnpack Nothing
+      Just (co,_) -> pprTrace "unpacking" (ppr arg_ty) $ HsUnpack (Just co)
 
   | otherwise -- Record the strict-but-no-unpack decision
   = HsStrict
