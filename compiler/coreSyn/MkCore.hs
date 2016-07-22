@@ -69,7 +69,7 @@ import Coercion         ( isCoVar )
 import TysPrim
 import DataCon          ( DataCon, dataConWorkId )
 import IdInfo           ( vanillaIdInfo, setStrictnessInfo,
-                          setArityInfo )
+                          setArityInfo, IdInfo )
 import Demand
 import Name      hiding ( varName )
 import Outputable
@@ -680,13 +680,12 @@ errorIds
       tYPE_ERROR_ID   -- Used with Opt_DeferTypeErrors, see #10284
       ]
 
-recSelErrorName, runtimeErrorName, absentErrorName :: Name
+recSelErrorName, runtimeErrorName :: Name
 irrefutPatErrorName, recConErrorName, patErrorName :: Name
 nonExhaustiveGuardsErrorName, noMethodBindingErrorName :: Name
 typeErrorName :: Name
 
 recSelErrorName     = err_nm "recSelError"     recSelErrorIdKey     rEC_SEL_ERROR_ID
-absentErrorName     = err_nm "absentError"     absentErrorIdKey     aBSENT_ERROR_ID
 runtimeErrorName    = err_nm "runtimeError"    runtimeErrorIdKey    rUNTIME_ERROR_ID
 irrefutPatErrorName = err_nm "irrefutPatError" irrefutPatErrorIdKey iRREFUT_PAT_ERROR_ID
 recConErrorName     = err_nm "recConError"     recConErrorIdKey     rEC_CON_ERROR_ID
@@ -704,7 +703,6 @@ err_nm str uniq id = mkWiredInIdName cONTROL_EXCEPTION_BASE (fsLit str) uniq id
 rEC_SEL_ERROR_ID, rUNTIME_ERROR_ID, iRREFUT_PAT_ERROR_ID, rEC_CON_ERROR_ID :: Id
 pAT_ERROR_ID, nO_METHOD_BINDING_ERROR_ID, nON_EXHAUSTIVE_GUARDS_ERROR_ID :: Id
 tYPE_ERROR_ID :: Id
-aBSENT_ERROR_ID :: Id
 rEC_SEL_ERROR_ID                = mkRuntimeErrorId recSelErrorName
 rUNTIME_ERROR_ID                = mkRuntimeErrorId runtimeErrorName
 iRREFUT_PAT_ERROR_ID            = mkRuntimeErrorId irrefutPatErrorName
@@ -712,7 +710,6 @@ rEC_CON_ERROR_ID                = mkRuntimeErrorId recConErrorName
 pAT_ERROR_ID                    = mkRuntimeErrorId patErrorName
 nO_METHOD_BINDING_ERROR_ID      = mkRuntimeErrorId noMethodBindingErrorName
 nON_EXHAUSTIVE_GUARDS_ERROR_ID  = mkRuntimeErrorId nonExhaustiveGuardsErrorName
-aBSENT_ERROR_ID                 = mkRuntimeErrorId absentErrorName
 tYPE_ERROR_ID                   = mkRuntimeErrorId typeErrorName
 
 mkRuntimeErrorId :: Name -> Id
@@ -723,11 +720,18 @@ mkRuntimeErrorId :: Name -> Id
 -- The Addr# is expected to be the address of
 --   a UTF8-encoded error string
 mkRuntimeErrorId name
- = mkVanillaGlobalWithInfo name runtime_err_ty bottoming_info
+ = mkVanillaGlobalWithInfo name runtime_err_ty runtimeErrorBottomingInfo
  where
-    bottoming_info = vanillaIdInfo `setStrictnessInfo`    strict_sig
-                                   `setArityInfo`         1
-                        -- Make arity and strictness agree
+    -- forall (rr :: RuntimeRep) (a :: rr). Addr# -> a
+    --   See Note [Error and friends have an "open-tyvar" forall]
+    runtime_err_ty = mkSpecSigmaTy [runtimeRep1TyVar, openAlphaTyVar] []
+                                   (mkFunTy addrPrimTy openAlphaTy)
+
+runtimeErrorBottomingInfo :: IdInfo
+runtimeErrorBottomingInfo
+  = vanillaIdInfo `setStrictnessInfo`    strict_sig
+                  `setArityInfo`         1
+        -- Make arity and strictness agree
 
         -- Do *not* mark them as NoCafRefs, because they can indeed have
         -- CAF refs.  For example, pAT_ERROR_ID calls GHC.Err.untangle,
@@ -737,14 +741,10 @@ mkRuntimeErrorId name
         -- can give them NoCaf info.  As it is, any function that calls
         -- any pc_bottoming_Id will itself have CafRefs, which bloats
         -- SRTs.
-
+  where
     strict_sig = mkClosedStrictSig [evalDmd] exnRes
               -- exnRes: these throw an exception, not just diverge
 
-    -- forall (rr :: RuntimeRep) (a :: rr). Addr# -> a
-    --   See Note [Error and friends have an "open-tyvar" forall]
-    runtime_err_ty = mkSpecSigmaTy [runtimeRep1TyVar, openAlphaTyVar] []
-                                   (mkFunTy addrPrimTy openAlphaTy)
 
 {- Note [Error and friends have an "open-tyvar" forall]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -756,3 +756,12 @@ Notice the runtime-representation polymophism. This ensures that
 This is OK because it never returns, so the return type is irrelevant.
 -}
 
+absentErrorName :: Name
+absentErrorName = mkSystemVarName absentErrorIdKey (mkFastString "stg_RUBBISH_ENTRY")
+
+aBSENT_ERROR_ID :: Id
+aBSENT_ERROR_ID
+  = mkVanillaGlobalWithInfo absentErrorName err_ty runtimeErrorBottomingInfo
+  where
+    -- forall (rr :: RuntimeRep) (a :: rr) . a
+    err_ty = mkSpecSigmaTy [runtimeRep1TyVar, openAlphaTyVar] [] openAlphaTy

@@ -21,7 +21,6 @@ module Literal
 
         -- ** Operations on Literals
         , literalType
-        , absentLiteralOf
         , pprLiteral
 
         -- ** Predicates on Literals and their contents
@@ -43,16 +42,13 @@ module Literal
 #include "HsVersions.h"
 
 import TysPrim
-import PrelNames
 import Type
-import TyCon
 import Outputable
 import FastString
 import BasicTypes
 import Binary
 import Constants
 import DynFlags
-import UniqFM
 import Util
 
 import Data.ByteString (ByteString)
@@ -386,21 +382,6 @@ literalType (MachFloat _)   = floatPrimTy
 literalType (MachDouble _)  = doublePrimTy
 literalType (MachLabel _ _ _) = addrPrimTy
 literalType (LitInteger _ t) = t
-
-absentLiteralOf :: TyCon -> Maybe Literal
--- Return a literal of the appropriate primtive
--- TyCon, to use as a placeholder when it doesn't matter
-absentLiteralOf tc = lookupUFM absent_lits (tyConName tc)
-
-absent_lits :: UniqFM Literal
-absent_lits = listToUFM [ (addrPrimTyConKey,    MachNullAddr)
-                        , (charPrimTyConKey,    MachChar 'x')
-                        , (intPrimTyConKey,     MachInt 0)
-                        , (int64PrimTyConKey,   MachInt64 0)
-                        , (floatPrimTyConKey,   MachFloat 0)
-                        , (doublePrimTyConKey,  MachDouble 0)
-                        , (wordPrimTyConKey,    MachWord 0)
-                        , (word64PrimTyConKey,  MachWord64 0) ]
 
 {-
         Comparison

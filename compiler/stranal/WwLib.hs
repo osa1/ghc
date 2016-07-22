@@ -18,9 +18,8 @@ import Id
 import IdInfo           ( vanillaIdInfo )
 import DataCon
 import Demand
-import MkCore           ( mkRuntimeErrorApp, aBSENT_ERROR_ID, mkCoreUbxTup )
+import MkCore           ( aBSENT_ERROR_ID, mkCoreUbxTup )
 import MkId             ( voidArgId, voidPrimId )
-import TysPrim          ( voidPrimTy )
 import TysWiredIn       ( tupleDataCon )
 import VarEnv           ( mkInScopeSet )
 import Type
@@ -28,7 +27,6 @@ import RepType          ( isVoidTy )
 import Coercion
 import FamInstEnv
 import BasicTypes       ( Boxity(..) )
-import Literal          ( absentLiteralOf )
 import TyCon
 import UniqSupply
 import Unique
@@ -410,11 +408,7 @@ mkWWstr_one dflags fam_envs arg
 
   -- See Note [Worker-wrapper for bottoming functions]
   | isAbsDmd dmd
-  , Just work_fn <- mk_absent_let dflags arg
-     -- Absent case.  We can't always handle absence for arbitrary
-     -- unlifted types, so we need to choose just the cases we can
-     --- (that's what mk_absent_let does)
-  = return (True, [], nop_fn, work_fn)
+  = return (True, [], nop_fn, mk_absent_let arg)
 
   -- See Note [Worthy functions for Worker-Wrapper split]
   | isSeqDmd dmd  -- `seq` demand; evaluate in wrapper in the hope
@@ -689,46 +683,15 @@ We make a new binding for Ids that are marked absent, thus
    let x = absentError "x :: Int"
 The idea is that this binding will never be used; but if it
 buggily is used we'll get a runtime error message.
-
-Coping with absence for *unlifted* types is important; see, for
-example, Trac #4306.  For these we find a suitable literal,
-using Literal.absentLiteralOf.  We don't have literals for
-every primitive type, so the function is partial.
-
-    [I did try the experiment of using an error thunk for unlifted
-    things too, relying on the simplifier to drop it as dead code,
-    by making absentError
-      (a) *not* be a bottoming Id,
-      (b) be "ok for speculation"
-    But that relies on the simplifier finding that it really
-    is dead code, which is fragile, and indeed failed when
-    profiling is on, which disables various optimisations.  So
-    using a literal will do.]
 -}
 
-mk_absent_let :: DynFlags -> Id -> Maybe (CoreExpr -> CoreExpr)
-mk_absent_let dflags arg
-  | not (isUnliftedType arg_ty)
-  = Just (Let (NonRec arg abs_rhs))
-  | Just tc <- tyConAppTyCon_maybe arg_ty
-  , Just lit <- absentLiteralOf tc
-  = Just (Let (NonRec arg (Lit lit)))
-  | arg_ty `eqType` voidPrimTy
-  = Just (Let (NonRec arg (Var voidPrimId)))
-  | otherwise
-  = WARN( True, text "No absent value for" <+> ppr arg_ty )
-    Nothing
+mk_absent_let :: Id -> (CoreExpr -> CoreExpr)
+mk_absent_let arg
+  = Let (NonRec arg abs_rhs)
   where
     arg_ty  = idType arg
-    abs_rhs = mkRuntimeErrorApp aBSENT_ERROR_ID arg_ty msg
-    msg     = showSDoc (gopt_set dflags Opt_SuppressUniques)
-                       (ppr arg <+> ppr (idType arg))
-              -- We need to suppress uniques here because otherwise they'd
-              -- end up in the generated code as strings. This is bad for
-              -- determinism, because with different uniques the strings
-              -- will have different lengths and hence different costs for
-              -- the inliner leading to different inlining.
-              -- See also Note [Unique Determinism] in Unique
+    abs_rhs = mkTyApps (Var aBSENT_ERROR_ID)
+                       [ getRuntimeRep "mk_absent_let" arg_ty, arg_ty ]
 
 mk_seq_case :: Id -> CoreExpr -> CoreExpr
 mk_seq_case arg body = Case (Var arg) (sanitiseCaseBndr arg) (exprType body) [(DEFAULT, [], body)]
