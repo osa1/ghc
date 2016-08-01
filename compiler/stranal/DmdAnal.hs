@@ -14,7 +14,8 @@ module DmdAnal ( dmdAnalProgram ) where
 #include "HsVersions.h"
 
 import DynFlags
-import WwLib            ( findTypeShape, deepSplitProductType_maybe )
+import WwLib            ( findTypeShape,
+                          deepSplitProductType_maybe, deepSplitSumType_maybe )
 import Demand   -- All of it
 import CoreSyn
 import Outputable
@@ -1079,6 +1080,11 @@ extendSigsWithLam env id
        -- See Note [Initial CPR for strict binders]
   , Just (dc,_,_,_) <- deepSplitProductType_maybe (ae_fam_envs env) $ idType id
   = extendAnalEnv NotTopLevel env id (cprProdSig (dataConRepArity dc))
+
+  | isId id
+  , isStrictDmd (idDemandInfo id) || ae_virgin env
+  , Just (cons, _, _) <- deepSplitSumType_maybe (ae_fam_envs env) $ idType id
+  = extendAnalEnv NotTopLevel env id (cprSumSig cons)
 
   | otherwise
   = env

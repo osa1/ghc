@@ -35,7 +35,7 @@ module Demand (
         vanillaCprProdRes, cprSumRes,
         appIsBottom, isBottomingSig, pprIfaceStrictSig,
         trimCPRInfo, returnsCPR_maybe,
-        StrictSig(..), mkStrictSig, mkClosedStrictSig, nopSig, botSig, cprProdSig,
+        StrictSig(..), mkStrictSig, mkClosedStrictSig, nopSig, botSig, cprProdSig, cprSumSig,
         isTopSig, hasDemandEnvSig, splitStrictSig, increaseStrictSigArity,
 
         seqDemand, seqDemandList, seqDmdType, seqStrictSig,
@@ -71,7 +71,10 @@ import Maybes           ( orElse )
 
 import Type            ( Type, isUnliftedType )
 import TyCon           ( isNewTyCon, isClassTyCon )
-import DataCon         ( splitDataProductType_maybe )
+import DataCon         ( splitDataProductType_maybe, dataConTag, DataCon )
+
+import Control.DeepSeq (rnf)
+import qualified Data.IntSet as IS
 
 {-
 ************************************************************************
@@ -891,7 +894,7 @@ DmdResult:     Dunno CPRResult
 
 CPRResult:         NoCPR
                    /    \
-            RetProd    RetSum ConTag
+            RetProd    Set ConTag
 
 
 Product constructors return (Dunno (RetProd rs))
@@ -911,14 +914,13 @@ data Termination r
 
 type DmdResult = Termination CPRResult
 
-data CPRResult = NoCPR          -- Top of the lattice
-               | RetProd        -- Returns a constructor from a product type
-               | RetSum ConTag  -- Returns a constructor from a data type
+data CPRResult = NoCPR            -- Top of the lattice
+               | RetProd          -- Returns a constructor from a product type
+               | RetSum IS.IntSet -- Returns these constructors from a sum type
                deriving( Eq, Show )
 
 lubCPR :: CPRResult -> CPRResult -> CPRResult
-lubCPR (RetSum t1) (RetSum t2)
-  | t1 == t2                       = RetSum t1
+lubCPR (RetSum t1) (RetSum t2) = RetSum (IS.union t1 t2)
 lubCPR RetProd     RetProd     = RetProd
 lubCPR _ _                     = NoCPR
 
@@ -949,7 +951,7 @@ instance Outputable r => Outputable (Termination r) where
 
 instance Outputable CPRResult where
   ppr NoCPR        = empty
-  ppr (RetSum n)   = char 'm' <> int n
+  ppr (RetSum n)   = char 'm' <> parens (ppr (IS.toList n))
   ppr RetProd      = char 'm'
 
 seqDmdResult :: DmdResult -> ()
@@ -959,7 +961,7 @@ seqDmdResult (Dunno c) = seqCPRResult c
 
 seqCPRResult :: CPRResult -> ()
 seqCPRResult NoCPR        = ()
-seqCPRResult (RetSum n)   = n `seq` ()
+seqCPRResult (RetSum n)   = rnf n `seq` ()
 seqCPRResult RetProd      = ()
 
 
@@ -975,13 +977,16 @@ exnRes = ThrowsExn
 botRes = Diverges
 
 cprSumRes :: ConTag -> DmdResult
-cprSumRes tag = Dunno $ RetSum tag
+cprSumRes tag = Dunno $ RetSum (IS.singleton tag)
 
 cprProdRes :: [DmdType] -> DmdResult
 cprProdRes _arg_tys = Dunno $ RetProd
 
 vanillaCprProdRes :: Arity -> DmdResult
 vanillaCprProdRes _arity = Dunno $ RetProd
+
+vanillaCprSumRes :: [DataCon] -> DmdResult
+vanillaCprSumRes cons = Dunno (RetSum (IS.fromList (map dataConTag cons)))
 
 isTopRes :: DmdResult -> Bool
 isTopRes (Dunno NoCPR) = True
@@ -1006,13 +1011,15 @@ trimCPRInfo trim_all trim_sums res
                        | otherwise = RetProd
     trimC NoCPR = NoCPR
 
-returnsCPR_maybe :: DmdResult -> Maybe ConTag
+returnsCPR_maybe :: DmdResult -> Maybe IS.IntSet
 returnsCPR_maybe (Dunno c) = retCPR_maybe c
 returnsCPR_maybe _         = Nothing
 
-retCPR_maybe :: CPRResult -> Maybe ConTag
-retCPR_maybe (RetSum t)  = Just t
-retCPR_maybe RetProd     = Just fIRST_TAG
+retCPR_maybe :: CPRResult -> Maybe IS.IntSet
+retCPR_maybe r@(RetSum t)
+  | IS.null t            = pprPanic "retCPR_maybe" (ppr r)
+  | otherwise            = Just t
+retCPR_maybe RetProd     = Just (IS.singleton fIRST_TAG)
 retCPR_maybe NoCPR       = Nothing
 
 -- See Notes [Default demand on free variables]
@@ -1269,6 +1276,10 @@ botDmdType = DmdType emptyDmdEnv [] botRes
 cprProdDmdType :: Arity -> DmdType
 cprProdDmdType arity
   = DmdType emptyDmdEnv [] (vanillaCprProdRes arity)
+
+cprSumDmdType :: [DataCon] -> DmdType
+cprSumDmdType cons
+  = DmdType emptyDmdEnv [] (vanillaCprSumRes cons)
 
 isTopDmdType :: DmdType -> Bool
 isTopDmdType (DmdType env [] res)
@@ -1693,6 +1704,9 @@ botSig = StrictSig botDmdType
 cprProdSig :: Arity -> StrictSig
 cprProdSig arity = StrictSig (cprProdDmdType arity)
 
+cprSumSig :: [DataCon] -> StrictSig
+cprSumSig cons = StrictSig (cprSumDmdType cons)
+
 seqStrictSig :: StrictSig -> ()
 seqStrictSig (StrictSig ty) = seqDmdType ty
 
@@ -2116,13 +2130,13 @@ instance Binary DmdResult where
                   _ -> return Diverges }
 
 instance Binary CPRResult where
-    put_ bh (RetSum n)   = do { putByte bh 0; put_ bh n }
+    put_ bh (RetSum n)   = do { putByte bh 0; put_ bh (IS.toList n) }
     put_ bh RetProd      = putByte bh 1
     put_ bh NoCPR        = putByte bh 2
 
     get  bh = do
             h <- getByte bh
             case h of
-              0 -> do { n <- get bh; return (RetSum n) }
+              0 -> do { n <- get bh; return (RetSum (IS.fromList n)) }
               1 -> return RetProd
               _ -> return NoCPR

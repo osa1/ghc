@@ -898,8 +898,11 @@ data DynFlags = DynFlags {
 
   -- | Unique supply configuration for testing build determinism
   initialUnique         :: Int,
-  uniqueIncrement       :: Int
-}
+  uniqueIncrement       :: Int,
+
+  -- | CPR analysis for sum returns
+  doSumCprWw :: Bool
+  }
 
 class HasDynFlags m where
     getDynFlags :: m DynFlags
@@ -1610,7 +1613,9 @@ defaultDynFlags mySettings =
         initialUnique = 0,
         uniqueIncrement = 1,
 
-        reverseErrors = False
+        reverseErrors = False,
+
+        doSumCprWw = False
       }
 
 defaultWays :: Settings -> [Way]
@@ -2848,6 +2853,8 @@ dynamic_flags_deps = [
                                                 setOptLevel (mb_n `orElse` 1)))
                 -- If the number is missing, use 1
 
+  , make_ord_flag defFlag "fdo-sum-cpr-ww"
+      (noArg (\d -> d { doSumCprWw = True } ))
 
   , make_ord_flag defFlag "fmax-relevant-binds"
       (intSuffix (\n d -> d { maxRelevantBinds = Just n }))
