@@ -655,8 +655,8 @@ dataConSrcToImplBang dflags fam_envs arg_ty
                    && length rep_tys <= 1) -- See Note [Unpack one-wide fields]
       srcUnpack -> isSrcUnpacked srcUnpack
   = case mb_co of
-      Nothing     -> pprTrace "unpacking" (ppr arg_ty) $ HsUnpack Nothing
-      Just (co,_) -> pprTrace "unpacking" (ppr arg_ty) $ HsUnpack (Just co)
+      Nothing     -> HsUnpack Nothing
+      Just (co,_) -> HsUnpack (Just co)
 
   | otherwise -- Record the strict-but-no-unpack decision
   = HsStrict
@@ -677,8 +677,7 @@ dataConArgRep arg_ty HsStrict
   = ([(arg_ty, MarkedStrict)], (seqUnboxer, unitBoxer))
 
 dataConArgRep arg_ty (HsUnpack Nothing)
-  | (rep_tys, wrappers) <- dataConArgUnpack arg_ty
-  = (rep_tys, wrappers)
+  = dataConArgUnpack arg_ty
 
 dataConArgRep _ (HsUnpack (Just co))
   | let co_rep_ty = pSnd (coercionKind co)
