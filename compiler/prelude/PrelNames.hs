@@ -517,9 +517,6 @@ mAIN, rOOT_MAIN :: Module
 mAIN            = mkMainModule_ mAIN_NAME
 rOOT_MAIN       = mkMainModule (fsLit ":Main") -- Root module for initialisation
 
-gHC_RTS :: Module
-gHC_RTS = mkModule rtsUnitId (mkModuleNameFS (fsLit "GHC.RTS"))
-
 mkInteractiveModule :: Int -> Module
 -- (mkInteractiveMoudule 9) makes module 'interactive:M9'
 mkInteractiveModule n = mkModule interactiveUnitId (mkModuleName ("Ghci" ++ show n))
