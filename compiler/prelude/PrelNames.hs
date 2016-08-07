@@ -517,6 +517,9 @@ mAIN, rOOT_MAIN :: Module
 mAIN            = mkMainModule_ mAIN_NAME
 rOOT_MAIN       = mkMainModule (fsLit ":Main") -- Root module for initialisation
 
+gHC_RTS :: Module
+gHC_RTS = mkModule rtsUnitId (mkModuleNameFS (fsLit "GHC.RTS"))
+
 mkInteractiveModule :: Int -> Module
 -- (mkInteractiveMoudule 9) makes module 'interactive:M9'
 mkInteractiveModule n = mkModule interactiveUnitId (mkModuleName ("Ghci" ++ show n))
@@ -1909,7 +1912,7 @@ wildCardKey, absentErrorIdKey, augmentIdKey, appendIdKey,
     realWorldPrimIdKey, recConErrorIdKey,
     unpackCStringUtf8IdKey, unpackCStringAppendIdKey,
     unpackCStringFoldrIdKey, unpackCStringIdKey,
-    typeErrorIdKey, rubbishEntryErrorIdKey :: Unique
+    typeErrorIdKey :: Unique
 
 wildCardKey                   = mkPreludeMiscIdUnique  0  -- See Note [WildCard binders]
 absentErrorIdKey              = mkPreludeMiscIdUnique  1
@@ -1934,7 +1937,6 @@ unpackCStringFoldrIdKey       = mkPreludeMiscIdUnique 19
 unpackCStringIdKey            = mkPreludeMiscIdUnique 20
 voidPrimIdKey                 = mkPreludeMiscIdUnique 21
 typeErrorIdKey                = mkPreludeMiscIdUnique 22
-rubbishEntryErrorIdKey        = mkPreludeMiscIdUnique 23
 
 unsafeCoerceIdKey, concatIdKey, filterIdKey, zipIdKey, bindIOIdKey,
     returnIOIdKey, newStablePtrIdKey,
