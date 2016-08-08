@@ -831,7 +831,11 @@ isUnpackableType :: DynFlags -> FamInstEnvs -> Type -> Bool
 isUnpackableType dflags fam_envs ty
   | Just (tc, _) <- splitTyConApp_maybe ty
   , let cons = tyConDataCons tc
-  , cons `lengthAtLeast` 1 -- apparently some types have no constructors
+  , -- either a single non-newtype constructor, or more than one constructors
+    case cons of
+      []  -> False
+      [_] -> not (isNewTyCon tc)
+      _   -> True
   , all isVanillaDataCon cons -- TODO (osa): Why do we need that?
   = all (ok_con_args (unitNameSet (getName tc))) cons
   | otherwise
