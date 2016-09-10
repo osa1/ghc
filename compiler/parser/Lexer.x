@@ -1354,7 +1354,7 @@ new_layout_context strict tok span _buf len = do
     nondecreasing <- extension nondecreasingIndentation
     let strict' = strict || not nondecreasing
     case ctx of
-      (ctx0 : ctx')
+      (ctx0 : _)
         | Just prev_off <- isInLayout ctx0
         , (strict'     && prev_off >= offset  ||
            not strict' && prev_off > offset)
