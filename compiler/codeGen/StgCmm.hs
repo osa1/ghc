@@ -249,7 +249,8 @@ cgDataCon data_con
 
             arg_reps :: [(PrimRep, NonVoid ())]
             arg_reps = [(typePrimRep rep_ty, NonVoid ()) | ty <- dataConRepArgTys data_con
-                                                         , rep_ty <- repTypeArgs ty]
+                                                         , rep_ty <- repTypeArgs ty
+                                                         , not (isVoidTy rep_ty)]
 
             -- Dynamic closure code for non-nullary constructors only
         ; when (not (isNullaryRepDataCon data_con))
