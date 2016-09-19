@@ -18,7 +18,7 @@ import NameEnv
 import DataCon          ( DataCon, dataConRepArgTys, dataConIdentity )
 import TyCon            ( TyCon, tyConFamilySize, isDataTyCon, tyConDataCons )
 import RepType
-import StgCmmLayout     ( mkVirtHeapOffsets )
+import StgCmmLayout     ( mkVirtConstrOffsets' )
 import StgCmmClosure    ( tagForCon, NonVoid (..) )
 import Util
 import Panic
@@ -59,7 +59,7 @@ make_constr_itbls hsc_env cons =
                     , slot_ty <- repTypeSlots (repType arg) ]
 
          (tot_wds, ptr_wds, _) =
-             mkVirtHeapOffsets dflags False{-not a THUNK-} rep_args
+             mkVirtConstrOffsets' dflags rep_args
 
          ptrs'  = ptr_wds
          nptrs' = tot_wds - ptr_wds

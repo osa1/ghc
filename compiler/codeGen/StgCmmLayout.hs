@@ -17,7 +17,7 @@ module StgCmmLayout (
 
         slowCall, directCall,
 
-        mkVirtHeapOffsets, mkVirtConstrOffsets, getHpRelOffset,
+        mkVirtHeapOffsets, mkVirtConstrOffsets, mkVirtConstrOffsets', getHpRelOffset,
 
         ArgRep(..), toArgRep, argRepSizeW -- re-exported from StgCmmArgRep
   ) where
@@ -429,6 +429,16 @@ mkVirtConstrOffsets
   -> (WordOff, WordOff, [(NonVoid a, ByteOff)])
 mkVirtConstrOffsets dflags = mkVirtHeapOffsets dflags False
 
+-- | Just like mkVirtConstrOffsets, but used when we don't have the actual
+-- arguments. Useful when e.g. generating info tables; we just need to know
+-- sizes of pointer and non-pointer fields.
+mkVirtConstrOffsets' :: DynFlags -> [NonVoid PrimRep] -> (WordOff, WordOff)
+mkVirtConstrOffsets' dflags field_reps
+  = (tot_wds, ptr_wds)
+  where
+    (tot_wds, ptr_wds, _) =
+       mkVirtConstrOffsets dflags
+         (map (\nv_rep -> (fromNonVoid nv_rep, NonVoid ())) field_reps)
 
 -------------------------------------------------------------------------
 --

@@ -221,8 +221,8 @@ cgDataCon data_con
   = do  { dflags <- getDynFlags
         ; let
             (tot_wds, --  #ptr_wds + #nonptr_wds
-             ptr_wds, --  #ptr_wds
-             _) = mkVirtConstrOffsets dflags arg_reps
+             ptr_wds) --  #ptr_wds
+              = mkVirtConstrOffsets' dflags arg_reps
 
             nonptr_wds   = tot_wds - ptr_wds
 
@@ -247,10 +247,12 @@ cgDataCon data_con
                    }
                         -- The case continuation code expects a tagged pointer
 
-            arg_reps :: [(PrimRep, NonVoid ())]
-            arg_reps = [(typePrimRep rep_ty, NonVoid ()) | ty <- dataConRepArgTys data_con
-                                                         , rep_ty <- repTypeArgs ty
-                                                         , not (isVoidTy rep_ty)]
+            -- We're generating info tables, so we don't know and care about
+            -- what the actual arguments are. Using () here as the place holder.
+            arg_reps :: [NonVoid PrimRep]
+            arg_reps = [NonVoid (typePrimRep rep_ty) | ty <- dataConRepArgTys data_con
+                                                     , rep_ty <- repTypeArgs ty
+                                                     , not (isVoidTy rep_ty)]
 
             -- Dynamic closure code for non-nullary constructors only
         ; when (not (isNullaryRepDataCon data_con))
