@@ -222,7 +222,7 @@ cgDataCon data_con
         ; let
             (tot_wds, --  #ptr_wds + #nonptr_wds
              ptr_wds, --  #ptr_wds
-             arg_things) = mkVirtConstrOffsets dflags arg_reps
+             _) = mkVirtConstrOffsets dflags arg_reps
 
             nonptr_wds   = tot_wds - ptr_wds
 
@@ -242,7 +242,7 @@ cgDataCon data_con
                 -- NB 2: We don't set CC when entering data (WDP 94/06)
                 do { _ <- ticky_code
                    ; ldvEnter (CmmReg nodeReg)
-                   ; tickyReturnOldCon (length arg_things)
+                   ; tickyReturnOldCon (length arg_reps)
                    ; void $ emitReturn [cmmOffsetB dflags (CmmReg nodeReg) (tagForCon dflags data_con)]
                    }
                         -- The case continuation code expects a tagged pointer

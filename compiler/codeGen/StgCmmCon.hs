@@ -72,7 +72,7 @@ cgTopRhsCon dflags id con args =
      do { this_mod <- getModuleName
         ; when (platformOS (targetPlatform dflags) == OSMinGW32) $
               -- Windows DLLs have a problem with static cross-DLL refs.
-              MASSERT( not (isDllConApp dflags this_mod con (map unsafe_stripNV args)) )
+              MASSERT( not (isDllConApp dflags this_mod con (map fromNonVoid args)) )
         ; ASSERT( args `lengthIs` countConRepArgs con ) return ()
 
         -- LAY IT OUT

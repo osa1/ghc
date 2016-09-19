@@ -402,7 +402,8 @@ mkVirtHeapOffsets
 -- than the unboxed things
 
 mkVirtHeapOffsets dflags is_thunk things
-  = ( bytesToWordsRoundUp dflags tot_bytes
+  = ASSERT(not (any (isVoidRep . fst) things))
+    ( bytesToWordsRoundUp dflags tot_bytes
     , bytesToWordsRoundUp dflags bytes_of_ptrs
     , ptrs_w_offsets ++ non_ptrs_w_offsets
     )

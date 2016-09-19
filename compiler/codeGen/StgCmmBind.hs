@@ -308,7 +308,7 @@ mkRhsClosure    dflags bndr _cc _bi
                                -- args are all distinct local variables
                                -- The "-1" is for fun_id
     -- Missed opportunity:   (f x x) is not detected
-  , all (isGcPtrRep . idPrimRep . unsafe_stripNV) fvs
+  , all (isGcPtrRep . idPrimRep . fromNonVoid) fvs
   , isUpdatable upd_flag
   , n_fvs <= mAX_SPEC_AP_SIZE dflags
   , not (gopt Opt_SccProfilingOn dflags)
@@ -425,9 +425,9 @@ mkClosureLFInfo :: DynFlags
                 -> LambdaFormInfo
 mkClosureLFInfo dflags bndr top fvs upd_flag args
   | null args =
-        mkLFThunk (idType bndr) top (map unsafe_stripNV fvs) upd_flag
+        mkLFThunk (idType bndr) top (map fromNonVoid fvs) upd_flag
   | otherwise =
-        mkLFReEntrant top (map unsafe_stripNV fvs) args (mkArgDescr dflags args)
+        mkLFReEntrant top (map fromNonVoid fvs) args (mkArgDescr dflags args)
 
 
 ------------------------------------------------------------------------
