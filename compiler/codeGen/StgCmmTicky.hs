@@ -107,7 +107,6 @@ module StgCmmTicky (
 #include "HsVersions.h"
 
 import StgCmmArgRep    ( slowCallPattern , toArgRep , argRepString )
-import StgCmmEnv       ( NonVoid, unsafe_stripNV )
 import StgCmmClosure
 import StgCmmUtils
 import StgCmmMonad

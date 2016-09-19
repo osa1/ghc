@@ -138,7 +138,9 @@ cgTopRhs :: DynFlags -> RecFlag -> Id -> StgRhs -> (CgIdInfo, FCode ())
         -- It's already been externalised if necessary
 
 cgTopRhs dflags _rec bndr (StgRhsCon _cc con args)
-  = cgTopRhsCon dflags bndr con args
+  = cgTopRhsCon dflags bndr con (unsafe_nonVoidStgArgs args)
+      -- con args are always non-void,
+      -- see Note [Post-unarisation invariants] in UnariseStg
 
 cgTopRhs dflags rec bndr (StgRhsClosure cc bi fvs upd_flag args body)
   = ASSERT(null fvs)    -- There should be no free variables
@@ -245,9 +247,9 @@ cgDataCon data_con
                    }
                         -- The case continuation code expects a tagged pointer
 
-            arg_reps :: [(PrimRep, UnaryType)]
-            arg_reps = [(typePrimRep rep_ty, rep_ty) | ty <- dataConRepArgTys data_con
-                                                     , rep_ty <- repTypeArgs ty]
+            arg_reps :: [(PrimRep, NonVoid ())]
+            arg_reps = [(typePrimRep rep_ty, NonVoid ()) | ty <- dataConRepArgTys data_con
+                                                         , rep_ty <- repTypeArgs ty]
 
             -- Dynamic closure code for non-nullary constructors only
         ; when (not (isNullaryRepDataCon data_con))

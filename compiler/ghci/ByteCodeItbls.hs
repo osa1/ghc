@@ -17,9 +17,9 @@ import Name             ( Name, getName )
 import NameEnv
 import DataCon          ( DataCon, dataConRepArgTys, dataConIdentity )
 import TyCon            ( TyCon, tyConFamilySize, isDataTyCon, tyConDataCons )
-import RepType          ( typePrimRep, repTypeArgs )
+import RepType
 import StgCmmLayout     ( mkVirtHeapOffsets )
-import StgCmmClosure    ( tagForCon )
+import StgCmmClosure    ( tagForCon, NonVoid (..) )
 import Util
 import Panic
 
@@ -54,9 +54,9 @@ make_constr_itbls hsc_env cons =
 
   mk_itbl :: DataCon -> Int -> IO (Name,ItblPtr)
   mk_itbl dcon conNo = do
-     let rep_args = [ (typePrimRep rep_arg,rep_arg)
+     let rep_args = [ (slotPrimRep slot_ty, NonVoid ())
                     | arg <- dataConRepArgTys dcon
-                    , rep_arg <- repTypeArgs arg ]
+                    , slot_ty <- repTypeSlots (repType arg) ]
 
          (tot_wds, ptr_wds, _) =
              mkVirtHeapOffsets dflags False{-not a THUNK-} rep_args

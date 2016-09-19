@@ -18,6 +18,9 @@ module StgCmmClosure (
         idPrimRep, isVoidRep, isGcPtrRep, addIdReps, addArgReps,
         argPrimRep,
 
+        NonVoid(..), unsafe_stripNV, nonVoidIds, nonVoidStgArgs,
+        unsafe_nonVoidIds, unsafe_nonVoidStgArgs,
+
         -- * LambdaFormInfo
         LambdaFormInfo,         -- Abstract
         StandardFormInfo,        -- ...ditto...
@@ -84,6 +87,8 @@ import Outputable
 import DynFlags
 import Util
 
+import Data.Coerce (coerce)
+
 -----------------------------------------------------------------------------
 --                Data types and synonyms
 -----------------------------------------------------------------------------
@@ -115,6 +120,39 @@ isKnownFun LFLetNoEscape = True
 isKnownFun _             = False
 
 
+-------------------------------------
+--        Non-void types
+-------------------------------------
+-- We frequently need the invariant that an Id or a an argument
+-- is of a non-void type. This type is a witness to the invariant.
+
+newtype NonVoid a = NonVoid a
+  deriving (Eq, Show)
+
+-- Use with care; if used inappropriately, it could break invariants.
+unsafe_stripNV :: NonVoid a -> a
+unsafe_stripNV (NonVoid a) = a
+
+instance (Outputable a) => Outputable (NonVoid a) where
+  ppr (NonVoid a) = ppr a
+
+nonVoidIds :: [Id] -> [NonVoid Id]
+nonVoidIds ids = [NonVoid id | id <- ids, not (isVoidTy (idType id))]
+
+unsafe_nonVoidIds :: [Id] -> [NonVoid Id]
+unsafe_nonVoidIds ids = ASSERT(not (any (isVoidTy . idType) ids))
+                        coerce ids
+{-# INLINE unsafe_nonVoidIds #-}
+
+nonVoidStgArgs :: [StgArg] -> [NonVoid StgArg]
+nonVoidStgArgs args = [NonVoid arg | arg <- args, not (isVoidTy (stgArgType arg))]
+
+unsafe_nonVoidStgArgs :: [StgArg] -> [NonVoid StgArg]
+unsafe_nonVoidStgArgs args = ASSERT(not (any (isVoidTy . stgArgType) args))
+                             coerce args
+{-# INLINE unsafe_nonVoidStgArgs #-}
+
+
 -----------------------------------------------------------------------------
 --                Representations
 -----------------------------------------------------------------------------
@@ -126,11 +164,11 @@ idPrimRep id = typePrimRep (idType id)
     -- NB: typePrimRep fails on unboxed tuples,
     --     but by StgCmm no Ids have unboxed tuple type
 
-addIdReps :: [Id] -> [(PrimRep, Id)]
-addIdReps ids = [(idPrimRep id, id) | id <- ids]
+addIdReps :: [NonVoid Id] -> [(PrimRep, NonVoid Id)]
+addIdReps ids = [(idPrimRep id, NonVoid id) | NonVoid id <- ids]
 
-addArgReps :: [StgArg] -> [(PrimRep, StgArg)]
-addArgReps args = [(argPrimRep arg, arg) | arg <- args]
+addArgReps :: [NonVoid StgArg] -> [(PrimRep, NonVoid StgArg)]
+addArgReps args = [(argPrimRep arg, NonVoid arg) | NonVoid arg <- args]
 
 argPrimRep :: StgArg -> PrimRep
 argPrimRep arg = typePrimRep (stgArgType arg)

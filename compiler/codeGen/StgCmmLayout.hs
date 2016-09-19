@@ -388,8 +388,8 @@ getHpRelOffset virtual_offset
 
 mkVirtHeapOffsets
   :: DynFlags
-  -> Bool                -- True <=> is a thunk
-  -> [(PrimRep,a)]        -- Things to make offsets for
+  -> Bool                     -- True <=> is a thunk
+  -> [(PrimRep,NonVoid a)]    -- Things to make offsets for
   -> (WordOff,                -- _Total_ number of words allocated
       WordOff,                -- Number of words allocated for *pointers*
       [(NonVoid a, ByteOff)])
@@ -397,9 +397,6 @@ mkVirtHeapOffsets
 -- Things with their offsets from start of object in order of
 -- increasing offset; BUT THIS MAY BE DIFFERENT TO INPUT ORDER
 -- First in list gets lowest offset, which is initial offset + 1.
---
--- Void arguments are removed, so output list may be shorter than
--- input list
 --
 -- mkVirtHeapOffsets always returns boxed things with smaller offsets
 -- than the unboxed things
@@ -414,8 +411,7 @@ mkVirtHeapOffsets dflags is_thunk things
               | otherwise  = fixedHdrSizeW dflags
     hdr_bytes = wordsToBytes dflags hdr_words
 
-    non_void_things    = filterOut (isVoidRep . fst)  things
-    (ptrs, non_ptrs)   = partition (isGcPtrRep . fst) non_void_things
+    (ptrs, non_ptrs) = partition (isGcPtrRep . fst) things
 
     (bytes_of_ptrs, ptrs_w_offsets) =
        mapAccumL computeOffset 0 ptrs
@@ -424,11 +420,11 @@ mkVirtHeapOffsets dflags is_thunk things
 
     computeOffset bytes_so_far (rep, thing)
       = (bytes_so_far + wordsToBytes dflags (argRepSizeW dflags (toArgRep rep)),
-         (NonVoid thing, hdr_bytes + bytes_so_far))
+         (thing, hdr_bytes + bytes_so_far))
 
 -- | Just like mkVirtHeapOffsets, but for constructors
 mkVirtConstrOffsets
-  :: DynFlags -> [(PrimRep,a)]
+  :: DynFlags -> [(PrimRep, NonVoid a)]
   -> (WordOff, WordOff, [(NonVoid a, ByteOff)])
 mkVirtConstrOffsets dflags = mkVirtHeapOffsets dflags False
 
