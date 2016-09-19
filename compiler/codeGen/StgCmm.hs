@@ -138,7 +138,7 @@ cgTopRhs :: DynFlags -> RecFlag -> Id -> StgRhs -> (CgIdInfo, FCode ())
         -- It's already been externalised if necessary
 
 cgTopRhs dflags _rec bndr (StgRhsCon _cc con args)
-  = cgTopRhsCon dflags bndr con (unsafe_nonVoidStgArgs args)
+  = cgTopRhsCon dflags bndr con (assertNonVoidStgArgs args)
       -- con args are always non-void,
       -- see Note [Post-unarisation invariants] in UnariseStg
 

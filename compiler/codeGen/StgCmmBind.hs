@@ -206,7 +206,7 @@ cgRhs :: Id
 
 cgRhs id (StgRhsCon cc con args)
   = withNewTickyCounterCon (idName id) $
-    buildDynCon id True cc con (unsafe_nonVoidStgArgs args)
+    buildDynCon id True cc con (assertNonVoidStgArgs args)
       -- con args are always non-void,
       -- see Note [Post-unarisation invariants] in UnariseStg
 
@@ -275,7 +275,7 @@ mkRhsClosure    dflags bndr _cc _bi
   , StgApp selectee [{-no args-}] <- strip sel_expr
   , the_fv == scrutinee                -- Scrutinee is the only free variable
 
-  , let (_, _, params_w_offsets) = mkVirtConstrOffsets dflags (addIdReps (unsafe_nonVoidIds params))
+  , let (_, _, params_w_offsets) = mkVirtConstrOffsets dflags (addIdReps (assertNonVoidIds params))
                                    -- pattern binders are always non-void,
                                    -- see Note [Post-unarisation invariants] in UnariseStg
   , Just the_offset <- assocMaybe params_w_offsets (NonVoid selectee)

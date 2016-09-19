@@ -529,20 +529,20 @@ chooseReturnBndrs :: Id -> AltType -> [StgAlt] -> [NonVoid Id]
 -- scrutinee.
 -- They're non-void, see Note [Post-unarisation invariants] in UnariseStg.
 chooseReturnBndrs bndr (PrimAlt _) _alts
-  = unsafe_nonVoidIds [bndr]
+  = assertNonVoidIds [bndr]
 
 chooseReturnBndrs _bndr (MultiValAlt n) [(_, ids, _)]
   = ASSERT2(n == length ids, ppr n $$ ppr ids $$ ppr _bndr)
-    unsafe_nonVoidIds ids     -- 'bndr' is not assigned!
+    assertNonVoidIds ids     -- 'bndr' is not assigned!
 
 chooseReturnBndrs bndr (AlgAlt _) _alts
-  = unsafe_nonVoidIds [bndr]  -- Only 'bndr' is assigned
+  = assertNonVoidIds [bndr]  -- Only 'bndr' is assigned
 
 chooseReturnBndrs bndr PolyAlt _alts
-  = unsafe_nonVoidIds [bndr]  -- Only 'bndr' is assigned
+  = assertNonVoidIds [bndr]  -- Only 'bndr' is assigned
 
 chooseReturnBndrs _ _ _ = panic "chooseReturnBndrs"
-                              -- MultiValAlt has only one alternative
+                             -- MultiValAlt has only one alternative
 
 -------------------------------------
 cgAlts :: (GcPlan,ReturnKind) -> NonVoid Id -> AltType -> [StgAlt]
@@ -651,7 +651,7 @@ cgAltRhss gc_plan bndr alts = do
     cg_alt (con, bndrs, rhs)
       = getCodeScoped             $
         maybeAltHeapCheck gc_plan $
-        do { _ <- bindConArgs con base_reg (unsafe_nonVoidIds bndrs)
+        do { _ <- bindConArgs con base_reg (assertNonVoidIds bndrs)
                     -- alt binders are always non-void,
                     -- see Note [Post-unarisation invariants] in UnariseStg
            ; _ <- cgExpr rhs
@@ -679,7 +679,7 @@ cgConApp con stg_args
   | otherwise   --  Boxed constructors; allocate and return
   = ASSERT2( stg_args `lengthIs` countConRepArgs con, ppr con <> parens (ppr (countConRepArgs con)) <+> ppr stg_args )
     do  { (idinfo, fcode_init) <- buildDynCon (dataConWorkId con) False
-                                     currentCCS con (unsafe_nonVoidStgArgs stg_args)
+                                     currentCCS con (assertNonVoidStgArgs stg_args)
                                      -- con args are always non-void,
                                      -- see Note [Post-unarisation invariants] in UnariseStg
                 -- The first "con" says that the name bound to this

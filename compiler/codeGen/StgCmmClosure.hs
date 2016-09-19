@@ -19,7 +19,7 @@ module StgCmmClosure (
         argPrimRep,
 
         NonVoid(..), fromNonVoid, nonVoidIds, nonVoidStgArgs,
-        unsafe_nonVoidIds, unsafe_nonVoidStgArgs,
+        assertNonVoidIds, assertNonVoidStgArgs,
 
         -- * LambdaFormInfo
         LambdaFormInfo,         -- Abstract
@@ -138,16 +138,22 @@ instance (Outputable a) => Outputable (NonVoid a) where
 nonVoidIds :: [Id] -> [NonVoid Id]
 nonVoidIds ids = [NonVoid id | id <- ids, not (isVoidTy (idType id))]
 
-unsafe_nonVoidIds :: [Id] -> [NonVoid Id]
-unsafe_nonVoidIds ids = ASSERT(not (any (isVoidTy . idType) ids))
-                        coerce ids
+-- | Used in places where some invariant ensures that all these Ids are
+-- non-void; e.g. constructor field binders in case expressions.
+-- See Note [Post-unarisation invariants] in UnariseStg.
+assertNonVoidIds :: [Id] -> [NonVoid Id]
+assertNonVoidIds ids = ASSERT(not (any (isVoidTy . idType) ids))
+                       coerce ids
 
 nonVoidStgArgs :: [StgArg] -> [NonVoid StgArg]
 nonVoidStgArgs args = [NonVoid arg | arg <- args, not (isVoidTy (stgArgType arg))]
 
-unsafe_nonVoidStgArgs :: [StgArg] -> [NonVoid StgArg]
-unsafe_nonVoidStgArgs args = ASSERT(not (any (isVoidTy . stgArgType) args))
-                             coerce args
+-- | Used in places where some invariant ensures that all these arguments are
+-- non-void; e.g. constructor arguments.
+-- See Note [Post-unarisation invariants] in UnariseStg.
+assertNonVoidStgArgs :: [StgArg] -> [NonVoid StgArg]
+assertNonVoidStgArgs args = ASSERT(not (any (isVoidTy . stgArgType) args))
+                            coerce args
 
 
 -----------------------------------------------------------------------------
