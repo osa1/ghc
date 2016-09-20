@@ -17,7 +17,7 @@ module StgCmmLayout (
 
         slowCall, directCall,
 
-        mkVirtHeapOffsets, mkVirtConstrOffsets, mkVirtConstrOffsets', getHpRelOffset,
+        mkVirtHeapOffsets, mkVirtConstrOffsets, mkVirtConstrSizes, getHpRelOffset,
 
         ArgRep(..), toArgRep, argRepSizeW -- re-exported from StgCmmArgRep
   ) where
@@ -389,7 +389,7 @@ getHpRelOffset virtual_offset
 mkVirtHeapOffsets
   :: DynFlags
   -> Bool                     -- True <=> is a thunk
-  -> [(PrimRep,NonVoid a)]    -- Things to make offsets for
+  -> [NonVoid (PrimRep,a)]    -- Things to make offsets for
   -> (WordOff,                -- _Total_ number of words allocated
       WordOff,                -- Number of words allocated for *pointers*
       [(NonVoid a, ByteOff)])
@@ -402,7 +402,7 @@ mkVirtHeapOffsets
 -- than the unboxed things
 
 mkVirtHeapOffsets dflags is_thunk things
-  = ASSERT(not (any (isVoidRep . fst) things))
+  = ASSERT(not (any (isVoidRep . fst . fromNonVoid) things))
     ( bytesToWordsRoundUp dflags tot_bytes
     , bytesToWordsRoundUp dflags bytes_of_ptrs
     , ptrs_w_offsets ++ non_ptrs_w_offsets
@@ -412,33 +412,34 @@ mkVirtHeapOffsets dflags is_thunk things
               | otherwise  = fixedHdrSizeW dflags
     hdr_bytes = wordsToBytes dflags hdr_words
 
-    (ptrs, non_ptrs) = partition (isGcPtrRep . fst) things
+    (ptrs, non_ptrs) = partition (isGcPtrRep . fst . fromNonVoid) things
 
     (bytes_of_ptrs, ptrs_w_offsets) =
        mapAccumL computeOffset 0 ptrs
     (tot_bytes, non_ptrs_w_offsets) =
        mapAccumL computeOffset bytes_of_ptrs non_ptrs
 
-    computeOffset bytes_so_far (rep, thing)
+    computeOffset bytes_so_far nv_thing
       = (bytes_so_far + wordsToBytes dflags (argRepSizeW dflags (toArgRep rep)),
-         (thing, hdr_bytes + bytes_so_far))
+         (NonVoid thing, hdr_bytes + bytes_so_far))
+           where (rep,thing) = fromNonVoid nv_thing
 
 -- | Just like mkVirtHeapOffsets, but for constructors
 mkVirtConstrOffsets
-  :: DynFlags -> [(PrimRep, NonVoid a)]
+  :: DynFlags -> [NonVoid (PrimRep, a)]
   -> (WordOff, WordOff, [(NonVoid a, ByteOff)])
 mkVirtConstrOffsets dflags = mkVirtHeapOffsets dflags False
 
 -- | Just like mkVirtConstrOffsets, but used when we don't have the actual
 -- arguments. Useful when e.g. generating info tables; we just need to know
 -- sizes of pointer and non-pointer fields.
-mkVirtConstrOffsets' :: DynFlags -> [NonVoid PrimRep] -> (WordOff, WordOff)
-mkVirtConstrOffsets' dflags field_reps
+mkVirtConstrSizes :: DynFlags -> [NonVoid PrimRep] -> (WordOff, WordOff)
+mkVirtConstrSizes dflags field_reps
   = (tot_wds, ptr_wds)
   where
     (tot_wds, ptr_wds, _) =
        mkVirtConstrOffsets dflags
-         (map (\nv_rep -> (fromNonVoid nv_rep, NonVoid ())) field_reps)
+         (map (\nv_rep -> NonVoid (fromNonVoid nv_rep, ())) field_reps)
 
 -------------------------------------------------------------------------
 --

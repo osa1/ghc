@@ -167,11 +167,13 @@ idPrimRep id = typePrimRep (idType id)
     -- NB: typePrimRep fails on unboxed tuples,
     --     but by StgCmm no Ids have unboxed tuple type
 
-addIdReps :: [NonVoid Id] -> [(PrimRep, NonVoid Id)]
-addIdReps = map (\id -> (idPrimRep (fromNonVoid id), id))
+addIdReps :: [NonVoid Id] -> [NonVoid (PrimRep, Id)]
+addIdReps = map (\id -> let id' = fromNonVoid id
+                         in NonVoid (idPrimRep id', id'))
 
-addArgReps :: [NonVoid StgArg] -> [(PrimRep, NonVoid StgArg)]
-addArgReps = map (\arg -> (argPrimRep (fromNonVoid arg), arg))
+addArgReps :: [NonVoid StgArg] -> [NonVoid (PrimRep, StgArg)]
+addArgReps = map (\arg -> let arg' = fromNonVoid arg
+                           in NonVoid (argPrimRep arg', arg'))
 
 argPrimRep :: StgArg -> PrimRep
 argPrimRep arg = typePrimRep (stgArgType arg)

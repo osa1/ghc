@@ -222,7 +222,7 @@ cgDataCon data_con
         ; let
             (tot_wds, --  #ptr_wds + #nonptr_wds
              ptr_wds) --  #ptr_wds
-              = mkVirtConstrOffsets' dflags arg_reps
+              = mkVirtConstrSizes dflags arg_reps
 
             nonptr_wds   = tot_wds - ptr_wds
 
