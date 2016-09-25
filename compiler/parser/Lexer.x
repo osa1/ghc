@@ -286,7 +286,7 @@ $tab          { warnTab }
 -- after an 'if', a vertical bar starts a layout context for MultiWayIf
 <layout_if> {
   \| / { notFollowedBySymbol }          { new_layout_context True ITvbar }
-  ()                                    { pop }
+  ()                                    { popMultiWayIfContext }
 }
 
 -- do is treated in a subtly different way, see new_layout_context
@@ -929,6 +929,13 @@ pop :: Action
 pop _span _buf _len = do _ <- popLexState
                          lexToken
 
+popMultiWayIfContext :: Action
+popMultiWayIfContext _span _buf _len = do
+  _ <- popLexState
+  LayoutPrev _ : ctx <- getContext
+  setContext ctx
+  lexToken
+
 hopefully_open_brace :: Action
 hopefully_open_brace span buf len
  = do relaxed <- extension relaxedLayout
@@ -1144,8 +1151,7 @@ errBrace (AI end _) span = failLocMsgP (realSrcSpanStart span) end "unterminated
 
 open_brace, close_brace :: Action
 open_brace span _str _len = do
-  ctx <- getContext
-  setContext (NoLayout:ctx)
+  pushContext NoLayout
   return (L span ITocurly)
 close_brace span _str _len = do
   popContext
@@ -1198,7 +1204,7 @@ varid span buf len =
                      _          -> ITcase
                  else
                    return ITcase
-      maybe_layout keyword
+      maybe_layout keyword span
       return $ L span keyword
     Just (ITstatic, _) -> do
       staticPointers <- extension staticPointersEnabled
@@ -1206,13 +1212,13 @@ varid span buf len =
         then return $ L span ITstatic
         else return $ L span $ ITvarid fs
     Just (keyword, 0) -> do
-      maybe_layout keyword
+      maybe_layout keyword span
       return $ L span keyword
     Just (keyword, exts) -> do
       extsEnabled <- extension $ \i -> exts .&. i /= 0
       if extsEnabled
         then do
-          maybe_layout keyword
+          maybe_layout keyword span
           return $ L span keyword
         else
           return $ L span $ ITvarid fs
@@ -1309,16 +1315,16 @@ do_bol span _str _len = do
 
 -- certain keywords put us in the "layout" state, where we might
 -- add an opening curly brace.
-maybe_layout :: Token -> P ()
-maybe_layout t = do -- If the alternative layout rule is enabled then
-                    -- we never create an implicit layout context here.
-                    -- Layout is handled XXX instead.
-                    -- The code for closing implicit contexts, or
-                    -- inserting implicit semi-colons, is therefore
-                    -- irrelevant as it only applies in an implicit
-                    -- context.
-                    alr <- extension alternativeLayoutRule
-                    unless alr $ f t
+maybe_layout :: Token -> RealSrcSpan -> P ()
+maybe_layout t s = do -- If the alternative layout rule is enabled then
+                      -- we never create an implicit layout context here.
+                      -- Layout is handled XXX instead.
+                      -- The code for closing implicit contexts, or
+                      -- inserting implicit semi-colons, is therefore
+                      -- irrelevant as it only applies in an implicit
+                      -- context.
+                      alr <- extension alternativeLayoutRule
+                      unless alr $ f t
     where f ITdo    = pushLexState layout_do
           f ITmdo   = pushLexState layout_do
           f ITof    = pushLexState layout
@@ -1326,7 +1332,8 @@ maybe_layout t = do -- If the alternative layout rule is enabled then
           f ITlet   = pushLexState layout
           f ITwhere = pushLexState layout
           f ITrec   = pushLexState layout
-          f ITif    = pushLexState layout_if
+          f ITif    = do pushContext (LayoutPrev (srcSpanEndCol s))
+                         pushLexState layout_if
           f _       = return ()
 
 -- Pushing a new implicit layout context.  If the indentation of the
@@ -1347,16 +1354,21 @@ new_layout_context strict tok span _buf len = do
     nondecreasing <- extension nondecreasingIndentation
     let strict' = strict || not nondecreasing
     case ctx of
-        Layout prev_off : _  |
-           (strict'     && prev_off >= offset  ||
-            not strict' && prev_off > offset) -> do
-                -- token is indented to the left of the previous context.
-                -- we must generate a {} sequence now.
-                pushLexState layout_left
-                return (L span tok)
-        _ -> do
-                setContext (Layout offset : ctx)
-                return (L span tok)
+      (ctx0 : _)
+        | Just prev_off <- isInLayout ctx0
+        , (strict'     && prev_off >= offset  ||
+           not strict' && prev_off > offset)
+        -> do -- token is indented to the left of the previous context.
+              -- we must generate a {} sequence now.
+              pushLexState layout_left
+              return (L span tok)
+
+      (LayoutPrev prev_off : ctx')
+        -> do setContext (Layout prev_off : ctx')
+              return (L span tok)
+
+      _ -> do setContext (Layout offset : ctx)
+              return (L span tok)
 
 do_layout_left :: Action
 do_layout_left span _buf _len = do
@@ -1743,7 +1755,17 @@ warnThen option warning action srcspan buf len = do
 data LayoutContext
   = NoLayout
   | Layout !Int
+  | LayoutPrev !Int
+    -- ^ Used when deciding whether to enter a layout context of previous token
+    -- by looking at the next token. Used in e.g. MultiWayIf. If the token `if`
+    -- followed by a `|`, we enter a layout context, but using the position of
+    -- `if` and not the position of `|`.
   deriving Show
+
+isInLayout :: LayoutContext -> Maybe Int
+isInLayout NoLayout       = Nothing
+isInLayout (Layout i)     = Just i
+isInLayout (LayoutPrev i) = Just i
 
 data ParseResult a
   = POk PState a
@@ -2318,6 +2340,9 @@ getContext = P $ \s@PState{context=ctx} -> POk s ctx
 
 setContext :: [LayoutContext] -> P ()
 setContext ctx = P $ \s -> POk s{context=ctx} ()
+
+pushContext :: LayoutContext -> P ()
+pushContext ctx = P $ \s -> POk s{context=ctx : context s} ()
 
 popContext :: P ()
 popContext = P $ \ s@(PState{ buffer = buf, options = o, context = ctx,
