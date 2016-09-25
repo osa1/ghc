@@ -18,12 +18,12 @@ f2 x = if | even x
           -> False
 
 -- If we don't generate {} in MultiWayIf we get a shift/reduce conflict here:
--- The last guard can be a part of the "if" or the "case". The correct parse
--- depends on the indentation. In we choose to reduce, then we get an "if" with
--- one condition only, which is again an error.
+-- It's not clear which guards belong to `case` and which ones belong to `if`.
 --
--- If we shift, we get a non-exhaustive pattern error when argument is odd.
--- If we reduce, we run the unreachable code when argument is odd.
+-- This test is to make sure we parse it correctly.
+--
+-- - If we shift, we get a non-exhaustive pattern error when argument is odd.
+-- - If we reduce, we run the unreachable code when argument is odd.
 f3 x = case x of
          x' | even x'   -> if | even x' -> 1 | otherwise -> error "should be unreachable"
             | otherwise -> 3
