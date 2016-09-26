@@ -1,6 +1,6 @@
 {-# LANGUAGE MultiWayIf #-}
 
-module T10807 where
+module Main where
 
 -- This is how we had to use multi-way if previously. Not indenting lines after
 -- `|` was causing a parse error.
@@ -28,5 +28,16 @@ f3 x = case x of
          x' | even x'   -> if | even x' -> 1 | otherwise -> error "should be unreachable"
             | otherwise -> 3
 
+-- Testing line breaks
+f4 x = case x of
+         x' | even x'   -> if
+             | even x' -> 1
+              | otherwise -> error "should be unreachable"
+            | otherwise -> 3
+
 main :: IO ()
-main = print (f3 1)
+main = do
+  print (f3 1)
+  print (f3 2)
+  print (f4 1)
+  print (f4 2)
