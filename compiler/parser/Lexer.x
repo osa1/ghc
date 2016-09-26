@@ -58,7 +58,7 @@ module Lexer (
    getPState, extopt, withThisPackage,
    failLocMsgP, failSpanMsgP, srcParseFail,
    getMessages,
-   popContext, pushCurrentContext, setLastToken, setSrcLoc,
+   popContext, pushModuleContext, setLastToken, setSrcLoc,
    activeContext, nextIsEOF,
    getLexState, popLexState, pushLexState,
    extension, bangPatEnabled, datatypeContextsEnabled,
@@ -285,13 +285,13 @@ $tab          { warnTab }
 
 -- after an 'if', a vertical bar starts a layout context for MultiWayIf
 <layout_if> {
-  \| / { notFollowedBySymbol }          { new_layout_context True ITvbar }
-  ()                                    { popMultiWayIfContext }
+  \| / { notFollowedBySymbol }          { new_layout_context True True dontGenerateSemic ITvbar }
+  ()                                    { pop }
 }
 
 -- do is treated in a subtly different way, see new_layout_context
-<layout>    ()                          { new_layout_context True  ITvocurly }
-<layout_do> ()                          { new_layout_context False ITvocurly }
+<layout>    ()                          { new_layout_context True  False generateSemic ITvocurly }
+<layout_do> ()                          { new_layout_context False False generateSemic ITvocurly }
 
 -- after a new layout context which was found to be to the left of the
 -- previous context, we have generated a '{' token, and we now need to
@@ -929,13 +929,6 @@ pop :: Action
 pop _span _buf _len = do _ <- popLexState
                          lexToken
 
-popMultiWayIfContext :: Action
-popMultiWayIfContext _span _buf _len = do
-  _ <- popLexState
-  LayoutPrev _ : ctx <- getContext
-  setContext ctx
-  lexToken
-
 hopefully_open_brace :: Action
 hopefully_open_brace span buf len
  = do relaxed <- extension relaxedLayout
@@ -944,8 +937,8 @@ hopefully_open_brace span buf len
       let offset = srcLocCol l
           isOK = relaxed ||
                  case ctx of
-                 Layout prev_off : _ -> prev_off < offset
-                 _                   -> True
+                 Layout prev_off _ : _ -> prev_off < offset
+                 _                     -> True
       if isOK then pop_and open_brace span buf len
               else failSpanMsgP (RealSrcSpan span) (text "Missing block")
 
@@ -1151,7 +1144,8 @@ errBrace (AI end _) span = failLocMsgP (realSrcSpanStart span) end "unterminated
 
 open_brace, close_brace :: Action
 open_brace span _str _len = do
-  pushContext NoLayout
+  ctx <- getContext
+  setContext (NoLayout:ctx)
   return (L span ITocurly)
 close_brace span _str _len = do
   popContext
@@ -1204,7 +1198,7 @@ varid span buf len =
                      _          -> ITcase
                  else
                    return ITcase
-      maybe_layout keyword span
+      maybe_layout keyword
       return $ L span keyword
     Just (ITstatic, _) -> do
       staticPointers <- extension staticPointersEnabled
@@ -1212,13 +1206,13 @@ varid span buf len =
         then return $ L span ITstatic
         else return $ L span $ ITvarid fs
     Just (keyword, 0) -> do
-      maybe_layout keyword span
+      maybe_layout keyword
       return $ L span keyword
     Just (keyword, exts) -> do
       extsEnabled <- extension $ \i -> exts .&. i /= 0
       if extsEnabled
         then do
-          maybe_layout keyword span
+          maybe_layout keyword
           return $ L span keyword
         else
           return $ L span $ ITvarid fs
@@ -1298,33 +1292,33 @@ readFractionalLit str = (FL $! str) $! readRational str
 -- we're at the first token on a line, insert layout tokens if necessary
 do_bol :: Action
 do_bol span _str _len = do
-        pos <- getOffside
+        (pos, gen_semic) <- getOffside
         case pos of
             LT -> do
                 --trace "layout: inserting '}'" $ do
                 popContext
                 -- do NOT pop the lex state, we might have a ';' to insert
                 return (L span ITvccurly)
-            EQ -> do
+            EQ | gen_semic -> do
                 --trace "layout: inserting ';'" $ do
                 _ <- popLexState
                 return (L span ITsemi)
-            GT -> do
+            _ -> do
                 _ <- popLexState
                 lexToken
 
 -- certain keywords put us in the "layout" state, where we might
 -- add an opening curly brace.
-maybe_layout :: Token -> RealSrcSpan -> P ()
-maybe_layout t s = do -- If the alternative layout rule is enabled then
-                      -- we never create an implicit layout context here.
-                      -- Layout is handled XXX instead.
-                      -- The code for closing implicit contexts, or
-                      -- inserting implicit semi-colons, is therefore
-                      -- irrelevant as it only applies in an implicit
-                      -- context.
-                      alr <- extension alternativeLayoutRule
-                      unless alr $ f t
+maybe_layout :: Token -> P ()
+maybe_layout t = do -- If the alternative layout rule is enabled then
+                    -- we never create an implicit layout context here.
+                    -- Layout is handled XXX instead.
+                    -- The code for closing implicit contexts, or
+                    -- inserting implicit semi-colons, is therefore
+                    -- irrelevant as it only applies in an implicit
+                    -- context.
+                    alr <- extension alternativeLayoutRule
+                    unless alr $ f t
     where f ITdo    = pushLexState layout_do
           f ITmdo   = pushLexState layout_do
           f ITof    = pushLexState layout
@@ -1332,8 +1326,7 @@ maybe_layout t s = do -- If the alternative layout rule is enabled then
           f ITlet   = pushLexState layout
           f ITwhere = pushLexState layout
           f ITrec   = pushLexState layout
-          f ITif    = do pushContext (LayoutPrev (srcSpanEndCol s))
-                         pushLexState layout_if
+          f ITif    = pushLexState layout_if
           f _       = return ()
 
 -- Pushing a new implicit layout context.  If the indentation of the
@@ -1345,8 +1338,10 @@ maybe_layout t s = do -- If the alternative layout rule is enabled then
 -- by a 'do', then we allow the new context to be at the same indentation as
 -- the previous context.  This is what the 'strict' argument is for.
 --
-new_layout_context :: Bool -> Token -> Action
-new_layout_context strict tok span _buf len = do
+-- 'prev_tok' argument is for starting a new context based in indentation of
+-- the previous token.
+new_layout_context :: Bool -> Bool -> Bool -> Token -> Action
+new_layout_context strict prev_tok gen_semic tok span _buf len = do
     _ <- popLexState
     (AI l _) <- getInput
     let offset = srcLocCol l - len
@@ -1354,21 +1349,17 @@ new_layout_context strict tok span _buf len = do
     nondecreasing <- extension nondecreasingIndentation
     let strict' = strict || not nondecreasing
     case ctx of
-      (ctx0 : _)
-        | Just prev_off <- isInLayout ctx0
-        , (strict'     && prev_off >= offset  ||
-           not strict' && prev_off > offset)
-        -> do -- token is indented to the left of the previous context.
-              -- we must generate a {} sequence now.
-              pushLexState layout_left
-              return (L span tok)
-
-      (LayoutPrev prev_off : ctx')
-        -> do setContext (Layout prev_off : ctx')
-              return (L span tok)
-
-      _ -> do setContext (Layout offset : ctx)
-              return (L span tok)
+        Layout prev_off _ : _  |
+           (strict'     && prev_off >= offset  ||
+            not strict' && prev_off > offset) -> do
+                -- token is indented to the left of the previous context.
+                -- we must generate a {} sequence now.
+                pushLexState layout_left
+                return (L span tok)
+        _ -> do if prev_tok
+                  then pushCurrentContext gen_semic
+                  else setContext (Layout offset gen_semic : ctx)
+                return (L span tok)
 
 do_layout_left :: Action
 do_layout_left span _buf _len = do
@@ -1752,20 +1743,20 @@ warnThen option warning action srcspan buf len = do
 -- -----------------------------------------------------------------------------
 -- The Parse Monad
 
+-- | Do we want to generate ';' layout tokens? In some cases we just want to
+-- generate '}', e.g. in MultiWayIf we don't need ';'s because '|' separates
+-- alternatives (unlike a `case` expression where we need ';' to as a separator
+-- between alternatives).
+type GenSemic = Bool
+
+generateSemic, dontGenerateSemic :: GenSemic
+generateSemic     = True
+dontGenerateSemic = False
+
 data LayoutContext
   = NoLayout
-  | Layout !Int
-  | LayoutPrev !Int
-    -- ^ Used when deciding whether to enter a layout context of previous token
-    -- by looking at the next token. Used in e.g. MultiWayIf. If the token `if`
-    -- followed by a `|`, we enter a layout context, but using the position of
-    -- `if` and not the position of `|`.
+  | Layout !Int !GenSemic
   deriving Show
-
-isInLayout :: LayoutContext -> Maybe Int
-isInLayout NoLayout       = Nothing
-isInLayout (Layout i)     = Just i
-isInLayout (LayoutPrev i) = Just i
 
 data ParseResult a
   = POk PState a
@@ -1837,7 +1828,7 @@ data PState = PState {
         -- and in pushCurrentContext only.  Sigh, if only Happy passed the
         -- current token to happyError, we could at least get rid of last_len.
         -- Getting rid of last_loc would require finding another way to
-        -- implement pushCurrentContext (which is only called from one place).
+        -- implement pushCurrentContext.
 
 data ALRContext = ALRNoLayout Bool{- does it contain commas? -}
                               Bool{- is it a 'let' block? -}
@@ -2341,9 +2332,6 @@ getContext = P $ \s@PState{context=ctx} -> POk s ctx
 setContext :: [LayoutContext] -> P ()
 setContext ctx = P $ \s -> POk s{context=ctx} ()
 
-pushContext :: LayoutContext -> P ()
-pushContext ctx = P $ \s -> POk s{context=ctx : context s} ()
-
 popContext :: P ()
 popContext = P $ \ s@(PState{ buffer = buf, options = o, context = ctx,
                               last_len = len, last_loc = last_loc }) ->
@@ -2352,19 +2340,24 @@ popContext = P $ \ s@(PState{ buffer = buf, options = o, context = ctx,
         []     -> PFailed (RealSrcSpan last_loc) (srcParseErr o buf len)
 
 -- Push a new layout context at the indentation of the last token read.
--- This is only used at the outer level of a module when the 'module'
--- keyword is missing.
-pushCurrentContext :: P ()
-pushCurrentContext = P $ \ s@PState{ last_loc=loc, context=ctx } ->
-    POk s{context = Layout (srcSpanStartCol loc) : ctx} ()
+pushCurrentContext :: GenSemic -> P ()
+pushCurrentContext gen_semic = P $ \ s@PState{ last_loc=loc, context=ctx } ->
+    POk s{context = Layout (srcSpanStartCol loc) gen_semic : ctx} ()
 
-getOffside :: P Ordering
+-- This is only used at the outer level of a module when the 'module' keyword is
+-- missing.
+pushModuleContext :: P ()
+pushModuleContext = pushCurrentContext generateSemic
+
+getOffside :: P (Ordering, Bool)
 getOffside = P $ \s@PState{last_loc=loc, context=stk} ->
                 let offs = srcSpanStartCol loc in
                 let ord = case stk of
-                        (Layout n:_) -> --trace ("layout: " ++ show n ++ ", offs: " ++ show offs) $
-                                        compare offs n
-                        _            -> GT
+                            Layout n gen_semic : _ ->
+                              --trace ("layout: " ++ show n ++ ", offs: " ++ show offs) $
+                              (compare offs n, gen_semic)
+                            _ ->
+                              (GT, dontGenerateSemic)
                 in POk s ord
 
 -- ---------------------------------------------------------------------------
