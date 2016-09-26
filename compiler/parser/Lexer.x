@@ -1338,7 +1338,7 @@ maybe_layout t = do -- If the alternative layout rule is enabled then
 -- by a 'do', then we allow the new context to be at the same indentation as
 -- the previous context.  This is what the 'strict' argument is for.
 --
--- 'prev_tok' argument is for starting a new context based in indentation of
+-- 'prev_tok' argument is for starting a new context based on indentation of
 -- the previous token.
 new_layout_context :: Bool -> Bool -> Bool -> Token -> Action
 new_layout_context strict prev_tok gen_semic tok span _buf len = do
