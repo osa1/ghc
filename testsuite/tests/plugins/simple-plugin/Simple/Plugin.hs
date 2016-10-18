@@ -17,6 +17,7 @@ import qualified Language.Haskell.TH as TH
 plugin :: Plugin
 plugin = defaultPlugin {
     installCoreToDos = install
+  , stgPasses = install_stg
   }
 
 install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
@@ -27,6 +28,13 @@ install options todos = do
     -- Create some actual passes to continue the test.
     return $ CoreDoPluginPass "Main pass" mainPass
              : todos
+
+install_stg :: [CommandLineOption] -> [(String, UniqSupply -> [StgBinding] -> IO [StgBinding])]
+install_stg _ = [("stg plugin", stg_plugin)]
+  where
+    stg_plugin _us binds = do
+      putStrLn ("Running stg plugin on " ++ show (length binds) ++ " bindings.")
+      return binds
 
 findNameBinds :: String -> [CoreBind] -> First Name
 findNameBinds target = mconcat . map (findNameBind target)

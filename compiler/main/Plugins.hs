@@ -4,10 +4,12 @@ module Plugins (
     defaultPlugin
     ) where
 
-import CoreMonad ( CoreToDo, CoreM )
-import TcRnTypes ( TcPlugin )
-import GhcMonad
+import CoreMonad  ( CoreToDo, CoreM )
 import DriverPhases
+import GhcMonad
+import StgSyn     ( StgBinding )
+import TcRnTypes  ( TcPlugin )
+import UniqSupply ( UniqSupply )
 
 
 -- | Command line options gathered from the -PModule.Name:stuff syntax
@@ -27,6 +29,8 @@ data Plugin = Plugin {
     -- This is called as the Core pipeline is built for every module
     -- being compiled, and plugins get the opportunity to modify the
     -- pipeline in a nondeterministic order.
+  , stgPasses :: [CommandLineOption] -> [(String, UniqSupply -> [StgBinding] -> IO [StgBinding])]
+    -- ^ TODO
   , tcPlugin :: [CommandLineOption] -> Maybe TcPlugin
     -- ^ An optional typechecker plugin, which may modify the
     -- behaviour of the constraint solver.
@@ -37,6 +41,7 @@ data Plugin = Plugin {
 defaultPlugin :: Plugin
 defaultPlugin = Plugin {
         installCoreToDos = const return
+      , stgPasses        = const []
       , tcPlugin         = const Nothing
     }
 

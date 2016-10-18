@@ -1280,7 +1280,7 @@ hscGenHardCode hsc_env cgguts mod_summary output_filename = do
         -----------------  Convert to STG ------------------
         (stg_binds, cost_centre_info)
             <- {-# SCC "CoreToStg" #-}
-               myCoreToStg dflags this_mod prepd_binds
+               myCoreToStg hsc_env this_mod prepd_binds
 
         let prof_init = profilingInitCode this_mod cost_centre_info
             foreign_stubs = foreign_stubs0 `appendStubC` prof_init
@@ -1439,17 +1439,17 @@ doCodeGen hsc_env this_mod data_tycons
 
 
 
-myCoreToStg :: DynFlags -> Module -> CoreProgram
+myCoreToStg :: HscEnv -> Module -> CoreProgram
             -> IO ( [StgBinding] -- output program
                   , CollectedCCs) -- cost centre info (declared and used)
-myCoreToStg dflags this_mod prepd_binds = do
+myCoreToStg hsc_env this_mod prepd_binds = do
     let stg_binds
          = {-# SCC "Core2Stg" #-}
-           coreToStg dflags this_mod prepd_binds
+           coreToStg (hsc_dflags hsc_env) this_mod prepd_binds
 
     (stg_binds2, cost_centre_info)
         <- {-# SCC "Stg2Stg" #-}
-           stg2stg dflags this_mod stg_binds
+           stg2stg hsc_env this_mod stg_binds
 
     return (stg_binds2, cost_centre_info)
 

@@ -12,6 +12,7 @@ module GhcPlugins(
         module RdrName, module OccName, module Name, module Var, module Id, module IdInfo,
         module CoreMonad, module CoreSyn, module Literal, module DataCon,
         module CoreUtils, module MkCore, module CoreFVs, module CoreSubst,
+        module StgSyn,
         module Rules, module Annotations,
         module DynFlags, module Packages,
         module Module, module Type, module TyCon, module Coercion,
@@ -46,6 +47,9 @@ import CoreSubst
 -- Core "extras"
 import Rules
 import Annotations
+
+-- STG
+import StgSyn
 
 -- Pipeline-related stuff
 import DynFlags

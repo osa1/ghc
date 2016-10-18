@@ -13,6 +13,11 @@ module SimplStg ( stg2stg ) where
 import StgSyn
 
 import CostCentre       ( CollectedCCs )
+#ifdef GHCI
+import DynamicLoading   ( loadPlugins )
+import Plugins          ( stgPasses )
+#endif
+import HscTypes         ( HscEnv (..) )
 import SCCfinal         ( stgMassageForProfiling )
 import StgLint          ( lintStgBindings )
 import StgStats         ( showStgStats )
@@ -22,17 +27,17 @@ import DynFlags
 import Module           ( Module )
 import ErrUtils
 import SrcLoc
-import UniqSupply       ( mkSplitUniqSupply, splitUniqSupply )
+import UniqSupply       ( UniqSupply, mkSplitUniqSupply, splitUniqSupply )
 import Outputable
 import Control.Monad
 
-stg2stg :: DynFlags                  -- includes spec of what stg-to-stg passes to do
+stg2stg :: HscEnv                    -- includes spec of what stg-to-stg passes to do
         -> Module                    -- module name (profiling only)
         -> [StgBinding]              -- input...
         -> IO ( [StgBinding]         -- output program...
               , CollectedCCs)        -- cost centre information (declared and used)
 
-stg2stg dflags module_name binds
+stg2stg hsc_env module_name binds
   = do  { showPass dflags "Stg2Stg"
         ; us <- mkSplitUniqSupply 'g'
 
@@ -43,8 +48,9 @@ stg2stg dflags module_name binds
 
                 -- Do the main business!
         ; let (us0, us1) = splitUniqSupply us'
+        ; stg_todos <- getStgToDos hsc_env
         ; (processed_binds, _, cost_centres)
-                <- foldM do_stg_pass (binds', us0, ccs) (getStgToDo dflags)
+                <- foldM do_stg_pass (binds', us0, ccs) stg_todos
 
         ; dumpIfSet_dyn dflags Opt_D_dump_stg "Pre unarise:"
                         (pprStgBindings processed_binds)
@@ -58,27 +64,31 @@ stg2stg dflags module_name binds
    }
 
   where
+    dflags = hsc_dflags hsc_env
     stg_linter = if gopt Opt_DoStgLinting dflags
                  then lintStgBindings
                  else ( \ _whodunnit binds -> binds )
 
     -------------------------------------------
     do_stg_pass (binds, us, ccs) to_do
-      = let
-            (us1, us2) = splitUniqSupply us
-        in
-        case to_do of
+      = case to_do of
           D_stg_stats ->
              trace (showStgStats binds)
-             end_pass us2 "StgStats" ccs binds
+             end_pass us "StgStats" ccs binds
 
           StgDoMassageForProfiling ->
              {-# SCC "ProfMassage" #-}
              let
+                 (us1, us2) = splitUniqSupply us
                  (collected_CCs, binds3)
                    = stgMassageForProfiling dflags module_name us1 binds
              in
              end_pass us2 "ProfMassage" collected_CCs binds3
+
+          StgPluginPass s pass -> do
+             let (us1, us2) = splitUniqSupply us
+             binds' <- pass us1 binds
+             end_pass us2 s ccs binds'
 
     end_pass us2 what ccs binds2
       = do -- report verbosely, if required
@@ -98,12 +108,20 @@ stg2stg dflags module_name binds
 data StgToDo
   = StgDoMassageForProfiling  -- should be (next to) last
   | D_stg_stats
+  | StgPluginPass String (UniqSupply -> [StgBinding] -> IO [StgBinding])
 
 -- | Which optional Stg-to-Stg passes to run. Depends on flags, ways etc.
-getStgToDo :: DynFlags -> [StgToDo]
-getStgToDo dflags
-  = todo2
+getStgToDos :: HscEnv -> IO [StgToDo]
+getStgToDos hsc_env
+  = do
+#ifdef GHCI
+       stg_plugin_passes <- loadPluginPasses hsc_env
+       return (todo2 ++ stg_plugin_passes)
+#else
+       return todo2
+#endif
   where
+        dflags = hsc_dflags hsc_env
         stg_stats = gopt Opt_StgStats dflags
 
         todo1 = if stg_stats then [D_stg_stats] else []
@@ -112,3 +130,13 @@ getStgToDo dflags
               = StgDoMassageForProfiling : todo1
               | otherwise
               = todo1
+
+#ifdef GHCI
+loadPluginPasses :: HscEnv -> IO [StgToDo]
+loadPluginPasses hsc_env
+  = do named_plugins <- loadPlugins hsc_env
+       return (concatMap load_passes named_plugins)
+  where
+    load_passes (_, plug, options) =
+      map (uncurry StgPluginPass) (stgPasses plug options)
+#endif
