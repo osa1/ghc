@@ -5,7 +5,7 @@
 \section{@Vars@: Variables}
 -}
 
-{-# LANGUAGE CPP, MultiWayIf, FlexibleInstances, DeriveDataTypeable #-}
+{-# LANGUAGE CPP, MultiWayIf, FlexibleInstances #-}
 
 -- |
 -- #name_types#
@@ -88,8 +88,6 @@ import Util
 import Binary
 import DynFlags
 import Outputable
-
-import Data.Data
 
 {-
 ************************************************************************
@@ -310,12 +308,6 @@ instance Ord Var where
 nonDetCmpVar :: Var -> Var -> Ordering
 nonDetCmpVar a b = varUnique a `nonDetCmpUnique` varUnique b
 
-instance Data Var where
-  -- don't traverse?
-  toConstr _   = abstractConstr "Var"
-  gunfold _ _  = error "gunfold"
-  dataTypeOf _ = mkNoRepType "Var"
-
 varUnique :: Var -> Unique
 varUnique var = mkUniqueGrimily (realUnique var)
 
@@ -352,7 +344,7 @@ updateVarTypeM f id = do { ty' <- f (varType id)
 -- prohibited entirely from appearing in source Haskell ('Inferred')?
 -- See Note [TyBinders and ArgFlags] in TyCoRep
 data ArgFlag = Required | Specified | Inferred
-  deriving (Eq, Data)
+  deriving (Eq)
 
 -- | Does this 'ArgFlag' classify an argument that is written in Haskell?
 isVisibleArgFlag :: ArgFlag -> Bool
@@ -384,7 +376,6 @@ sameVis _        _        = True
 --   * tyvar can be TyVar or IfaceTv
 --   * argf  can be ArgFlag or TyConBndrVis
 data TyVarBndr tyvar argf = TvBndr tyvar argf
-  deriving( Data )
 
 -- | Type Variable Binder
 --

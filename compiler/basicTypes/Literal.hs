@@ -5,7 +5,7 @@
 \section[Literal]{@Literal@: Machine literals (unboxed, of course)}
 -}
 
-{-# LANGUAGE CPP, DeriveDataTypeable #-}
+{-# LANGUAGE CPP #-}
 
 module Literal
         (
@@ -59,7 +59,6 @@ import Data.ByteString (ByteString)
 import Data.Int
 import Data.Word
 import Data.Char
-import Data.Data ( Data )
 import Numeric ( fromRat )
 
 {-
@@ -114,7 +113,6 @@ data Literal
 
   | LitInteger Integer Type --  ^ Integer literals
                             -- See Note [Integer literals]
-  deriving Data
 
 {-
 Note [Integer literals]

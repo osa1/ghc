@@ -5,7 +5,7 @@
 \section[HsLit]{Abstract syntax: source-language literals}
 -}
 
-{-# LANGUAGE CPP, DeriveDataTypeable #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -23,10 +23,9 @@ import BasicTypes ( FractionalLit(..),SourceText )
 import Type       ( Type )
 import Outputable
 import FastString
-import PlaceHolder ( PostTc,PostRn,DataId,OutputableBndrId )
+import PlaceHolder ( PostTc,PostRn,OutputableBndrId )
 
 import Data.ByteString (ByteString)
-import Data.Data hiding ( Fixity )
 
 {-
 ************************************************************************
@@ -71,7 +70,6 @@ data HsLit
       -- ^ Unboxed Float
   | HsDoublePrim    FractionalLit
       -- ^ Unboxed Double
-  deriving Data
 
 instance Eq HsLit where
   (HsChar _ x1)       == (HsChar _ x2)       = x1==x2
@@ -96,7 +94,6 @@ data HsOverLit id
         ol_rebindable :: PostRn id Bool, -- Note [ol_rebindable]
         ol_witness :: HsExpr id,     -- Note [Overloaded literal witnesses]
         ol_type :: PostTc id Type }
-deriving instance (DataId id) => Data (HsOverLit id)
 
 -- Note [Literal source text] in BasicTypes for SourceText fields in
 -- the following
@@ -105,7 +102,6 @@ data OverLitVal
   = HsIntegral   !SourceText !Integer    -- ^ Integer-looking literals;
   | HsFractional !FractionalLit          -- ^ Frac-looking literals
   | HsIsString   !SourceText !FastString -- ^ String-looking literals
-  deriving Data
 
 overLitType :: HsOverLit a -> PostTc a Type
 overLitType = ol_type

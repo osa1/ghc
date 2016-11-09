@@ -1,6 +1,6 @@
 -- (c) The University of Glasgow 2012
 
-{-# LANGUAGE CPP, DataKinds, DeriveDataTypeable, GADTs, KindSignatures,
+{-# LANGUAGE CPP, DataKinds, GADTs, KindSignatures,
              ScopedTypeVariables, StandaloneDeriving, RoleAnnotations #-}
 
 -- | Module for coercion axioms, used to represent type family instances
@@ -23,7 +23,7 @@ module CoAxiom (
        coAxBranchLHS, coAxBranchRHS, coAxBranchSpan, coAxBranchIncomps,
        placeHolderIncomps,
 
-       Role(..), fsFromRole,
+       Role(..), allRoles, fsFromRole,
 
        CoAxiomRule(..), Eqn,
        BuiltInSynFamily(..), trivialBuiltInFamily
@@ -40,9 +40,7 @@ import Util
 import Binary
 import Pair
 import BasicTypes
-import Data.Typeable ( Typeable )
 import SrcLoc
-import qualified Data.Data as Data
 import Data.Array
 import Data.List ( mapAccumL )
 
@@ -231,7 +229,6 @@ data CoAxBranch
     , cab_incomps  :: [CoAxBranch]  -- The previous incompatible branches
                                     -- See Note [Storing compatibility]
     }
-  deriving Data.Data
 
 toBranchedAxiom :: CoAxiom br -> CoAxiom Branched
 toBranchedAxiom (CoAxiom unique name role tc branches implicit)
@@ -393,12 +390,6 @@ instance Outputable (CoAxiom br) where
 instance NamedThing (CoAxiom br) where
     getName = co_ax_name
 
-instance Typeable br => Data.Data (CoAxiom br) where
-    -- don't traverse?
-    toConstr _   = abstractConstr "CoAxiom"
-    gunfold _ _  = error "gunfold"
-    dataTypeOf _ = mkNoRepType "CoAxiom"
-
 instance Outputable CoAxBranch where
   ppr (CoAxBranch { cab_loc = loc
                   , cab_lhs = lhs
@@ -420,7 +411,10 @@ Roles are defined here to avoid circular dependencies.
 -- See Note [Roles] in Coercion
 -- defined here to avoid cyclic dependency with Coercion
 data Role = Nominal | Representational | Phantom
-  deriving (Eq, Ord, Data.Data)
+  deriving (Eq, Ord)
+
+allRoles :: [Role]
+allRoles = [Nominal, Representational, Phantom]
 
 -- These names are slurped into the parser code. Changing these strings
 -- will change the **surface syntax** that GHC accepts! If you want to
@@ -477,12 +471,6 @@ data CoAxiomRule = CoAxiomRule
         -- that means that the coercion is ill-formed, and Core Lint
         -- checks for that.
   }
-
-instance Data.Data CoAxiomRule where
-  -- don't traverse?
-  toConstr _   = abstractConstr "CoAxiomRule"
-  gunfold _ _  = error "gunfold"
-  dataTypeOf _ = mkNoRepType "CoAxiomRule"
 
 instance Uniquable CoAxiomRule where
   getUnique = getUnique . coaxrName

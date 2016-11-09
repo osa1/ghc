@@ -1,6 +1,5 @@
 -- (c) The University of Glasgow, 1992-2006
 
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveFunctor      #-}
 {-# LANGUAGE DeriveFoldable     #-}
@@ -86,7 +85,6 @@ import FastString
 
 import Control.DeepSeq
 import Data.Bits
-import Data.Data
 import Data.List
 import Data.Ord
 
@@ -191,18 +189,6 @@ instance Outputable RealSrcLoc where
 instance Outputable SrcLoc where
     ppr (RealSrcLoc l) = ppr l
     ppr (UnhelpfulLoc s)  = ftext s
-
-instance Data RealSrcSpan where
-  -- don't traverse?
-  toConstr _   = abstractConstr "RealSrcSpan"
-  gunfold _ _  = error "gunfold"
-  dataTypeOf _ = mkNoRepType "RealSrcSpan"
-
-instance Data SrcSpan where
-  -- don't traverse?
-  toConstr _   = abstractConstr "SrcSpan"
-  gunfold _ _  = error "gunfold"
-  dataTypeOf _ = mkNoRepType "SrcSpan"
 
 {-
 ************************************************************************
@@ -496,7 +482,7 @@ pprUserRealSpan show_path (RealSrcSpan' src_path sline scol eline ecol)
 
 -- | We attach SrcSpans to lots of things, so let's have a datatype for it.
 data GenLocated l e = L l e
-  deriving (Eq, Ord, Data, Functor, Foldable, Traversable)
+  deriving (Eq, Ord, Functor, Foldable, Traversable)
 
 type Located e = GenLocated SrcSpan e
 type RealLocated e = GenLocated RealSrcSpan e

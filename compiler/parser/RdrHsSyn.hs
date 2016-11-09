@@ -70,7 +70,7 @@ import Class            ( FunDep )
 import TyCon            ( TyCon, isTupleTyCon, tyConSingleDataCon_maybe )
 import DataCon          ( DataCon, dataConTyCon )
 import ConLike          ( ConLike(..) )
-import CoAxiom          ( Role, fsFromRole )
+import CoAxiom          ( Role, allRoles, fsFromRole )
 import RdrName
 import Name
 import BasicTypes
@@ -291,10 +291,7 @@ mkRoleAnnotDecl loc tycon roles
   = do { roles' <- mapM parse_role roles
        ; return $ L loc $ RoleAnnotDecl tycon roles' }
   where
-    role_data_type = dataTypeOf (undefined :: Role)
-    all_roles = map fromConstr $ dataTypeConstrs role_data_type
-    possible_roles = [(fsFromRole role, role) | role <- all_roles]
-
+    possible_roles = [(fsFromRole role, role) | role <- allRoles]
     parse_role (L loc_role Nothing) = return $ L loc_role Nothing
     parse_role (L loc_role (Just role))
       = case lookup role possible_roles of

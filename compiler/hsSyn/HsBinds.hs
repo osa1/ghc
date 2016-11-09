@@ -7,7 +7,6 @@
 Datatype for: @BindGroup@, @Bind@, @Sig@, @Bind@.
 -}
 
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-} -- Note [Pass sensitive types]
@@ -22,7 +21,7 @@ import {-# SOURCE #-} HsExpr ( pprExpr, LHsExpr,
                                GRHSs, pprPatBind )
 import {-# SOURCE #-} HsPat  ( LPat )
 
-import PlaceHolder ( PostTc,PostRn,DataId,OutputableBndrId )
+import PlaceHolder ( PostTc,PostRn,OutputableBndrId )
 import HsTypes
 import PprCore ()
 import CoreSyn
@@ -39,7 +38,6 @@ import FastString
 import BooleanFormula (LBooleanFormula)
 import DynFlags
 
-import Data.Data hiding ( Fixity )
 import Data.List hiding ( foldr )
 import Data.Ord
 import Data.Foldable ( Foldable(..) )
@@ -82,9 +80,6 @@ data HsLocalBindsLR idL idR
   | EmptyLocalBinds
       -- ^ Empty Local Bindings
 
-deriving instance (DataId idL, DataId idR)
-  => Data (HsLocalBindsLR idL idR)
-
 -- | Haskell Value Bindings
 type HsValBinds id = HsValBindsLR id id
 
@@ -108,9 +103,6 @@ data HsValBindsLR idL idR
   | ValBindsOut
         [(RecFlag, LHsBinds idL)]
         [LSig Name]
-
-deriving instance (DataId idL, DataId idR)
-  => Data (HsValBindsLR idL idR)
 
 -- | Located Haskell Binding
 type LHsBind  id = LHsBindLR  id id
@@ -254,9 +246,6 @@ data HsBindLR idL idR
 
         -- For details on above see note [Api annotations] in ApiAnnotation
 
-deriving instance (DataId idL, DataId idR)
-  => Data (HsBindLR idL idR)
-
         -- Consider (AbsBinds tvs ds [(ftvs, poly_f, mono_f) binds]
         --
         -- Creates bindings for (polymorphic, overloaded) poly_f
@@ -276,7 +265,7 @@ data ABExport id
         , abe_wrap      :: HsWrapper    -- ^ See Note [ABExport wrapper]
              -- Shape: (forall abs_tvs. abs_ev_vars => abe_mono) ~ abe_poly
         , abe_prags     :: TcSpecPrags  -- ^ SPECIALISE pragmas
-  } deriving Data
+  }
 
 -- | - 'ApiAnnotation.AnnKeywordId' : 'ApiAnnotation.AnnPattern',
 --             'ApiAnnotation.AnnEqual','ApiAnnotation.AnnLarrow'
@@ -293,8 +282,6 @@ data PatSynBind idL idR
           psb_def  :: LPat idR,                      -- ^ Right-hand side
           psb_dir  :: HsPatSynDir idR                -- ^ Directionality
   }
-deriving instance (DataId idL, DataId idR)
-  => Data (PatSynBind idL idR)
 
 {-
 Note [AbsBinds]
@@ -659,7 +646,6 @@ data HsIPBinds id
         [LIPBind id]
         TcEvBinds       -- Only in typechecker output; binds
                         -- uses of the implicit parameters
-deriving instance (DataId id) => Data (HsIPBinds id)
 
 isEmptyIPBinds :: HsIPBinds id -> Bool
 isEmptyIPBinds (IPBinds is ds) = null is && isEmptyTcEvBinds ds
@@ -683,7 +669,6 @@ type LIPBind id = Located (IPBind id)
 -- For details on above see note [Api annotations] in ApiAnnotation
 data IPBind id
   = IPBind (Either (Located HsIPName) id) (LHsExpr id)
-deriving instance (DataId name) => Data (IPBind name)
 
 instance (OutputableBndrId id) => Outputable (HsIPBinds id) where
   ppr (IPBinds bs ds) = pprDeeperList vcat (map ppr bs)
@@ -845,14 +830,11 @@ data Sig name
                (Located name)  -- Function name
                (Maybe StringLiteral)
 
-deriving instance (DataId name) => Data (Sig name)
-
 -- | Located Fixity Signature
 type LFixitySig name = Located (FixitySig name)
 
 -- | Fixity Signature
 data FixitySig name = FixitySig [Located name] Fixity
-  deriving Data
 
 -- | Type checker Specialisation Pragmas
 --
@@ -861,7 +843,6 @@ data TcSpecPrags
   = IsDefaultMethod     -- ^ Super-specialised: a default method should
                         -- be macro-expanded at every call site
   | SpecPrags [LTcSpecPrag]
-  deriving Data
 
 -- | Located Type checker Specification Pragmas
 type LTcSpecPrag = Located TcSpecPrag
@@ -874,7 +855,6 @@ data TcSpecPrag
         InlinePragma
   -- ^ The Id to be specialised, an wrapper that specialises the
   -- polymorphic function, and inlining spec for the specialised function
-  deriving Data
 
 noSpecPrags :: TcSpecPrags
 noSpecPrags = SpecPrags []
@@ -1011,7 +991,6 @@ data HsPatSynDetails a
   = InfixPatSyn a a                    -- ^ Infix Pattern Synonym
   | PrefixPatSyn [a]                   -- ^ Prefix Pattern Synonym
   | RecordPatSyn [RecordPatSynField a] -- ^ Record Pattern Synonym
-  deriving Data
 
 
 -- See Note [Record PatSyn Fields]
@@ -1022,8 +1001,7 @@ data RecordPatSynField a
       , recordPatSynPatVar :: a
       -- Filled in by renamer, the name used internally
       -- by the pattern
-      } deriving Data
-
+  }
 
 
 {-
@@ -1111,4 +1089,3 @@ data HsPatSynDir id
   = Unidirectional
   | ImplicitBidirectional
   | ExplicitBidirectional (MatchGroup id (LHsExpr id))
-deriving instance (DataId id) => Data (HsPatSynDir id)

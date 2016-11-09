@@ -1,6 +1,6 @@
 -- (c) The University of Glasgow 2006
 
-{-# LANGUAGE CPP, DeriveDataTypeable #-}
+{-# LANGUAGE CPP #-}
 
 module TcEvidence (
 
@@ -57,7 +57,6 @@ import Pair
 import Util
 import Bag
 import Digraph
-import qualified Data.Data as Data
 import Outputable
 import FastString
 import SrcLoc
@@ -186,7 +185,6 @@ data HsWrapper
 
   | WpLet TcEvBinds             -- Non-empty (or possibly non-empty) evidence bindings,
                                 -- so that the identity coercion is always exactly WpHole
-  deriving Data.Data
 
 
 (<.>) :: HsWrapper -> HsWrapper -> HsWrapper
@@ -302,12 +300,6 @@ data EvBindsVar
       -- See Note [Tracking redundant constraints] in TcSimplify
     }
 
-instance Data.Data TcEvBinds where
-  -- Placeholder; we can't travers into TcEvBinds
-  toConstr _   = abstractConstr "TcEvBinds"
-  gunfold _ _  = error "gunfold"
-  dataTypeOf _ = Data.mkNoRepType "TcEvBinds"
-
 -----------------
 newtype EvBindMap
   = EvBindMap {
@@ -401,8 +393,6 @@ data EvTerm
 
   | EvTypeable Type EvTypeable   -- Dictionary for (Typeable ty)
 
-  deriving Data.Data
-
 
 -- | Instructions on how to make a 'Typeable' dictionary.
 -- See Note [Typeable evidence terms]
@@ -420,12 +410,9 @@ data EvTypeable
     -- The 'EvTerm' is evidence of, e.g., @KnownNat 3@
     -- (see Trac #10348)
 
-  deriving Data.Data
-
 data EvLit
   = EvNum Integer
   | EvStr FastString
-    deriving Data.Data
 
 -- | Evidence for @CallStack@ implicit parameters.
 data EvCallStack
@@ -434,7 +421,6 @@ data EvCallStack
   | EvCsPushCall Name RealSrcSpan EvTerm
     -- ^ @EvCsPushCall name loc stk@ represents a call to @name@, occurring at
     -- @loc@, in a calling context @stk@.
-  deriving Data.Data
 
 {-
 Note [Typeable evidence terms]

@@ -3,7 +3,7 @@
 (c) The GRASP/AQUA Project, Glasgow University, 1992-1998
 -}
 
-{-# LANGUAGE CPP, DeriveDataTypeable #-}
+{-# LANGUAGE CPP #-}
 
 -- |
 -- #name_types#
@@ -78,7 +78,6 @@ import UniqFM
 import Util
 import StaticFlags( opt_PprStyle_Debug )
 
-import Data.Data
 import Data.List( sortBy )
 
 {-
@@ -146,7 +145,6 @@ data RdrName
         --  (2) By Template Haskell, when TH has generated a unique name
         --
         -- Such a 'RdrName' can be created by using 'getRdrName' on a 'Name'
-  deriving Data
 
 {-
 ************************************************************************
@@ -453,7 +451,7 @@ data GlobalRdrElt
         , gre_par  :: Parent
         , gre_lcl :: Bool          -- ^ True <=> the thing was defined locally
         , gre_imp :: [ImportSpec]  -- ^ In scope through these imports
-    } deriving Data
+    }
          -- INVARIANT: either gre_lcl = True or gre_imp is non-empty
          -- See Note [GlobalRdrElt provenance]
 
@@ -463,7 +461,7 @@ data Parent = NoParent
             | ParentIs  { par_is :: Name }
             | FldParent { par_is :: Name, par_lbl :: Maybe FieldLabelString }
               -- ^ See Note [Parents for record fields]
-            deriving (Eq, Data, Typeable)
+            deriving (Eq)
 
 instance Outputable Parent where
    ppr NoParent        = empty
@@ -1039,7 +1037,7 @@ shadowName env name
 -- It's quite elaborate so that we can give accurate unused-name warnings.
 data ImportSpec = ImpSpec { is_decl :: ImpDeclSpec,
                             is_item :: ImpItemSpec }
-                deriving( Eq, Ord, Data )
+                deriving( Eq, Ord )
 
 -- | Import Declaration Specification
 --
@@ -1056,7 +1054,7 @@ data ImpDeclSpec
         is_as       :: ModuleName, -- ^ Import alias, e.g. from @as M@ (or @Muggle@ if there is no @as@ clause)
         is_qual     :: Bool,       -- ^ Was this import qualified?
         is_dloc     :: SrcSpan     -- ^ The location of the entire import declaration
-    } deriving Data
+    }
 
 -- | Import Item Specification
 --
@@ -1077,7 +1075,6 @@ data ImpItemSpec
         --
         -- Here the constructors of @T@ are not named explicitly;
         -- only @T@ is named explicitly.
-  deriving Data
 
 instance Eq ImpDeclSpec where
   p1 == p2 = case p1 `compare` p2 of EQ -> True; _ -> False

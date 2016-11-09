@@ -6,7 +6,6 @@
 HsTypes: Abstract syntax: user-defined types
 -}
 
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -69,7 +68,7 @@ module HsTypes (
 
 import {-# SOURCE #-} HsExpr ( HsSplice, pprSplice )
 
-import PlaceHolder ( PostTc,PostRn,DataId,PlaceHolder(..),
+import PlaceHolder ( PostTc,PostRn,PlaceHolder(..),
                      OutputableBndrId )
 
 import Id ( Id )
@@ -88,7 +87,6 @@ import Outputable
 import FastString
 import Maybes( isJust )
 
-import Data.Data hiding ( Fixity )
 import Data.Maybe ( fromMaybe )
 import Control.Monad ( unless )
 
@@ -261,8 +259,6 @@ data LHsQTyVars name   -- See Note [HsType binders]
                -- See Note [Dependent LHsQTyVars] in TcHsType
     }
 
-deriving instance (DataId name) => Data (LHsQTyVars name)
-
 mkHsQTvs :: [LHsTyVarBndr RdrName] -> LHsQTyVars RdrName
 mkHsQTvs tvs = HsQTvs { hsq_implicit = PlaceHolder, hsq_explicit = tvs
                       , hsq_dependent = PlaceHolder }
@@ -305,12 +301,6 @@ data HsWildCardBndrs name thing
                 -- If there is an extra-constraints wildcard,
                 -- it's still there in the hsc_body.
     }
-
-deriving instance (Data name, Data thing, Data (PostRn name [Name]))
-  => Data (HsImplicitBndrs name thing)
-
-deriving instance (Data name, Data thing, Data (PostRn name [Name]))
-  => Data (HsWildCardBndrs name thing)
 
 -- | Located Haskell Signature Type
 type LHsSigType   name = HsImplicitBndrs name (LHsType name)    -- Implicit only
@@ -379,7 +369,7 @@ mkEmptyWildCardBndrs x = HsWC { hswc_body = x
 -- | These names are used early on to store the names of implicit
 -- parameters.  They completely disappear after type-checking.
 newtype HsIPName = HsIPName FastString
-  deriving( Eq, Data )
+  deriving( Eq )
 
 hsIPNameFS :: HsIPName -> FastString
 hsIPNameFS (HsIPName n) = n
@@ -407,7 +397,6 @@ data HsTyVarBndr name
         --          'ApiAnnotation.AnnDcolon', 'ApiAnnotation.AnnClose'
 
         -- For details on above see note [Api annotations] in ApiAnnotation
-deriving instance (DataId name) => Data (HsTyVarBndr name)
 
 -- | Does this 'HsTyVarBndr' come with an explicit kind annotation?
 isHsKindedTyVar :: HsTyVarBndr name -> Bool
@@ -580,7 +569,6 @@ data HsType name
       -- ^ - 'ApiAnnotation.AnnKeywordId' : None
 
       -- For details on above see note [Api annotations] in ApiAnnotation
-deriving instance (DataId name) => Data (HsType name)
 
 -- Note [Literal source text] in BasicTypes for SourceText fields in
 -- the following
@@ -588,13 +576,11 @@ deriving instance (DataId name) => Data (HsType name)
 data HsTyLit
   = HsNumTy SourceText Integer
   | HsStrTy SourceText FastString
-    deriving Data
 
 newtype HsWildCardInfo name      -- See Note [The wildcard story for types]
     = AnonWildCard (PostRn name (Located Name))
       -- A anonymous wild card ('_'). A fresh Name is generated for
       -- each individual anonymous wildcard during renaming
-deriving instance (DataId name) => Data (HsWildCardInfo name)
 
 -- | Located Haskell Application Type
 type LHsAppType name = Located (HsAppType name)
@@ -604,7 +590,6 @@ type LHsAppType name = Located (HsAppType name)
 data HsAppType name
   = HsAppInfix (Located name)       -- either a symbol or an id in backticks
   | HsAppPrefix (LHsType name)      -- anything else, including things like (+)
-deriving instance (DataId name) => Data (HsAppType name)
 
 instance (OutputableBndrId name) => Outputable (HsAppType name) where
   ppr = ppr_app_ty TopPrec
@@ -721,7 +706,6 @@ data HsTupleSort = HsUnboxedTuple
                  | HsBoxedTuple
                  | HsConstraintTuple
                  | HsBoxedOrConstraintTuple
-                 deriving Data
 
 
 -- | Located Constructor Declaration Field
@@ -740,7 +724,6 @@ data ConDeclField name  -- Record fields have Haddoc docs on them
       -- ^ - 'ApiAnnotation.AnnKeywordId' : 'ApiAnnotation.AnnDcolon'
 
       -- For details on above see note [Api annotations] in ApiAnnotation
-deriving instance (DataId name) => Data (ConDeclField name)
 
 instance (OutputableBndrId name) => Outputable (ConDeclField name) where
   ppr (ConDeclField fld_n fld_ty _) = ppr fld_n <+> dcolon <+> ppr fld_ty
@@ -752,7 +735,6 @@ data HsConDetails arg rec
   = PrefixCon [arg]             -- C p1 p2 p3
   | RecCon    rec               -- C { x = p1, y = p2 }
   | InfixCon  arg arg           -- p1 `C` p2
-  deriving Data
 
 instance (Outputable arg, Outputable rec)
          => Outputable (HsConDetails arg rec) where
@@ -1075,7 +1057,6 @@ data FieldOcc name = FieldOcc { rdrNameFieldOcc  :: Located RdrName
                               }
 deriving instance Eq (PostRn name name) => Eq (FieldOcc name)
 deriving instance Ord (PostRn name name) => Ord (FieldOcc name)
-deriving instance (Data name, Data (PostRn name name)) => Data (FieldOcc name)
 
 instance Outputable (FieldOcc name) where
   ppr = ppr . rdrNameFieldOcc
@@ -1099,10 +1080,6 @@ mkFieldOcc rdr = FieldOcc rdr PlaceHolder
 data AmbiguousFieldOcc name
   = Unambiguous (Located RdrName) (PostRn name name)
   | Ambiguous   (Located RdrName) (PostTc name name)
-deriving instance ( Data name
-                  , Data (PostRn name name)
-                  , Data (PostTc name name))
-                  => Data (AmbiguousFieldOcc name)
 
 instance Outputable (AmbiguousFieldOcc name) where
   ppr = ppr . rdrNameAmbiguousFieldOcc

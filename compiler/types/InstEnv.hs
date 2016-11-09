@@ -7,7 +7,7 @@
 The bits common to TcInstDcls and TcDeriv.
 -}
 
-{-# LANGUAGE CPP, DeriveDataTypeable #-}
+{-# LANGUAGE CPP #-}
 
 module InstEnv (
         DFunId, InstMatch, ClsInstLookupResult,
@@ -44,7 +44,6 @@ import BasicTypes
 import UniqDFM
 import Util
 import Id
-import Data.Data        ( Data )
 import Data.Maybe       ( isJust, isNothing )
 
 {-
@@ -90,7 +89,6 @@ data ClsInst
                                         -- the decl of BasicTypes.OverlapFlag
              , is_orphan :: IsOrphan
     }
-  deriving Data
 
 -- | A fuzzy comparison function for class instances, intended for sorting
 -- instances before displaying them to the user.

@@ -3,7 +3,6 @@
 (c) The GRASP/AQUA Project, Glasgow University, 1992-1998
 -}
 
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -119,7 +118,6 @@ import Binary
 import Control.DeepSeq
 import Data.List (mapAccumL)
 import Data.Char
-import Data.Data
 
 {-
 ************************************************************************
@@ -244,12 +242,6 @@ instance Ord OccName where
         -- Compares lexicographically, *not* by Unique of the string
     compare (OccName sp1 s1) (OccName sp2 s2)
         = (s1  `compare` s2) `thenCmp` (sp1 `compare` sp2)
-
-instance Data OccName where
-  -- don't traverse?
-  toConstr _   = abstractConstr "OccName"
-  gunfold _ _  = error "gunfold"
-  dataTypeOf _ = mkNoRepType "OccName"
 
 instance HasOccName OccName where
   occName = id
@@ -397,7 +389,6 @@ instance Uniquable OccName where
   getUnique (OccName TcClsName fs) = mkTcOccUnique   fs
 
 newtype OccEnv a = A (UniqFM a)
-  deriving Data
 
 emptyOccEnv :: OccEnv a
 unitOccEnv  :: OccName -> a -> OccEnv a
@@ -722,9 +713,7 @@ mkDataTOcc, mkDataCOcc
   :: OccName            -- ^ TyCon or data con string
   -> OccSet             -- ^ avoid these Occs
   -> OccName            -- ^ E.g. @$f3OrdMaybe@
--- data T = MkT ... deriving( Data ) needs definitions for
---      $tT   :: Data.Generics.Basics.DataType
---      $cMkT :: Data.Generics.Basics.Constr
+
 mkDataTOcc occ = chooseUniqueOcc VarName ("$t" ++ occNameString occ)
 mkDataCOcc occ = chooseUniqueOcc VarName ("$c" ++ occNameString occ)
 

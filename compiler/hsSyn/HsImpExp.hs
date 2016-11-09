@@ -6,8 +6,6 @@
 HsImpExp: Abstract syntax: imports, exports, interfaces
 -}
 
-{-# LANGUAGE DeriveDataTypeable #-}
-
 module HsImpExp where
 
 import Module           ( ModuleName )
@@ -19,8 +17,6 @@ import FieldLabel       ( FieldLbl(..) )
 import Outputable
 import FastString
 import SrcLoc
-
-import Data.Data
 
 {-
 ************************************************************************
@@ -73,7 +69,6 @@ data ImportDecl name
      --     to location in ideclHiding
 
      -- For details on above see note [Api annotations] in ApiAnnotation
-       deriving Data
 
 simpleImportDecl :: ModuleName -> ImportDecl name
 simpleImportDecl mn = ImportDecl {
@@ -194,10 +189,10 @@ data IE name
   | IEGroup             Int HsDocString  -- ^ Doc section heading
   | IEDoc               HsDocString      -- ^ Some documentation
   | IEDocNamed          String           -- ^ Reference to named doc
-  deriving (Eq, Data)
+  deriving (Eq)
 
 -- | Imported or Exported Wildcard
-data IEWildcard = NoIEWildcard | IEWildcard Int deriving (Eq, Data)
+data IEWildcard = NoIEWildcard | IEWildcard Int deriving (Eq)
 
 {-
 Note [IEThingWith]

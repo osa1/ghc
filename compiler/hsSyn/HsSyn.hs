@@ -9,7 +9,6 @@ which is declared in the various \tr{Hs*} modules.  This module,
 therefore, is almost nothing but re-exporting.
 -}
 
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-} -- Note [Pass sensitive types]
@@ -51,8 +50,6 @@ import Outputable
 import SrcLoc
 import Module           ( ModuleName )
 
--- libraries:
-import Data.Data hiding ( Fixity )
 
 -- | Haskell Module
 --
@@ -107,7 +104,6 @@ data HsModule name
      --    hsmodImports,hsmodDecls if this style is used.
 
      -- For details on above see note [Api annotations] in ApiAnnotation
-deriving instance (DataId name) => Data (HsModule name)
 
 instance (OutputableBndrId name, HasOccName name)
         => Outputable (HsModule name) where

@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, DeriveDataTypeable #-}
+{-# LANGUAGE CPP #-}
 
 module HsDoc (
   HsDocString(..),
@@ -12,11 +12,9 @@ import Outputable
 import SrcLoc
 import FastString
 
-import Data.Data
-
 -- | Haskell Documentation String
 newtype HsDocString = HsDocString FastString
-  deriving (Eq, Show, Data)
+  deriving (Eq, Show)
 
 -- | Located Haskell Documentation String
 type LHsDocString = Located HsDocString

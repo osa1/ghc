@@ -4,8 +4,6 @@
 \section[Foreign]{Foreign calls}
 -}
 
-{-# LANGUAGE DeriveDataTypeable #-}
-
 module ForeignCall (
         ForeignCall(..), isSafeForeignCall,
         Safety(..), playSafe, playInterruptible,
@@ -25,7 +23,6 @@ import Module
 import BasicTypes ( SourceText )
 
 import Data.Char
-import Data.Data
 
 {-
 ************************************************************************
@@ -61,7 +58,7 @@ data Safety
 
   | PlayRisky           -- None of the above can happen; the call will return
                         -- without interacting with the runtime system at all
-  deriving ( Eq, Show, Data )
+  deriving ( Eq, Show )
         -- Show used just for Show Lex.Token, I think
 
 instance Outputable Safety where
@@ -92,7 +89,6 @@ data CExportSpec
                                 -- See note [Pragma source text] in BasicTypes
         CLabelString            -- C Name of exported function
         CCallConv
-  deriving Data
 
 data CCallSpec
   =  CCallSpec  CCallTarget     -- What to call
@@ -125,7 +121,7 @@ data CCallTarget
                                         -- allowed in CAPI imports
   | DynamicTarget
 
-  deriving( Eq, Data )
+  deriving( Eq )
 
 isDynamicTarget :: CCallTarget -> Bool
 isDynamicTarget DynamicTarget = True
@@ -145,7 +141,7 @@ See: http://www.programmersheaven.com/2/Calling-conventions
 
 -- any changes here should be replicated in  the CallConv type in template haskell
 data CCallConv = CCallConv | CApiConv | StdCallConv | PrimCallConv | JavaScriptCallConv
-  deriving (Eq, Data)
+  deriving (Eq)
 
 instance Outputable CCallConv where
   ppr StdCallConv = text "stdcall"
@@ -218,7 +214,7 @@ instance Outputable CCallSpec where
 -- The filename for a C header file
 -- Note [Pragma source text] in BasicTypes
 data Header = Header SourceText FastString
-    deriving (Eq, Data)
+    deriving (Eq)
 
 instance Outputable Header where
     ppr (Header _ h) = quotes $ ppr h
@@ -233,7 +229,7 @@ instance Outputable Header where
 data CType = CType SourceText -- Note [Pragma source text] in BasicTypes
                    (Maybe Header) -- header to include for this type
                    (SourceText,FastString) -- the type itself
-    deriving (Eq, Data)
+    deriving (Eq)
 
 instance Outputable CType where
     ppr (CType _ mh (_,ct)) = hDoc <+> ftext ct

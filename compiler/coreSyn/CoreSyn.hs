@@ -3,7 +3,7 @@
 (c) The GRASP/AQUA Project, Glasgow University, 1992-1998
 -}
 
-{-# LANGUAGE CPP, DeriveDataTypeable, DeriveFunctor #-}
+{-# LANGUAGE CPP, DeriveFunctor #-}
 
 -- | CoreSyn holds all the main data types for use by for the Glasgow Haskell Compiler midsection
 module CoreSyn (
@@ -110,7 +110,6 @@ import UniqFM
 import SrcLoc     ( RealSrcSpan, containsSpan )
 import Binary
 
-import Data.Data hiding (TyCon)
 import Data.Int
 import Data.Word
 
@@ -266,7 +265,6 @@ data Expr b
   | Tick  (Tickish Id) (Expr b)
   | Type  Type
   | Coercion Coercion
-  deriving Data
 
 -- | Type synonym for expressions that occur in function argument positions.
 -- Only 'Arg' should contain a 'Type' at top level, general 'Expr' should not
@@ -293,7 +291,7 @@ data AltCon
                       -- See Note [Literal alternatives]
 
   | DEFAULT           -- ^ Trivial alternative: @case e of { _ -> ... }@
-   deriving (Eq, Data)
+   deriving (Eq)
 
 -- | Binding, used for top level bindings in a module and local bindings in a @let@.
 
@@ -301,7 +299,6 @@ data AltCon
 -- See Note [GHC Formalism] in coreSyn/CoreLint.hs
 data Bind b = NonRec b (Expr b)
             | Rec [(b, (Expr b))]
-  deriving Data
 
 {-
 Note [Shadowing]
@@ -511,7 +508,7 @@ data Tickish id =
                                 --   (uses same names as CCs)
     }
 
-  deriving (Eq, Ord, Data)
+  deriving (Eq, Ord)
 
 -- | A "counting tick" (where tickishCounts is True) is one that
 -- counts evaluations in some way.  We cannot discard a counting tick,
@@ -732,7 +729,6 @@ data IsOrphan
   | NotOrphan OccName -- The OccName 'n' witnesses the instance's non-orphanhood
                       -- In that case, the instance is fingerprinted as part
                       -- of the definition of 'n's definition
-    deriving Data
 
 -- | Returns true if 'IsOrphan' is orphan.
 isOrphan :: IsOrphan -> Bool

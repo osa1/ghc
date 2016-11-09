@@ -5,7 +5,7 @@
 \section[DataCon]{@DataCon@: Data Constructors}
 -}
 
-{-# LANGUAGE CPP, DeriveDataTypeable #-}
+{-# LANGUAGE CPP #-}
 
 module DataCon (
         -- * Main data types
@@ -82,7 +82,6 @@ import UniqSet
 import UniqFM
 import Unique( mkAlphaTyVarUnique )
 
-import qualified Data.Data as Data
 import Data.Char
 import Data.Word
 import Data.List( mapAccumL, find )
@@ -498,7 +497,6 @@ data HsSrcBang =
   HsSrcBang (Maybe SourceText) -- Note [Pragma source text] in BasicTypes
             SrcUnpackedness
             SrcStrictness
-  deriving Data.Data
 
 -- | Haskell Implementation Bang
 --
@@ -510,7 +508,6 @@ data HsImplBang
   | HsUnpack (Maybe Coercion)
     -- ^ Strict and unpacked field
     -- co :: arg-ty ~ product-ty HsBang
-  deriving Data.Data
 
 -- | Source Strictness
 --
@@ -518,7 +515,7 @@ data HsImplBang
 data SrcStrictness = SrcLazy -- ^ Lazy, ie '~'
                    | SrcStrict -- ^ Strict, ie '!'
                    | NoSrcStrict -- ^ no strictness annotation
-     deriving (Eq, Data.Data)
+     deriving (Eq)
 
 -- | Source Unpackedness
 --
@@ -526,7 +523,7 @@ data SrcStrictness = SrcLazy -- ^ Lazy, ie '~'
 data SrcUnpackedness = SrcUnpack -- ^ {-# UNPACK #-} specified
                      | SrcNoUnpack -- ^ {-# NOUNPACK #-} specified
                      | NoSrcUnpack -- ^ no unpack pragma
-     deriving (Eq, Data.Data)
+     deriving (Eq)
 
 
 
@@ -657,12 +654,6 @@ instance Outputable DataCon where
 instance OutputableBndr DataCon where
     pprInfixOcc con = pprInfixName (dataConName con)
     pprPrefixOcc con = pprPrefixName (dataConName con)
-
-instance Data.Data DataCon where
-    -- don't traverse?
-    toConstr _   = abstractConstr "DataCon"
-    gunfold _ _  = error "gunfold"
-    dataTypeOf _ = mkNoRepType "DataCon"
 
 instance Outputable HsSrcBang where
     ppr (HsSrcBang _ prag mark) = ppr prag <+> ppr mark

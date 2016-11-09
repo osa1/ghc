@@ -10,8 +10,7 @@ module HsExpr where
 import SrcLoc     ( Located )
 import Outputable ( SDoc, Outputable )
 import {-# SOURCE #-} HsPat  ( LPat )
-import PlaceHolder ( DataId, OutputableBndrId )
-import Data.Data hiding ( Fixity )
+import PlaceHolder ( OutputableBndrId )
 
 type role HsExpr nominal
 type role HsCmd nominal
@@ -25,13 +24,6 @@ data HsSplice (i :: *)
 data MatchGroup (a :: *) (body :: *)
 data GRHSs (a :: *) (body :: *)
 data SyntaxExpr (i :: *)
-
-instance (DataId id) => Data (HsSplice id)
-instance (DataId id) => Data (HsExpr id)
-instance (DataId id) => Data (HsCmd id)
-instance (Data body,DataId id) => Data (MatchGroup id body)
-instance (Data body,DataId id) => Data (GRHSs id body)
-instance (DataId id) => Data (SyntaxExpr id)
 
 instance (OutputableBndrId id) => Outputable (HsExpr id)
 instance (OutputableBndrId id) => Outputable (HsCmd id)

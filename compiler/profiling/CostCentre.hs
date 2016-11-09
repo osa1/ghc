@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveDataTypeable #-}
 module CostCentre (
         CostCentre(..), CcName, IsCafCC(..),
                 -- All abstract except to friend: ParseIface.y
@@ -30,8 +29,6 @@ import SrcLoc
 import FastString
 import Util
 
-import Data.Data
-
 -----------------------------------------------------------------------------
 -- Cost Centres
 
@@ -60,12 +57,11 @@ data CostCentre
                 cc_mod  :: Module,      -- Name of module defining this CC.
                 cc_loc  :: SrcSpan
     }
-  deriving Data
 
 type CcName = FastString
 
 data IsCafCC = NotCafCC | CafCC
-  deriving (Eq, Ord, Data)
+  deriving (Eq, Ord)
 
 
 instance Eq CostCentre where

@@ -17,7 +17,7 @@ Note [The Type-related module hierarchy]
 
 -- We expose the relevant stuff from this module via the Type module
 {-# OPTIONS_HADDOCK hide #-}
-{-# LANGUAGE CPP, DeriveDataTypeable, DeriveFunctor, DeriveFoldable,
+{-# LANGUAGE CPP, DeriveFunctor, DeriveFoldable,
              DeriveTraversable, MultiWayIf #-}
 {-# LANGUAGE ImplicitParams #-}
 
@@ -164,7 +164,6 @@ import Util
 import UniqFM
 
 -- libraries
-import qualified Data.Data as Data hiding ( TyCon )
 import Data.List
 import Data.IORef ( IORef )   -- for CoercionHole
 
@@ -294,7 +293,6 @@ data Type
                     -- in the list of a TyConApp, when applying a promoted
                     -- GADT data constructor
 
-  deriving Data.Data
 
 
 -- NOTE:  Other parts of the code assume that type literals do not contain
@@ -302,7 +300,7 @@ data Type
 data TyLit
   = NumTyLit Integer
   | StrTyLit FastString
-  deriving (Eq, Ord, Data.Data)
+  deriving (Eq, Ord)
 
 {- Note [Arguments to type constructors]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -409,7 +407,6 @@ same kinds.
 data TyBinder
   = Named TyVarBinder
   | Anon Type   -- Visibility is determined by the type (Constraint vs. *)
-  deriving Data.Data
 
 -- | Remove the binder's variable from the set, if the binder has
 -- a variable.
@@ -826,7 +823,6 @@ data Coercion
   | SubCo CoercionN                  -- Turns a ~N into a ~R
     -- :: N -> R
 
-  deriving Data.Data
 
 type CoercionN = Coercion       -- always nominal
 type CoercionR = Coercion       -- always representational
@@ -836,7 +832,7 @@ type KindCoercion = CoercionN   -- always nominal
 -- If you edit this type, you may need to update the GHC formalism
 -- See Note [GHC Formalism] in coreSyn/CoreLint.hs
 data LeftOrRight = CLeft | CRight
-                 deriving( Eq, Data.Data )
+                 deriving( Eq )
 
 instance Binary LeftOrRight where
    put_ bh CLeft  = putByte bh 0
@@ -1199,7 +1195,6 @@ data UnivCoProvenance
                        --   is sound. The string is for the use of the plugin.
 
   | HoleProv CoercionHole  -- ^ See Note [Coercion holes]
-  deriving Data.Data
 
 instance Outputable UnivCoProvenance where
   ppr UnsafeCoerceProv   = text "(unsafeCoerce#)"
@@ -1213,12 +1208,6 @@ data CoercionHole
   = CoercionHole { chUnique   :: Unique   -- ^ used only for debugging
                  , chCoercion :: IORef (Maybe Coercion)
                  }
-
-instance Data.Data CoercionHole where
-  -- don't traverse?
-  toConstr _   = abstractConstr "CoercionHole"
-  gunfold _ _  = error "gunfold"
-  dataTypeOf _ = mkNoRepType "CoercionHole"
 
 instance Outputable CoercionHole where
   ppr (CoercionHole u _) = braces (ppr u)

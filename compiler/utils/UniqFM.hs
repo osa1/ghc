@@ -21,7 +21,6 @@ of arguments of combining function.
 -}
 
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -76,8 +75,6 @@ import Data.List (foldl')
 
 import qualified Data.IntMap as M
 import qualified Data.IntSet as S
-import Data.Typeable
-import Data.Data
 #if __GLASGOW_HASKELL__ > 710
 import Data.Semigroup   ( Semigroup )
 import qualified Data.Semigroup as Semigroup
@@ -85,7 +82,7 @@ import qualified Data.Semigroup as Semigroup
 
 
 newtype UniqFM ele = UFM (M.IntMap ele)
-  deriving (Data, Eq, Functor, Typeable)
+  deriving (Eq, Functor)
   -- We used to derive Traversable and Foldable, but they were nondeterministic
   -- and not obvious at the call site. You can use explicit nonDetEltsUFM
   -- and fold a list if needed.

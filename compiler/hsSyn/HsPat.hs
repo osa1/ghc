@@ -5,7 +5,6 @@
 \section[PatSyntax]{Abstract Haskell syntax---patterns}
 -}
 
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
@@ -62,7 +61,6 @@ import Bag -- collect ev vars from pats
 import DynFlags( gopt, GeneralFlag(..) )
 import Maybes
 -- libraries:
-import Data.Data hiding (TyCon,Fixity)
 
 type InPat id  = LPat id        -- No 'Out' constructors
 type OutPat id = LPat id        -- No 'In' constructors
@@ -260,7 +258,6 @@ data Pat id
         -- During desugaring a (CoPat co pat) turns into a cast with 'co' on
         -- the scrutinee, followed by a match on 'pat'
     -- ^ Coercion Pattern
-deriving instance (DataId id) => Data (Pat id)
 
 -- | Haskell Constructor Pattern Details
 type HsConPatDetails id = HsConDetails (LPat id) (HsRecFields id (LPat id))
@@ -280,7 +277,6 @@ data HsRecFields id arg         -- A bunch of record fields
   = HsRecFields { rec_flds   :: [LHsRecField id arg],
                   rec_dotdot :: Maybe Int }  -- Note [DotDot fields]
   deriving (Functor, Foldable, Traversable)
-deriving instance (DataId id, Data arg) => Data (HsRecFields id arg)
 
 
 -- Note [DotDot fields]
@@ -321,7 +317,7 @@ data HsRecField' id arg = HsRecField {
         hsRecFieldLbl :: Located id,
         hsRecFieldArg :: arg,           -- ^ Filled in by renamer when punning
         hsRecPun      :: Bool           -- ^ Note [Punning]
-  } deriving (Data, Functor, Foldable, Traversable)
+  } deriving (Functor, Foldable, Traversable)
 
 
 -- Note [Punning]

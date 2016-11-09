@@ -14,7 +14,6 @@ See Note [Unique Determinism] in Unique for explanation why @Unique@ ordering
 is not deterministic.
 -}
 
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -Wall #-}
@@ -63,7 +62,6 @@ import Unique           ( Uniquable(..), Unique, getKey )
 import Outputable
 
 import qualified Data.IntMap as M
-import Data.Data
 import Data.List (sortBy)
 import Data.Function (on)
 import UniqFM (UniqFM, listToUFM_Directly, nonDetUFMToList, ufmToIntMap)
@@ -111,7 +109,6 @@ data TaggedVal val =
   TaggedVal
     val
     {-# UNPACK #-} !Int -- ^ insertion time
-  deriving Data
 
 taggedFst :: TaggedVal val -> val
 taggedFst (TaggedVal v _) = v
@@ -134,7 +131,7 @@ data UniqDFM ele =
                                 -- be distinct within a single map
     {-# UNPACK #-} !Int         -- Upper bound on the values' insertion
                                 -- time. See Note [Overflow on plusUDFM]
-  deriving (Data, Functor)
+  deriving (Functor)
 
 emptyUDFM :: UniqDFM elt
 emptyUDFM = UDFM M.empty 0

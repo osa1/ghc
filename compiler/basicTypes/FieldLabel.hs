@@ -56,7 +56,6 @@ Of course, datatypes with no constructors cannot have any fields.
 
 -}
 
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
@@ -77,7 +76,6 @@ import FastStringEnv
 import Outputable
 import Binary
 
-import Data.Data
 
 -- | Field labels are just represented as strings;
 -- they are not necessarily unique (even within a module)
@@ -97,7 +95,6 @@ data FieldLbl a = FieldLabel {
       flSelector     :: a                 -- ^ Record selector function
     }
   deriving (Eq, Functor, Foldable, Traversable)
-deriving instance Data a => Data (FieldLbl a)
 
 instance Outputable a => Outputable (FieldLbl a) where
     ppr fl = ppr (flLabel fl) <> braces (ppr (flSelector fl))

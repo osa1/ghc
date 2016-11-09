@@ -1,5 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, DeriveFunctor, DeriveFoldable,
-             DeriveTraversable #-}
+{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 
 --------------------------------------------------------------------------------
 -- | Boolean formulas without quantifiers and without negation.
@@ -17,7 +16,6 @@ module BooleanFormula (
   ) where
 
 import Data.List ( nub, intersperse )
-import Data.Data
 
 import MonadUtils
 import Outputable
@@ -32,7 +30,7 @@ type LBooleanFormula a = Located (BooleanFormula a)
 
 data BooleanFormula a = Var a | And [LBooleanFormula a] | Or [LBooleanFormula a]
                       | Parens (LBooleanFormula a)
-  deriving (Eq, Data, Functor, Foldable, Traversable)
+  deriving (Eq, Functor, Foldable, Traversable)
 
 mkVar :: a -> BooleanFormula a
 mkVar = Var

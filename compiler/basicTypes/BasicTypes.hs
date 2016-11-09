@@ -14,8 +14,6 @@ types that
 \end{itemize}
 -}
 
-{-# LANGUAGE DeriveDataTypeable #-}
-
 module BasicTypes(
         Version, bumpVersion, initialVersion,
 
@@ -99,7 +97,6 @@ import FastString
 import Outputable
 import SrcLoc ( Located,unLoc )
 import StaticFlags( opt_PprStyle_Debug )
-import Data.Data hiding (Fixity)
 import Data.Function (on)
 
 {-
@@ -247,7 +244,7 @@ unSwap IsSwapped  f a b = f b a
 -}
 
 data FunctionOrData = IsFunction | IsData
-    deriving (Eq, Ord, Data)
+    deriving (Eq, Ord)
 
 instance Outputable FunctionOrData where
     ppr IsFunction = text "(function)"
@@ -283,7 +280,7 @@ data StringLiteral = StringLiteral
                        { sl_st :: SourceText, -- literal raw source.
                                               -- See not [Literal source text]
                          sl_fs :: FastString  -- literal string value
-                       } deriving Data
+                       }
 
 instance Eq StringLiteral where
   (StringLiteral _ a) == (StringLiteral _ b) = a == b
@@ -295,7 +292,7 @@ data WarningTxt = WarningTxt (Located SourceText)
                              [Located StringLiteral]
                 | DeprecatedTxt (Located SourceText)
                                 [Located StringLiteral]
-    deriving (Eq, Data)
+    deriving (Eq)
 
 instance Outputable WarningTxt where
     ppr (WarningTxt    _ ws)
@@ -328,7 +325,6 @@ pprRuleName rn = doubleQuotes (ftext rn)
 ------------------------
 data Fixity = Fixity SourceText Int FixityDirection
   -- Note [Pragma source text]
-  deriving Data
 
 instance Outputable Fixity where
     ppr (Fixity _ prec dir) = hcat [ppr dir, space, int prec]
@@ -338,7 +334,7 @@ instance Eq Fixity where -- Used to determine if two fixities conflict
 
 ------------------------
 data FixityDirection = InfixL | InfixR | InfixN
-                     deriving (Eq, Data)
+                     deriving (Eq)
 
 instance Outputable FixityDirection where
     ppr InfixL = text "infixl"
@@ -419,7 +415,7 @@ instance Outputable TopLevelFlag where
 data Boxity
   = Boxed
   | Unboxed
-  deriving( Eq, Data )
+  deriving( Eq )
 
 isBoxed :: Boxity -> Bool
 isBoxed Boxed   = True
@@ -440,7 +436,7 @@ instance Outputable Boxity where
 -- | Recursivity Flag
 data RecFlag = Recursive
              | NonRecursive
-             deriving( Eq, Data )
+             deriving( Eq )
 
 isRec :: RecFlag -> Bool
 isRec Recursive    = True
@@ -468,7 +464,7 @@ instance Outputable RecFlag where
 
 data Origin = FromSource
             | Generated
-            deriving( Eq, Data )
+            deriving( Eq )
 
 isGenerated :: Origin -> Bool
 isGenerated Generated = True
@@ -495,7 +491,7 @@ data DerivStrategy
                   --   'Functor' when @-XDeriveFunctor@ is enabled, etc.)
   | DerivAnyclass -- ^ @-XDeriveAnyClass@
   | DerivNewtype  -- ^ @-XGeneralizedNewtypeDeriving@
-  deriving (Eq, Data)
+  deriving (Eq)
 
 instance Outputable DerivStrategy where
     ppr DerivStock    = text "stock"
@@ -525,7 +521,7 @@ instance Outputable DerivStrategy where
 data OverlapFlag = OverlapFlag
   { overlapMode   :: OverlapMode
   , isSafeOverlap :: Bool
-  } deriving (Eq, Data)
+  } deriving (Eq)
 
 setOverlapModeMaybe :: OverlapFlag -> Maybe OverlapMode -> OverlapFlag
 setOverlapModeMaybe f Nothing  = f
@@ -607,7 +603,7 @@ data OverlapMode  -- See Note [Rules for instance lookup] in InstEnv
     -- instantiating 'b' would change which instance
     -- was chosen. See also note [Incoherent instances] in InstEnv
 
-  deriving (Eq, Data)
+  deriving (Eq)
 
 
 instance Outputable OverlapFlag where
@@ -636,7 +632,7 @@ data TupleSort
   = BoxedTuple
   | UnboxedTuple
   | ConstraintTuple
-  deriving( Eq, Data )
+  deriving( Eq )
 
 tupleSortBoxity :: TupleSort -> Boxity
 tupleSortBoxity BoxedTuple      = Boxed
@@ -968,13 +964,13 @@ data Activation = NeverActive
                   -- Active only *strictly before* this phase
                 | ActiveAfter SourceText PhaseNum
                   -- Active in this phase and later
-                deriving( Eq, Data )
+                deriving( Eq )
                   -- Eq used in comparing rules in HsDecls
 
 -- | Rule Match Information
 data RuleMatchInfo = ConLike                    -- See Note [CONLIKE pragma]
                    | FunLike
-                   deriving( Eq, Data, Show )
+                   deriving( Eq, Show )
         -- Show needed for Lexer.x
 
 data InlinePragma            -- Note [InlinePragma]
@@ -992,7 +988,7 @@ data InlinePragma            -- Note [InlinePragma]
       , inl_act    :: Activation     -- Says during which phases inlining is allowed
 
       , inl_rule   :: RuleMatchInfo  -- Should the function be treated like a constructor?
-    } deriving( Eq, Data )
+    } deriving( Eq )
 
 -- | Inline Specification
 data InlineSpec   -- What the user's INLINE pragma looked like
@@ -1001,7 +997,7 @@ data InlineSpec   -- What the user's INLINE pragma looked like
   | NoInline
   | EmptyInlineSpec  -- Used in a place-holder InlinePragma in SpecPrag or IdInfo,
                      -- where there isn't any real inline pragma at all
-  deriving( Eq, Data, Show )
+  deriving( Eq, Show )
         -- Show needed for Lexer.x
 
 {-
@@ -1222,7 +1218,7 @@ data FractionalLit
   = FL { fl_text :: String         -- How the value was written in the source
        , fl_value :: Rational      -- Numeric value of the literal
        }
-  deriving (Data, Show)
+  deriving (Show)
   -- The Show instance is required for the derived Lexer.x:Token instance when DEBUG is on
 
 negateFractionalLit :: FractionalLit -> FractionalLit
