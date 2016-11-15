@@ -714,6 +714,51 @@ unitBoxer :: Boxer
 unitBoxer = UnitBox
 
 -------------------------
+{-
+Note [UNPACK for sum types]
+
+'Unboxer' for a sum argument 'x' looks like this:
+
+    case (case x of
+            D1 x1 ... xn -> (# (# x1, ..., xn #) | | ... | #)
+            D2           -> (# | (# #) | ... | #)
+            ...) of
+      x_ubx -> <rhs uses x_ubx>
+
+This is different than unboxer expressions for tuples to avoid code explosion.
+To demonstrate why we need this, suppose we have these data types
+
+    data D = D {-# UNPACK #-} !S
+               {-# UNPACK #-} !S
+
+    data S = S1 Int | S2 Bool
+
+If we generate code similar to code we generate for tuples, we generate this:
+
+    case arg1 of
+      S1 i1 -> case arg2 of
+                 S1 i2 -> D (# i1 | #) (# i2 | #)
+                 S2 b2 -> D (# i1 | #) (# | b2 #)
+      S2 b1 -> case arg2 of
+                 S1 i2 -> D (# | b1 #) (# i2 | #)
+                 S2 b2 -> D (# | b1 #) (# | b2 #)
+
+This grows like a tree with
+
+    height = number of unpacked sum fields
+    branching factor of a level = number of alternatives in that level
+
+To avoid this, we use nested `case` expressions and generate code like this:
+
+    case (case arg1 of
+            S1 i1 -> (# i1 | #)
+            S2 b1 -> (# | b1 #)) of
+      s1 -> case (case arg2 of
+                    S1 i2 -> (# i2 | #)
+                    S2 b2 -> (# | b2 #)) of
+              s2 -> D s1 s2
+-}
+
 dataConArgUnpack
    :: Type
    ->  ( [(Type, StrictnessMark)]   -- Rep types
@@ -750,6 +795,7 @@ dataConArgUnpack arg_ty
       sum_alt_tys = map mkUbxSumAltTy src_tys
       sum_ty = mkSumTy sum_alt_tys
 
+      -- See Note [UNPACK for sum types]
       unboxer :: Unboxer
       unboxer arg_id = do
         con_arg_binders <- mapM (mapM newLocal) src_tys
