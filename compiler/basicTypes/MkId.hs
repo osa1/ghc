@@ -882,7 +882,10 @@ isUnpackableType dflags fam_envs ty
       []  -> False
       [_] -> not (isNewTyCon tc)
       _   -> True
-  , all isVanillaDataCon cons -- TODO (osa): Why do we need that?
+  , -- currently we don't unpack constructors with existentials or coercions
+    -- (there's nothing wrong with that, we just need to do some adjusting to
+    -- support it)
+    all isVanillaDataCon cons
   = all (ok_con_args (unitNameSet (getName tc))) cons
   | otherwise
   = False
