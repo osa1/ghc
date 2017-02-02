@@ -296,7 +296,7 @@ boundThings modname lbinding =
                ParPat p -> patThings p tl
                BangPat p -> patThings p tl
                ListPat ps _ _ -> foldr patThings tl ps
-               TuplePat ps _ _ -> foldr patThings tl ps
+               TuplePat ps _ -> foldr patThings tl ps
                PArrPat ps _ -> foldr patThings tl ps
                ConPatIn _ conargs -> conArgs conargs tl
                ConPatOut{ pat_args = conargs } -> conArgs conargs tl

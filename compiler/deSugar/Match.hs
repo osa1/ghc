@@ -474,11 +474,11 @@ tidy1 _ (PArrPat pats ty)
     arity      = length pats
     parrConPat = mkPrefixConPat (parrFakeCon arity) pats [ty]
 
-tidy1 _ (TuplePat pats boxity tys)
+tidy1 _ (TuplePat pats boxity)
   = return (idDsWrapper, unLoc tuple_ConPat)
   where
     arity = length pats
-    tuple_ConPat = mkPrefixConPat (tupleDataCon boxity arity) pats tys
+    tuple_ConPat = mkPrefixConPat (tupleDataCon boxity arity) pats (map hsLPatType pats)
 
 tidy1 _ (SumPat pat alt arity tys)
   = return (idDsWrapper, unLoc sum_ConPat)

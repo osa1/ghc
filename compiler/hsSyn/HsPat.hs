@@ -120,23 +120,6 @@ data Pat id
 
   | TuplePat    [LPat id]        -- Tuple sub-patterns
                 Boxity           -- UnitPat is TuplePat []
-                [PostTc id Type] -- [] before typechecker, filled in afterwards
-                                 -- with the types of the tuple components
-        -- You might think that the PostTc id Type was redundant, because we can
-        -- get the pattern type by getting the types of the sub-patterns.
-        -- But it's essential
-        --      data T a where
-        --        T1 :: Int -> T Int
-        --      f :: (T a, a) -> Int
-        --      f (T1 x, z) = z
-        -- When desugaring, we must generate
-        --      f = /\a. \v::a.  case v of (t::T a, w::a) ->
-        --                       case t of (T1 (x::Int)) ->
-        -- Note the (w::a), NOT (w::Int), because we have not yet
-        -- refined 'a' to Int.  So we must know that the second component
-        -- of the tuple is of type 'a' not Int.  See selectMatchVar
-        -- (June 14: I'm not sure this comment is right; the sub-patterns
-        --           will be wrapped in CoPats, no?)
     -- ^ Tuple sub-patterns
     --
     -- - 'ApiAnnotation.AnnKeywordId' :
@@ -458,7 +441,7 @@ pprPat (SigPatIn pat ty)      = ppr pat <+> dcolon <+> ppr ty
 pprPat (SigPatOut pat ty)     = ppr pat <+> dcolon <+> ppr ty
 pprPat (ListPat pats _ _)     = brackets (interpp'SP pats)
 pprPat (PArrPat pats _)       = paBrackets (interpp'SP pats)
-pprPat (TuplePat pats bx _)   = tupleParens (boxityTupleSort bx) (pprWithCommas ppr pats)
+pprPat (TuplePat pats bx)     = tupleParens (boxityTupleSort bx) (pprWithCommas ppr pats)
 pprPat (SumPat pat alt arity _) = sumParens (pprAlternative ppr pat alt arity)
 pprPat (ConPatIn con details) = pprUserCon (unLoc con) details
 pprPat (ConPatOut { pat_con = con, pat_tvs = tvs, pat_dicts = dicts,
@@ -615,7 +598,7 @@ isIrrefutableHsPat pat
     go1 (ViewPat _ pat _)   = go pat
     go1 (SigPatIn pat _)    = go pat
     go1 (SigPatOut pat _)   = go pat
-    go1 (TuplePat pats _ _) = all go pats
+    go1 (TuplePat pats _)   = all go pats
     go1 (SumPat pat _ _  _) = go pat
     go1 (ListPat {}) = False
     go1 (PArrPat {})        = False     -- ?
@@ -685,7 +668,7 @@ collectEvVarsPat pat =
     ParPat   p        -> collectEvVarsLPat p
     BangPat  p        -> collectEvVarsLPat p
     ListPat  ps _ _   -> unionManyBags $ map collectEvVarsLPat ps
-    TuplePat ps _ _   -> unionManyBags $ map collectEvVarsLPat ps
+    TuplePat ps _     -> unionManyBags $ map collectEvVarsLPat ps
     SumPat p _ _ _    -> collectEvVarsLPat p
     PArrPat  ps _     -> unionManyBags $ map collectEvVarsLPat ps
     ConPatOut {pat_dicts = dicts, pat_args  = args}

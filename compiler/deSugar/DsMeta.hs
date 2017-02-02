@@ -1641,7 +1641,7 @@ repP (AsPat x p)       = do { x' <- lookupLBinder x; p1 <- repLP p; repPaspat x'
 repP (ParPat p)        = repLP p
 repP (ListPat ps _ Nothing)    = do { qs <- repLPs ps; repPlist qs }
 repP (ListPat ps ty1 (Just (_,e))) = do { p <- repP (ListPat ps ty1 Nothing); e' <- repE (syn_expr e); repPview e' p}
-repP (TuplePat ps boxed _)
+repP (TuplePat ps boxed)
   | isBoxed boxed       = do { qs <- repLPs ps; repPtup qs }
   | otherwise           = do { qs <- repLPs ps; repPunboxedTup qs }
 repP (SumPat p alt arity _) = do { p1 <- repLP p; repPunboxedSum p1 alt arity }

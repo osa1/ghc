@@ -493,15 +493,15 @@ mkLHsVarTuple :: [a] -> LHsExpr a
 mkLHsVarTuple ids  = mkLHsTupleExpr (map nlHsVar ids)
 
 nlTuplePat :: [LPat id] -> Boxity -> LPat id
-nlTuplePat pats box = noLoc (TuplePat pats box [])
+nlTuplePat pats box = noLoc (TuplePat pats box)
 
 missingTupArg :: HsTupArg RdrName
 missingTupArg = Missing placeHolderType
 
 mkLHsPatTup :: [LPat id] -> LPat id
-mkLHsPatTup []     = noLoc $ TuplePat [] Boxed []
+mkLHsPatTup []     = noLoc $ TuplePat [] Boxed
 mkLHsPatTup [lpat] = lpat
-mkLHsPatTup lpats  = L (getLoc (head lpats)) $ TuplePat lpats Boxed []
+mkLHsPatTup lpats  = L (getLoc (head lpats)) $ TuplePat lpats Boxed
 
 -- The Big equivalents for the source tuple expressions
 mkBigLHsVarTup :: [id] -> LHsExpr id
@@ -946,7 +946,7 @@ collect_lpat (L _ pat) bndrs
 
     go (ListPat pats _ _)         = foldr collect_lpat bndrs pats
     go (PArrPat pats _)           = foldr collect_lpat bndrs pats
-    go (TuplePat pats _ _)        = foldr collect_lpat bndrs pats
+    go (TuplePat pats _)          = foldr collect_lpat bndrs pats
     go (SumPat pat _ _ _)         = collect_lpat pat bndrs
 
     go (ConPatIn _ ps)            = foldr collect_lpat bndrs (hsConPatArgs ps)
@@ -1214,7 +1214,7 @@ lPatImplicits = hs_lpat
     hs_pat (ParPat  pat)       = hs_lpat pat
     hs_pat (ListPat pats _ _)  = hs_lpats pats
     hs_pat (PArrPat pats _)    = hs_lpats pats
-    hs_pat (TuplePat pats _ _) = hs_lpats pats
+    hs_pat (TuplePat pats _)   = hs_lpats pats
 
     hs_pat (SigPatIn pat _)  = hs_lpat pat
     hs_pat (SigPatOut pat _) = hs_lpat pat
