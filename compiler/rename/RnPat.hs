@@ -380,6 +380,7 @@ rnPatAndThen :: NameMaker -> Pat RdrName -> CpsRn (Pat Name)
 rnPatAndThen _  (WildPat _)   = return (WildPat placeHolderType)
 rnPatAndThen mk (ParPat pat)  = do { pat' <- rnLPatAndThen mk pat; return (ParPat pat') }
 rnPatAndThen mk (LazyPat pat) = do { pat' <- rnLPatAndThen mk pat; return (LazyPat pat') }
+rnPatAndThen mk (OrPat pats)  = OrPat <$> mapM (rnLPatAndThen mk) pats
 rnPatAndThen mk (BangPat pat) = do { pat' <- rnLPatAndThen mk pat; return (BangPat pat') }
 rnPatAndThen mk (VarPat (L l rdr)) = do { loc <- liftCps getSrcSpanM
                                         ; name <- newPatName mk (L loc rdr)

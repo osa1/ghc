@@ -939,6 +939,7 @@ collect_lpat (L _ pat) bndrs
     go (VarPat (L _ var))         = var : bndrs
     go (WildPat _)                = bndrs
     go (LazyPat pat)              = collect_lpat pat bndrs
+    go (OrPat pats)               = foldr collect_lpat bndrs pats
     go (BangPat pat)              = collect_lpat pat bndrs
     go (AsPat (L _ a) pat)        = a : collect_lpat pat bndrs
     go (ViewPat _ pat _)          = collect_lpat pat bndrs
@@ -1208,6 +1209,7 @@ lPatImplicits = hs_lpat
     hs_lpats = foldr (\pat rest -> hs_lpat pat `unionNameSet` rest) emptyNameSet
 
     hs_pat (LazyPat pat)       = hs_lpat pat
+    hs_pat (OrPat pats)        = hs_lpats pats
     hs_pat (BangPat pat)       = hs_lpat pat
     hs_pat (AsPat _ pat)       = hs_lpat pat
     hs_pat (ViewPat _ pat _)   = hs_lpat pat
