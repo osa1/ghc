@@ -686,6 +686,7 @@ data HsExpr id
   -- For details on above see note [Api annotations] in ApiAnnotation
   | ELazyPat    (LHsExpr id) -- ~ pattern
 
+  | EOrPat      [LHsExpr id] -- or pattern
 
   ---------------------------------------
   -- Finally, HsWrap appears only in typechecker output
@@ -972,6 +973,7 @@ ppr_expr (PArrSeq  _ info) = paBrackets (ppr info)
 
 ppr_expr EWildPat       = char '_'
 ppr_expr (ELazyPat e)   = char '~' <> ppr e
+ppr_expr (EOrPat es)    = parens (fsep (punctuate comma (map ppr es)))
 ppr_expr (EAsPat v e)   = ppr v <> char '@' <> ppr e
 ppr_expr (EViewPat p e) = ppr p <+> text "->" <+> ppr e
 

@@ -852,6 +852,7 @@ checkAPat msg loc e0 = do
                 else parseErrorSDoc loc (text "Illegal bang-pattern (use BangPatterns):" $$ ppr e0) }
 
    ELazyPat e         -> checkLPat msg e >>= (return . LazyPat)
+   EOrPat es          -> OrPat <$> mapM (checkLPat msg) es
    EAsPat n e         -> checkLPat msg e >>= (return . AsPat n)
    -- view pattern is well-formed if the pattern is
    EViewPat expr patE  -> checkLPat msg patE >>=
@@ -1540,6 +1541,7 @@ parseErrorSDoc span s = failSpanMsgP span s
 data SumOrTuple
   = Sum ConTag Arity (LHsExpr RdrName)
   | Tuple [LHsTupArg RdrName]
+  | OrPat' [LHsExpr RdrName]
 
 mkSumOrTuple :: Boxity -> SrcSpan -> SumOrTuple -> P (HsExpr RdrName)
 
@@ -1557,3 +1559,6 @@ mkSumOrTuple Boxed l (Sum alt arity (L _ e)) =
       text "(" <+> ppr_bars (alt - 1) <+> ppr e <+> ppr_bars (arity - alt) <+> text ")"
 
     ppr_bars n = hsep (replicate n (Outputable.char '|'))
+
+-- Or pattern
+mkSumOrTuple _ _ (OrPat' es) = return (EOrPat es)

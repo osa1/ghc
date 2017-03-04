@@ -2603,6 +2603,9 @@ tup_exprs :: { ([AddAnn],SumOrTuple) }
                           {% do { addAnnotation (gl $1) AnnComma (fst $2)
                                 ; return ([],Tuple ((sL1 $1 (Present $1)) : snd $2)) } }
 
+           | texp '|' bars_or_tail
+                {% trace "OrPat" $ return ([], OrPat' ($1 : $3)) }
+
            | texp bars    { (mvbars (fst $2), Sum 1  (snd $2 + 1) $1) }
 
            | commas tup_tail
@@ -2627,6 +2630,10 @@ tup_tail :: { [LHsTupArg RdrName] }
                                     return ((L (gl $1) (Present $1)) : snd $2) }
           | texp                 { [L (gl $1) (Present $1)] }
           | {- empty -}          { [noLoc missingTupArg] }
+
+bars_or_tail :: { [LHsExpr RdrName] }
+    : texp '|' bars_or_tail { $1 : $3 }
+    | texp                  { [$1]    }
 
 -----------------------------------------------------------------------------
 -- List expressions

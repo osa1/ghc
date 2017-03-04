@@ -2445,19 +2445,19 @@ lexer queueComments cont = do
   alr <- extension alternativeLayoutRule
   let lexTokenFun = if alr then lexTokenAlr else lexToken
   (L span tok) <- lexTokenFun
-  --trace ("token: " ++ show tok) $ do
+  trace ("token: " ++ show tok) $ do
 
-  case tok of
-    ITeof -> addAnnotationOnly noSrcSpan AnnEofPos (RealSrcSpan span)
-    _ -> return ()
+    case tok of
+      ITeof -> addAnnotationOnly noSrcSpan AnnEofPos (RealSrcSpan span)
+      _ -> return ()
 
-  if (queueComments && isDocComment tok)
-    then queueComment (L (RealSrcSpan span) tok)
-    else return ()
+    if (queueComments && isDocComment tok)
+      then queueComment (L (RealSrcSpan span) tok)
+      else return ()
 
-  if (queueComments && isComment tok)
-    then queueComment (L (RealSrcSpan span) tok) >> lexer queueComments cont
-    else cont (L (RealSrcSpan span) tok)
+    if (queueComments && isComment tok)
+      then queueComment (L (RealSrcSpan span) tok) >> lexer queueComments cont
+      else cont (L (RealSrcSpan span) tok)
 
 lexTokenAlr :: P (RealLocated Token)
 lexTokenAlr = do mPending <- popPendingImplicitToken

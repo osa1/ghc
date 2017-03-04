@@ -88,6 +88,8 @@ data Pat id
 
     -- For details on above see note [Api annotations] in ApiAnnotation
 
+  | OrPat       [LPat id]
+
   | AsPat       (Located id) (LPat id)  -- ^ As pattern
     -- ^ - 'ApiAnnotation.AnnKeywordId' : 'ApiAnnotation.AnnAt'
 
@@ -442,6 +444,7 @@ pprPat :: (OutputableBndrId name) => Pat name -> SDoc
 pprPat (VarPat (L _ var))     = pprPatBndr var
 pprPat (WildPat _)            = char '_'
 pprPat (LazyPat pat)          = char '~' <> pprParendLPat pat
+pprPat (OrPat pats)           = parens (pprWithBars ppr pats)
 pprPat (BangPat pat)          = char '!' <> pprParendLPat pat
 pprPat (AsPat name pat)       = hcat [pprPrefixOcc (unLoc name), char '@', pprParendLPat pat]
 pprPat (ViewPat expr pat _)   = hcat [pprLExpr expr, text " -> ", ppr pat]
