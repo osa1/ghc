@@ -13,7 +13,7 @@ free variables.
 {-# LANGUAGE CPP, RankNTypes, ScopedTypeVariables #-}
 
 module RnPat (-- main entry points
-              rnPat, rnPats, rnBindPat, rnPatAndThen,
+              rnPat, rnPats, rnBindPat,
 
               NameMaker, applyNameMaker,     -- a utility for making names:
               localRecNameMaker, topRecNameMaker,  --   sometimes we want to make local names,
@@ -69,6 +69,7 @@ import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad       ( when, liftM, ap, unless )
 import Data.Ratio
+import Data.Function       ( on )
 
 {-
 *********************************************************
@@ -324,6 +325,13 @@ rnPats ctxt pats thing_inside
               (addErrCtxt doc_pat $
                 checkDupAndShadowedNames envs_before $
                 collectPatsBinders pats')
+
+          -- Special treatment for or patterns:
+          -- For every or pattern (p1 | p2), we must check that p1 and p2 bind
+          -- same variables.
+        ; unless (isPatSynCtxt ctxt)
+              (addErrCtxt doc_pat $ mapM_ checkOrPatNames pats')
+
         ; thing_inside pats' } }
   where
     doc_pat = text "In" <+> pprMatchContext ctxt
@@ -844,6 +852,43 @@ rnOverLit origLit
         ; return (lit { ol_witness = from_thing_name
                       , ol_rebindable = rebindable
                       , ol_type = placeHolderType }, fvs) }
+
+{-
+************************************************************************
+*                                                                      *
+Or patterns
+*                                                                      *
+************************************************************************
+-}
+
+checkOrPatNames :: (LPat Name) -> RnM [Name]
+checkOrPatNames (L _ pat) = go pat
+  where
+    go WildPat{} = return []
+    go (VarPat n) = return [ unLoc n ]
+    go (LazyPat p) = checkOrPatNames p
+    go p@(OrPat ps) = do
+      (n : ns) <- mapM checkOrPatNames ps
+      unless (all (((==) `on` map nameOccName) n) ns) $
+        addErr (nest 4 (text "Patterns in or pattern must bind same variables:" $$ ppr p))
+      return n
+    go (AsPat (L _ a) p) = (a :) <$> checkOrPatNames p
+    go (ParPat p) = checkOrPatNames p
+    go (BangPat p) = checkOrPatNames p
+    go (ListPat ps _ _) = concatMapM checkOrPatNames ps
+    go (TuplePat ps _ _) = concatMapM checkOrPatNames ps
+    go (SumPat p _ _ _) = checkOrPatNames p
+    go (PArrPat ps _) = concatMapM checkOrPatNames ps
+    go (ConPatIn _ ps) = concatMapM checkOrPatNames (hsConPatArgs ps)
+    go (ConPatOut {pat_args=ps}) = concatMapM checkOrPatNames (hsConPatArgs ps)
+    go (ViewPat _ p _) = checkOrPatNames p
+    go SplicePat{} = return []
+    go LitPat{} = return []
+    go NPat{} = return []
+    go (NPlusKPat (L _ n) _ _ _ _ _) = return [n]
+    go (SigPatIn p _) = checkOrPatNames p
+    go (SigPatOut p _) = checkOrPatNames p
+    go (CoPat _ p _) = go p
 
 {-
 ************************************************************************

@@ -91,6 +91,7 @@ hsPatType (WildPat ty)                = ty
 hsPatType (VarPat (L _ var))          = idType var
 hsPatType (BangPat pat)               = hsLPatType pat
 hsPatType (LazyPat pat)               = hsLPatType pat
+hsPatType (OrPat pats)                = hsLPatType (head pats)
 hsPatType (LitPat lit)                = hsLitType lit
 hsPatType (AsPat var _)               = idType (unLoc var)
 hsPatType (ViewPat _ _ ty)            = ty
@@ -1198,6 +1199,11 @@ zonk_pat env (VarPat (L l v))
 zonk_pat env (LazyPat pat)
   = do  { (env', pat') <- zonkPat env pat
         ; return (env',  LazyPat pat') }
+
+zonk_pat env (OrPat pats)
+  = do  { (env', pats') <- zonkPats env pats
+        ; return (env', OrPat pats')
+        }
 
 zonk_pat env (BangPat pat)
   = do  { (env', pat') <- zonkPat env pat

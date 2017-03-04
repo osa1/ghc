@@ -48,6 +48,7 @@ import Util
 import Outputable
 import qualified GHC.LanguageExtensions as LangExt
 import Control.Arrow  ( second )
+import Data.Bifunctor (first)
 import ListSetOps ( getNth )
 
 {-
@@ -471,6 +472,9 @@ tc_pat penv (TuplePat pats boxity _) pat_ty thing_inside
         ; ASSERT( length con_arg_tys == length pats ) -- Syntactically enforced
           return (mkHsWrapPat coi possibly_mangled_result pat_ty, res)
         }
+
+tc_pat penv (OrPat pats) pat_ty thing_inside
+  = first OrPat <$> tc_lpats penv pats (replicate (length pats) pat_ty) thing_inside
 
 tc_pat penv (SumPat pat alt arity _) pat_ty thing_inside
   = do  { let tc = sumTyCon arity
