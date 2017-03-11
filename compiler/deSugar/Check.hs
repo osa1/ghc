@@ -321,19 +321,54 @@ checkSingle' locn var p = do
 checkMatches :: DynFlags -> DsMatchContext
              -> [Id] -> [LMatch Id (LHsExpr Id)] -> DsM ()
 checkMatches dflags ctxt vars matches = do
-  tracePmD "checkMatches" (hang (vcat [ppr ctxt
-                               , ppr vars
-                               , text "Matches:"])
-                               2
-                               (vcat (map ppr matches)))
-  mb_pm_res <- tryM $ getResult $ case matches of
+  let matches' = concatMap expandOrPat_match matches
+  tracePmD "checkMatches" (vcat [ppr ctxt
+                                      , ppr vars
+                                      , text "Matches:"
+                                      , vcat (map ppr (zip [1 :: Int ..] matches))
+                                      , text "matches':"
+                                      , ppr matches' ])
+  mb_pm_res <- tryM $ getResult $ case matches' of
     -- Check EmptyCase separately
     -- See Note [Checking EmptyCase Expressions]
     [] | [var] <- vars -> checkEmptyCase' var
-    _normal_match      -> checkMatches' vars matches
+    _normal_match      -> checkMatches' vars matches'
   case mb_pm_res of
     Left  _   -> warnPmIters dflags ctxt
     Right res -> dsPmWarn dflags ctxt res
+
+expandOrPat_match :: LMatch id expr -> [LMatch id expr]
+expandOrPat_match (L l (Match ctxt pats ty rhss)) =
+    map (\pats' -> L l (Match ctxt pats' ty rhss))
+        (productList (map expandOrPat pats))
+
+expandOrPat :: LPat id -> [LPat id]
+expandOrPat lp@(L l p0) = case p0 of
+  WildPat{} -> [lp]
+  VarPat{} -> [lp]
+  LazyPat p -> map (L l . LazyPat) (expandOrPat p)
+  OrPat ps -> concatMap expandOrPat ps
+  AsPat v p -> map (L l . AsPat v) (expandOrPat p)
+  ParPat p -> map (L l . ParPat) (expandOrPat p)
+  BangPat p -> map (L l . BangPat) (expandOrPat p)
+  ListPat ps ty1 ty2 -> map (\ps' -> L l (ListPat ps' ty1 ty2)) (productList (map expandOrPat ps))
+  TuplePat ps b tc -> map (\ps' -> L l (TuplePat ps' b tc)) (productList (map expandOrPat ps))
+  SumPat p t a ty -> map (\p' -> L l (SumPat p' t a ty)) (expandOrPat p)
+  PArrPat ps ty -> map (\ps' -> L l (PArrPat ps' ty)) (productList (map expandOrPat ps))
+  ConPatIn{} -> error "expandOrPat: ConPatIn"
+  ConPatOut{} -> [lp]
+  ViewPat e p ty -> map (\p' -> L l (ViewPat e p' ty)) (expandOrPat p)
+  SplicePat{} -> [lp]
+  LitPat{} -> [lp]
+  NPat{} -> [lp]
+  NPlusKPat{} -> [lp]
+  SigPatIn p ty -> map (\p' -> L l (SigPatIn p' ty)) (expandOrPat p)
+  SigPatOut p ty -> map (\p' -> L l (SigPatOut p' ty)) (expandOrPat p)
+  CoPat co p ty -> map (\p' -> L l (CoPat co (unLoc p') ty)) (expandOrPat (L l p))
+
+productList :: [[a]] -> [[a]]
+productList []       = [[]]
+productList (l : ls) = concatMap (\l' -> map (l' :) (productList ls)) l
 
 -- | Check a matchgroup (case, functions, etc.). To be called on a non-empty
 -- list of matches. For empty case expressions, use checkEmptyCase' instead.
@@ -743,16 +778,17 @@ translateConPatVec fam_insts  univ_tys  ex_tvs c (RecCon (HsRecFields fs _))
 
 -- Translate a single match
 translateMatch :: FamInstEnvs -> LMatch Id (LHsExpr Id) -> DsM (PatVec,[PatVec])
-translateMatch fam_insts (L _ (Match _ lpats _ grhss)) = do
-  pats'   <- concat <$> translatePatVec fam_insts pats
-  guards' <- mapM (translateGuards fam_insts) guards
+translateMatch fam_insts (L _ m@(Match _ lpats _ grhss)) = do
+  pats'   <- concat <$> translatePatVec fam_insts (map unLoc lpats)
+  guards' <- mapM (translateGuards fam_insts) (map extractGuards (grhssGRHSs grhss))
+  pprTrace "match:" (ppr m) (return ())
+  pprTrace "pats':" (ppr (length pats')) (return ())
+  pprTrace "original guards:" (ppr (length (grhssGRHSs grhss))) (return ())
+  pprTrace "guards':" (ppr (length guards')) (return ())
   return (pats', guards')
   where
     extractGuards :: LGRHS Id (LHsExpr Id) -> [GuardStmt Id]
     extractGuards (L _ (GRHS gs _)) = map unLoc gs
-
-    pats   = map unLoc lpats
-    guards = map extractGuards (grhssGRHSs grhss)
 
 -- -----------------------------------------------------------------------
 -- * Transform source guards (GuardStmt Id) to PmPats (Pattern)
@@ -1847,12 +1883,12 @@ pprPmPatDebug (PmGrd pv ge) = text "PmGrd" <+> hsep (map pprPmPatDebug pv)
 pprPatVec :: PatVec -> SDoc
 pprPatVec ps = hang (text "Pattern:") 2
                 (brackets $ sep
-                  $ punctuate (comma <> char '\n') (map pprPmPatDebug ps))
+                  $ punctuate comma (map pprPmPatDebug ps))
 
 pprValAbs :: [ValAbs] -> SDoc
 pprValAbs ps = hang (text "ValAbs:") 2
                 (brackets $ sep
-                  $ punctuate (comma) (map pprPmPatDebug ps))
+                  $ punctuate comma (map pprPmPatDebug ps))
 
 pprValVecDebug :: ValVec -> SDoc
 pprValVecDebug (ValVec vas _d) = text "ValVec" <+>
