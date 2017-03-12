@@ -663,6 +663,7 @@ hsPatNeedsParens (ListPat {})        = False
 hsPatNeedsParens (PArrPat {})        = False
 hsPatNeedsParens (LitPat {})         = False
 hsPatNeedsParens (NPat {})           = False
+hsPatNeedsParens (OrPat {})          = False
 
 conPatNeedsParens :: HsConDetails a b -> Bool
 conPatNeedsParens (PrefixCon {}) = False
