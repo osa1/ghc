@@ -757,8 +757,12 @@ matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
 
       | eqn_has_or_pat eqn
       = do let bndrs = concatMap (collectPatBinders . L l) (eqn_pats eqn)
-           rhs_join_point <- newSysLocalDsNoLP (mkLamTypes bndrs rhs_ty)
-           fail_bndr <- newSysLocalDsNoLP rhs_ty
+
+           fail_bndr      <- newSysLocalDsNoLP rhs_ty
+           rhs_join_point <- newSysLocalDsNoLP (mkLamTypes (bndrs ++ [fail_bndr]) rhs_ty)
+           pprTrace "rhs_join_point:" (ppr rhs_join_point) (return ())
+           pprTrace "fail_bndr:     " (ppr fail_bndr) (return ())
+
            let MatchResult can_fail old_ret = eqn_rhs eqn
            old_rhs <- old_ret (Var fail_bndr)
 
