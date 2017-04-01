@@ -940,7 +940,7 @@ collect_lpat (L _ pat) bndrs
     go (WildPat _)                = bndrs
     go (LazyPat pat)              = collect_lpat pat bndrs
 
-    go (OrPat pats)               = collect_lpat (head pats) bndrs
+    go (OrPat pats)               = collect_lpat (last pats) bndrs
 
     go (BangPat pat)              = collect_lpat pat bndrs
     go (AsPat (L _ a) pat)        = a : collect_lpat pat bndrs

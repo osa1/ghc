@@ -130,6 +130,7 @@ data MatchResult
                         -- be duplicatable!
 
 data CanItFail = CanFail | CantFail
+  deriving (Eq)
 
 orFail :: CanItFail -> CanItFail -> CanItFail
 orFail CantFail CantFail = CantFail

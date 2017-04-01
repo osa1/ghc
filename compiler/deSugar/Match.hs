@@ -765,12 +765,15 @@ matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
            old_rhs <- old_ret (Var fail_bndr)
 
            let expanded = sequence (map (expandOrPat . L l) (eqn_pats eqn))
-           let new_rhs  = MatchResult can_fail
-                 (if can_fail_b then (\fail -> return (mkApps (Var rhs_join_point) (map Var bndrs ++ [fail])))
-                                else (\_ -> return (mkApps (Var rhs_join_point) (map Var bndrs))))
+           let new_rhs pat_bndrs = MatchResult can_fail
+                 (if can_fail_b then (\fail -> return (mkApps (Var rhs_join_point) (map Var pat_bndrs ++ [fail])))
+                                else (\_ -> return (mkApps (Var rhs_join_point) (map Var pat_bndrs))))
 
+
+           pprTrace "old_rhs:" (ppr old_rhs) (return ())
+           pprTrace "bndrs:" (ppr bndrs) (return ())
            return (Just (rhs_join_point, mkLams (bndrs ++ if can_fail_b then [fail_bndr] else []) old_rhs),
-                   map (\pats -> EqnInfo (map unLoc pats) new_rhs) expanded)
+                   map (\pats -> EqnInfo (map unLoc pats) (new_rhs (concatMap collectPatBinders pats))) expanded)
 
       | otherwise
       = return (Nothing, [eqn])
