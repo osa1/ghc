@@ -65,97 +65,87 @@ except it is monadised, to carry around the name supply, info about
 annotations, etc.
 
 Notes on @match@'s arguments, assuming $m$ equations and $n$ patterns:
-\begin{enumerate}
-\item
-A list of $n$ variable names, those variables presumably bound to the
-$n$ expressions being matched against the $n$ patterns.  Using the
-list of $n$ expressions as the first argument showed no benefit and
-some inelegance.
 
-\item
-The second argument, a list giving the ``equation info'' for each of
-the $m$ equations:
-\begin{itemize}
-\item
-the $n$ patterns for that equation, and
-\item
-a list of Core bindings [@(Id, CoreExpr)@ pairs] to be ``stuck on
-the front'' of the matching code, as in:
-\begin{verbatim}
-let <binds>
-in  <matching-code>
-\end{verbatim}
-\item
-and finally: (ToDo: fill in)
+1. A list of $n$ variable names, those variables presumably bound to the $n$
+   expressions being matched against the $n$ patterns.  Using the list of $n$
+   expressions as the first argument showed no benefit and some inelegance.
 
-The right way to think about the ``after-match function'' is that it
-is an embryonic @CoreExpr@ with a ``hole'' at the end for the
-final ``else expression''.
-\end{itemize}
+2. The second argument, a list giving the ``equation info'' for each of the $m$
+   equations:
 
-There is a data type, @EquationInfo@, defined in module @DsMonad@.
+   - the $n$ patterns for that equation, and
 
-An experiment with re-ordering this information about equations (in
-particular, having the patterns available in column-major order)
-showed no benefit.
+   - a list of Core bindings [@(Id, CoreExpr)@ pairs] to be ``stuck on the
+     front'' of the matching code, as in:
 
-\item
-A default expression---what to evaluate if the overall pattern-match
-fails.  This expression will (almost?) always be
-a measly expression @Var@, unless we know it will only be used once
-(as we do in @glue_success_exprs@).
+       let <binds>
+       in  <matching-code>
 
-Leaving out this third argument to @match@ (and slamming in lots of
-@Var "fail"@s) is a positively {\em bad} idea, because it makes it
-impossible to share the default expressions.  (Also, it stands no
-chance of working in our post-upheaval world of @Locals@.)
-\end{enumerate}
+   - and finally: (ToDo: fill in)
 
-Note: @match@ is often called via @matchWrapper@ (end of this module),
-a function that does much of the house-keeping that goes with a call
-to @match@.
+     The right way to think about the ``after-match function'' is that it is an
+     embryonic @CoreExpr@ with a ``hole'' at the end for the final ``else
+     expression''.
 
-It is also worth mentioning the {\em typical} way a block of equations
-is desugared with @match@.  At each stage, it is the first column of
-patterns that is examined.  The steps carried out are roughly:
-\begin{enumerate}
-\item
-Tidy the patterns in column~1 with @tidyEqnInfo@ (this may add
-bindings to the second component of the equation-info):
-\begin{itemize}
-\item
-Remove the `as' patterns from column~1.
-\item
-Make all constructor patterns in column~1 into @ConPats@, notably
-@ListPats@ and @TuplePats@.
-\item
-Handle any irrefutable (or ``twiddle'') @LazyPats@.
-\end{itemize}
-\item
-Now {\em unmix} the equations into {\em blocks} [w\/ local function
-@unmix_eqns@], in which the equations in a block all have variable
-patterns in column~1, or they all have constructor patterns in ...
-(see ``the mixture rule'' in SLPJ).
-\item
-Call @matchEqnBlock@ on each block of equations; it will do the
-appropriate thing for each kind of column-1 pattern, usually ending up
-in a recursive call to @match@.
-\end{enumerate}
+   There is a data type, @EquationInfo@, defined in module @DsMonad@.
 
-We are a little more paranoid about the ``empty rule'' (SLPJ, p.~87)
-than the Wadler-chapter code for @match@ (p.~93, first @match@ clause).
-And gluing the ``success expressions'' together isn't quite so pretty.
+   An experiment with re-ordering this information about equations (in
+   particular, having the patterns available in column-major order) showed no
+   benefit.
 
-This (more interesting) clause of @match@ uses @tidy_and_unmix_eqns@
-(a)~to get `as'- and `twiddle'-patterns out of the way (tidying), and
-(b)~to do ``the mixture rule'' (SLPJ, p.~88) [which really {\em
-un}mixes the equations], producing a list of equation-info
-blocks, each block having as its first column of patterns either all
-constructors, or all variables (or similar beasts), etc.
+   (NOTE(osa1): Row-major order (currently being used): Patterns of equations
+   are next to each other in a list.
+
+   Column-major order: Patterns being matched first to branch between equations
+   are next to each other in a list.)
+
+3. A default expression---what to evaluate if the overall pattern-match fails.
+   This expression will (almost?) always be a measly expression @Var@, unless we
+   know it will only be used once (as we do in @glue_success_exprs@).
+
+   Leaving out this third argument to @match@ (and slamming in lots of @Var
+   "fail"@s) is a positively _bad_ idea, because it makes it impossible to
+   share the default expressions.  (Also, it stands no chance of working in our
+   post-upheaval world of @Locals@.)
+
+Note: @match@ is often called via @matchWrapper@ (end of this module), a
+function that does much of the house-keeping that goes with a call to @match@.
+
+It is also worth mentioning the _typical_ way a block of equations is desugared
+with @match@. At each stage, it is the first column of patterns that is
+examined. The steps carried out are roughly:
+
+1. Tidy the patterns in column~1 with @tidyEqnInfo@ (this may add bindings to
+   the second component of the equation-info):
+
+   - Remove the `as' patterns from column~1.
+
+   - Make all constructor patterns in column~1 into @ConPats@, notably
+     @ListPats@ and @TuplePats@.
+
+   - Handle any irrefutable (or ``twiddle'') @LazyPats@.
+
+2. Now _unmix_ the equations into _blocks_ [w\/ local function @unmix_eqns@], in
+   which the equations in a block all have variable patterns in column~1, or they
+   all have constructor patterns in ... (see ``the mixture rule'' in SLPJ).
+
+3. Call @matchEqnBlock@ on each block of equations; it will do the appropriate
+   thing for each kind of column-1 pattern, usually ending up in a recursive
+   call to @match@.
+
+We are a little more paranoid about the ``empty rule'' (SLPJ, p.~87) than the
+Wadler-chapter code for @match@ (p.~93, first @match@ clause). And gluing the
+``success expressions'' together isn't quite so pretty.
+
+This (more interesting) clause of @match@ uses @tidy_and_unmix_eqns@ (a)~to get
+`as'- and `twiddle'-patterns out of the way (tidying), and (b)~to do ``the
+mixture rule'' (SLPJ, p.~88) [which really _un_mixes the equations], producing a
+list of equation-info blocks, each block having as its first column of patterns
+either all constructors, or all variables (or similar beasts), etc.
 
 @match_unmixed_eqn_blks@ simply takes the place of the @foldr@ in the
-Wadler-chapter @match@ (p.~93, last clause), and @match_unmixed_blk@
-corresponds roughly to @matchVarCon@.
+Wadler-chapter @match@ (p.~93, last clause), and @match_unmixed_blk@ corresponds
+roughly to @matchVarCon@.
 
 Note [Match Ids]
 ~~~~~~~~~~~~~~~~
