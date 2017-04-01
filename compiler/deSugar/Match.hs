@@ -758,18 +758,18 @@ matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
       | eqn_has_or_pat eqn
       = do let bndrs = concatMap (collectPatBinders . L l) (eqn_pats eqn)
 
-           fail_bndr      <- newSysLocalDsNoLP rhs_ty
-           rhs_join_point <- newSysLocalDsNoLP (mkLamTypes (bndrs ++ [fail_bndr]) rhs_ty)
-           pprTrace "rhs_join_point:" (ppr rhs_join_point) (return ())
-           pprTrace "fail_bndr:     " (ppr fail_bndr) (return ())
-
            let MatchResult can_fail old_ret = eqn_rhs eqn
+           let can_fail_b = can_fail == CanFail
+           fail_bndr      <- newSysLocalDsNoLP rhs_ty
+           rhs_join_point <- newSysLocalDsNoLP (mkLamTypes (bndrs ++ if can_fail_b then [fail_bndr] else []) rhs_ty)
            old_rhs <- old_ret (Var fail_bndr)
 
            let expanded = sequence (map (expandOrPat . L l) (eqn_pats eqn))
-           let new_rhs  = MatchResult can_fail (\fail -> return (mkApps (Var rhs_join_point) (map Var bndrs ++ [fail])))
+           let new_rhs  = MatchResult can_fail
+                 (if can_fail_b then (\fail -> return (mkApps (Var rhs_join_point) (map Var bndrs ++ [fail])))
+                                else (\_ -> return (mkApps (Var rhs_join_point) (map Var bndrs))))
 
-           return (Just (rhs_join_point, mkLams (bndrs ++ [fail_bndr]) old_rhs),
+           return (Just (rhs_join_point, mkLams (bndrs ++ if can_fail_b then [fail_bndr] else []) old_rhs),
                    map (\pats -> EqnInfo (map unLoc pats) new_rhs) expanded)
 
       | otherwise
