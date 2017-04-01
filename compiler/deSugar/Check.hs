@@ -12,7 +12,10 @@ module Check (
         checkSingle, checkMatches, isAnyPmCheckEnabled,
 
         -- See Note [Type and Term Equality Propagation]
-        genCaseTmCs1, genCaseTmCs2
+        genCaseTmCs1, genCaseTmCs2,
+
+        -- HACKHACKHACK
+        expandOrPat_match, expandOrPat
     ) where
 
 #include "HsVersions.h"
@@ -366,6 +369,7 @@ expandOrPat lp@(L l p0) = case p0 of
   SigPatOut p ty -> map (\p' -> L l (SigPatOut p' ty)) (expandOrPat p)
   CoPat co p ty -> map (\p' -> L l (CoPat co (unLoc p') ty)) (expandOrPat (L l p))
 
+-- this is just `sequence`
 productList :: [[a]] -> [[a]]
 productList []       = [[]]
 productList (l : ls) = concatMap (\l' -> map (l' :) (productList ls)) l
@@ -781,10 +785,10 @@ translateMatch :: FamInstEnvs -> LMatch Id (LHsExpr Id) -> DsM (PatVec,[PatVec])
 translateMatch fam_insts (L _ m@(Match _ lpats _ grhss)) = do
   pats'   <- concat <$> translatePatVec fam_insts (map unLoc lpats)
   guards' <- mapM (translateGuards fam_insts) (map extractGuards (grhssGRHSs grhss))
-  pprTrace "match:" (ppr m) (return ())
-  pprTrace "pats':" (ppr (length pats')) (return ())
-  pprTrace "original guards:" (ppr (length (grhssGRHSs grhss))) (return ())
-  pprTrace "guards':" (ppr (length guards')) (return ())
+  -- pprTrace "match:" (ppr m) (return ())
+  -- pprTrace "pats':" (ppr (length pats')) (return ())
+  -- pprTrace "original guards:" (ppr (length (grhssGRHSs grhss))) (return ())
+  -- pprTrace "guards':" (ppr (length guards')) (return ())
   return (pats', guards')
   where
     extractGuards :: LGRHS Id (LHsExpr Id) -> [GuardStmt Id]

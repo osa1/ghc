@@ -49,6 +49,7 @@ import FastString
 import Unique
 import UniqDFM
 
+import Data.Bifunctor (bimap)
 import Control.Monad( when, unless )
 import qualified Data.Map as Map
 import Data.List (groupBy)
@@ -334,48 +335,41 @@ See also Note [Case elimination: lifted case] in Simplify.
 *                                                                      *
 ************************************************************************
 
-Tidy up the leftmost pattern in an @EquationInfo@, given the variable @v@
-which will be scrutinised.  This means:
-\begin{itemize}
-\item
-Replace variable patterns @x@ (@x /= v@) with the pattern @_@,
-together with the binding @x = v@.
-\item
-Replace the `as' pattern @x@@p@ with the pattern p and a binding @x = v@.
-\item
-Removing lazy (irrefutable) patterns (you don't want to know...).
-\item
-Converting explicit tuple-, list-, and parallel-array-pats into ordinary
-@ConPats@.
-\item
-Convert the literal pat "" to [].
-\end{itemize}
+Tidy up the leftmost pattern in an @EquationInfo@, given the variable @v@ which
+will be scrutinised.  This means:
 
-The result of this tidying is that the column of patterns will include
-{\em only}:
-\begin{description}
-\item[@WildPats@:]
-The @VarPat@ information isn't needed any more after this.
+- Replace variable patterns @x@ (@x /= v@) with the pattern @_@, together with
+  the binding @x = v@.
 
-\item[@ConPats@:]
-@ListPats@, @TuplePats@, etc., are all converted into @ConPats@.
+- Replace the `as' pattern `x@p` with the pattern p and a binding `x = v`.
 
-\item[@LitPats@ and @NPats@:]
-@LitPats@/@NPats@ of ``known friendly types'' (Int, Char,
-Float,  Double, at least) are converted to unboxed form; e.g.,
-\tr{(NPat (HsInt i) _ _)} is converted to:
-\begin{verbatim}
-(ConPat I# _ _ [LitPat (HsIntPrim i)])
-\end{verbatim}
-\end{description}
+- Removing lazy (irrefutable) patterns (you don't want to know...).
+
+- Converting explicit tuple-, list-, and parallel-array-pats into ordinary
+  @ConPats@.
+
+- Convert the literal pat "" to [].
+
+The result of this tidying is that the column of patterns will include _only_:
+
+- WildPats: The @VarPat@ information isn't needed any more after this.
+
+- ConPats: @ListPats@, @TuplePats@, etc., are all converted into @ConPats@.
+
+- LitPats and NPats:
+
+  @LitPats@/@NPats@ of ``known friendly types'' (Int, Char, Float,  Double, at
+  least) are converted to unboxed form; e.g., `(NPat (HsInt i) _ _)` is
+  converted to:
+
+    (ConPat I# _ _ [LitPat (HsIntPrim i)])
 -}
 
 tidyEqnInfo :: Id -> EquationInfo
             -> DsM (DsWrapper, EquationInfo)
-        -- DsM'd because of internal call to dsLHsBinds
-        --      and mkSelectorBinds.
-        -- "tidy1" does the interesting stuff, looking at
-        -- one pattern and fiddling the list of bindings.
+        -- DsM'd because of internal call to dsLHsBinds and mkSelectorBinds.
+        -- "tidy1" does the interesting stuff, looking at one pattern and
+        -- fiddling the list of bindings.
         --
         -- POST CONDITION: head pattern in the EqnInfo is
         --      WildPat
@@ -390,7 +384,7 @@ tidyEqnInfo _ (EqnInfo { eqn_pats = [] })
 
 tidyEqnInfo v eqn@(EqnInfo { eqn_pats = pat : pats })
   = do { (wrap, pat') <- tidy1 v pat
-       ; return (wrap, eqn { eqn_pats = do pat' : pats }) }
+       ; return (wrap, eqn { eqn_pats = pat' : pats }) }
 
 tidy1 :: Id               -- The Id being scrutinised
       -> Pat Id           -- The pattern against which it is to be matched
@@ -485,10 +479,17 @@ tidy1 _ (LitPat lit)
 tidy1 _ (NPat (L _ lit) mb_neg eq ty)
   = return (idDsWrapper, tidyNPat tidyLitPat lit mb_neg eq ty)
 
--- Everything else goes through unchanged...
+tidy1 _ p@(OrPat _) = pprPanic "TODO: tidy1 OrPat" (ppr p)
 
-tidy1 _ non_interesting_pat
-  = return (idDsWrapper, non_interesting_pat)
+-- Everything else goes through unchanged...
+tidy1 _ non_interesting_pat@(ListPat _ _ (Just _)) = return (idDsWrapper, non_interesting_pat)
+tidy1 _ non_interesting_pat@ViewPat{}   = return (idDsWrapper, non_interesting_pat)
+tidy1 _ non_interesting_pat@ConPatIn{}  = return (idDsWrapper, non_interesting_pat)
+tidy1 _ non_interesting_pat@ConPatOut{} = return (idDsWrapper, non_interesting_pat)
+tidy1 _ non_interesting_pat@SplicePat{} = return (idDsWrapper, non_interesting_pat)
+tidy1 _ non_interesting_pat@NPlusKPat{} = return (idDsWrapper, non_interesting_pat)
+tidy1 _ non_interesting_pat@SigPatIn{}  = return (idDsWrapper, non_interesting_pat)
+tidy1 _ non_interesting_pat@CoPat{}     = return (idDsWrapper, non_interesting_pat)
 
 --------------------
 tidy_bang_pat :: Id -> SrcSpan -> Pat Id -> DsM (DsWrapper, Pat Id)
@@ -714,18 +715,22 @@ one pattern, and match simply only accepts one pattern.
 JJQC 30-Nov-1997
 -}
 
-matchWrapper ctxt mb_scr (MG { mg_alts = L _ matches
+matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
                              , mg_arg_tys = arg_tys
                              , mg_res_ty = rhs_ty
                              , mg_origin = origin })
-  = do  { dflags <- getDynFlags
+  = do  { pprTrace "match_wrapper" (ppr matches) (return ())
+        ; dflags <- getDynFlags
         ; locn   <- getSrcSpanDs
 
         ; new_vars    <- case matches of
                            []    -> mapM newSysLocalDsNoLP arg_tys
                            (m:_) -> selectMatchVars (map unLoc (hsLMatchPats m))
 
+          -- [EquationInfo]
         ; eqns_info   <- mapM (mk_eqn_info new_vars) matches
+        ; (bndrs, eqns_infos) <- bimap catMaybes concat <$>
+                                 mapAndUnzipM expand_or_pats eqns_info
 
         -- pattern match check warnings
         ; unless (isGenerated origin) $
@@ -734,10 +739,39 @@ matchWrapper ctxt mb_scr (MG { mg_alts = L _ matches
               -- See Note [Type and Term Equality Propagation]
           checkMatches dflags (DsMatchContext ctxt locn) new_vars matches
 
+        ; pprTrace "eqns_infos" (ppr eqns_infos) (return ())
         ; result_expr <- handleWarnings $
-                         matchEquations ctxt new_vars eqns_info rhs_ty
-        ; return (new_vars, result_expr) }
+                         matchEquations ctxt new_vars eqns_infos rhs_ty
+        ; return (new_vars, mkLets (map (uncurry NonRec) bndrs) result_expr) }
   where
+    -- | For the fast path, first check if an equation has any or patterns.
+    eqn_has_or_pat :: EquationInfo -> Bool
+    eqn_has_or_pat (EqnInfo pats _) = any pat_has_or_pat pats
+      where
+        pat_has_or_pat :: Pat a -> Bool
+        -- FIXME: awful implementation
+        pat_has_or_pat p = length (expandOrPat (L l p)) > 1
+
+    expand_or_pats :: EquationInfo -> DsM (Maybe (Id, CoreExpr), [EquationInfo])
+    expand_or_pats eqn
+
+      | eqn_has_or_pat eqn
+      = do let bndrs = concatMap (collectPatBinders . L l) (eqn_pats eqn)
+           rhs_join_point <- newSysLocalDsNoLP (mkLamTypes bndrs rhs_ty)
+           fail_bndr <- newSysLocalDsNoLP rhs_ty
+           let MatchResult can_fail old_ret = eqn_rhs eqn
+           old_rhs <- old_ret (Var fail_bndr)
+
+           let expanded = sequence (map (expandOrPat . L l) (eqn_pats eqn))
+           let new_rhs  = MatchResult can_fail (\fail -> return (mkApps (Var rhs_join_point) (map Var bndrs ++ [fail])))
+
+           return (Just (rhs_join_point, mkLams (bndrs ++ [fail_bndr]) old_rhs),
+                   map (\pats -> EqnInfo (map unLoc pats) new_rhs) expanded)
+
+      | otherwise
+      = return (Nothing, [eqn])
+
+    mk_eqn_info :: [Id] -> LMatch Id (LHsExpr Id) -> DsM EquationInfo
     mk_eqn_info vars (L _ (Match _ pats _ grhss))
       = do { dflags <- getDynFlags
            ; let upats = map (unLoc . decideBangHood dflags) pats
