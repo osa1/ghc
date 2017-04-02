@@ -52,7 +52,7 @@ import UniqDFM
 import Data.Bifunctor (bimap)
 import Control.Monad( when, unless )
 import qualified Data.Map as Map
-import Data.List (groupBy)
+import Data.List (groupBy, sortOn)
 
 {-
 ************************************************************************
@@ -182,6 +182,7 @@ match vars@(v:_) ty eqns    -- Eqns *can* be empty
 
                 -- Group the equations and match each group in turn
         ; let grouped = groupEquations dflags tidy_eqns
+        ; pprTrace "num of groups:" (ppr (length grouped)) (return ())
 
          -- print the view patterns that are commoned up to help debug
         ; whenDOptM Opt_D_dump_view_pattern_commoning (debug grouped)
@@ -732,6 +733,9 @@ matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
         ; (bndrs, eqns_infos) <- bimap catMaybes concat <$>
                                  mapAndUnzipM expand_or_pats eqns_info
 
+        ; pprTrace "old eqns:" (ppr eqns_info) (return ())
+        ; pprTrace "new eqns:" (ppr eqns_infos) (return ())
+
         -- pattern match check warnings
         ; unless (isGenerated origin) $
           when (isAnyPmCheckEnabled dflags (DsMatchContext ctxt locn)) $
@@ -739,7 +743,6 @@ matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
               -- See Note [Type and Term Equality Propagation]
           checkMatches dflags (DsMatchContext ctxt locn) new_vars matches
 
-        ; pprTrace "eqns_infos" (ppr eqns_infos) (return ())
         ; result_expr <- handleWarnings $
                          matchEquations ctxt new_vars eqns_infos rhs_ty
         ; return (new_vars, mkLets (map (uncurry NonRec) bndrs) result_expr) }
@@ -756,7 +759,7 @@ matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
     expand_or_pats eqn
 
       | eqn_has_or_pat eqn
-      = do let bndrs = concatMap (collectPatBinders . L l) (eqn_pats eqn)
+      = do let bndrs = sortOn occName (concatMap (collectPatBinders . L l) (eqn_pats eqn))
 
            let MatchResult can_fail old_ret = eqn_rhs eqn
            let can_fail_b = can_fail == CanFail
@@ -773,7 +776,7 @@ matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
            pprTrace "old_rhs:" (ppr old_rhs) (return ())
            pprTrace "bndrs:" (ppr bndrs) (return ())
            return (Just (rhs_join_point, mkLams (bndrs ++ if can_fail_b then [fail_bndr] else []) old_rhs),
-                   map (\pats -> EqnInfo (map unLoc pats) (new_rhs (concatMap collectPatBinders pats))) expanded)
+                   map (\pats -> EqnInfo (map unLoc pats) (new_rhs (sortOn occName (concatMap collectPatBinders pats)))) expanded)
 
       | otherwise
       = return (Nothing, [eqn])
