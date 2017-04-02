@@ -69,7 +69,7 @@ import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad       ( when, liftM, ap, unless )
 import Data.Ratio
-import Data.Function       ( on )
+import qualified Data.Set  as S
 
 {-
 *********************************************************
@@ -861,31 +861,31 @@ Or patterns
 ************************************************************************
 -}
 
-checkOrPatNames :: (LPat Name) -> RnM [Name]
+checkOrPatNames :: LPat Name -> RnM (S.Set OccName)
 checkOrPatNames (L _ pat) = go pat
   where
-    go WildPat{} = return []
-    go (VarPat n) = return [ unLoc n ]
+    go WildPat{} = return S.empty
+    go (VarPat n) = return (S.singleton (nameOccName (unLoc n)))
     go (LazyPat p) = checkOrPatNames p
     go p@(OrPat ps) = do
       (n : ns) <- mapM checkOrPatNames ps
-      unless (all (((==) `on` map nameOccName) n) ns) $
+      unless (all (n ==) ns) $
         addErr (nest 4 (text "Patterns in or pattern must bind same variables:" $$ ppr p))
       return n
-    go (AsPat (L _ a) p) = (a :) <$> checkOrPatNames p
+    go (AsPat (L _ a) p) = S.insert (nameOccName a) <$> checkOrPatNames p
     go (ParPat p) = checkOrPatNames p
     go (BangPat p) = checkOrPatNames p
-    go (ListPat ps _ _) = concatMapM checkOrPatNames ps
-    go (TuplePat ps _ _) = concatMapM checkOrPatNames ps
+    go (ListPat ps _ _) = S.unions <$> mapM checkOrPatNames ps
+    go (TuplePat ps _ _) = S.unions <$> mapM checkOrPatNames ps
     go (SumPat p _ _ _) = checkOrPatNames p
-    go (PArrPat ps _) = concatMapM checkOrPatNames ps
-    go (ConPatIn _ ps) = concatMapM checkOrPatNames (hsConPatArgs ps)
-    go (ConPatOut {pat_args=ps}) = concatMapM checkOrPatNames (hsConPatArgs ps)
+    go (PArrPat ps _) = S.unions <$> mapM checkOrPatNames ps
+    go (ConPatIn _ ps) = S.unions <$> mapM checkOrPatNames (hsConPatArgs ps)
+    go (ConPatOut {pat_args=ps}) = S.unions <$> mapM checkOrPatNames (hsConPatArgs ps)
     go (ViewPat _ p _) = checkOrPatNames p
-    go SplicePat{} = return []
-    go LitPat{} = return []
-    go NPat{} = return []
-    go (NPlusKPat (L _ n) _ _ _ _ _) = return [n]
+    go SplicePat{} = return S.empty
+    go LitPat{} = return S.empty
+    go NPat{} = return S.empty
+    go (NPlusKPat (L _ n) _ _ _ _ _) = return (S.singleton (nameOccName n))
     go (SigPatIn p _) = checkOrPatNames p
     go (SigPatOut p _) = checkOrPatNames p
     go (CoPat _ p _) = go p
