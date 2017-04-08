@@ -620,7 +620,7 @@ isIrrefutableHsPat pat
     go1 (SigPatOut pat _)   = go pat
     go1 (TuplePat pats _ _) = all go pats
     go1 (SumPat pat _ _  _) = go pat
-    go1 (ListPat {}) = False
+    go1 (ListPat {})        = False
     go1 (PArrPat {})        = False     -- ?
 
     go1 (ConPatIn {})       = False     -- Conservative
@@ -639,6 +639,7 @@ isIrrefutableHsPat pat
     -- Both should be gotten rid of by renamer before
     -- isIrrefutablePat is called
     go1 (SplicePat {})     = urk pat
+    go1 OrPat{}            = False -- return False when in doubt :)
 
     urk pat = pprPanic "isIrrefutableHsPat:" (ppr pat)
 
