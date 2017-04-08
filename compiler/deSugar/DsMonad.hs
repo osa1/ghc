@@ -136,6 +136,10 @@ orFail :: CanItFail -> CanItFail -> CanItFail
 orFail CantFail CantFail = CantFail
 orFail _        _        = CanFail
 
+instance Outputable CanItFail where
+  ppr CanFail  = text "can fail"
+  ppr CantFail = text "can't fail"
+
 {-
 ************************************************************************
 *                                                                      *
