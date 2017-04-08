@@ -31,4 +31,4 @@ matchSinglePat
         -> LPat Id
         -> Type
         -> MatchResult
-        -> DsM MatchResult
+        -> DsM (Maybe (Id, CoreExpr), MatchResult)

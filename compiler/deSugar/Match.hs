@@ -833,11 +833,12 @@ matchSimply scrut hs_ctx pat result_expr fail_expr = do
       match_result = cantFailMatchResult result_expr
       rhs_ty       = exprType fail_expr
         -- Use exprType of fail_expr, because won't refine in the case of failure!
-    match_result' <- matchSinglePat scrut hs_ctx pat rhs_ty match_result
-    extractMatchResult match_result' fail_expr
+    (mb_bndr, match_result') <- matchSinglePat scrut hs_ctx pat rhs_ty match_result
+    maybe id (mkLet . uncurry NonRec) mb_bndr <$>
+      extractMatchResult match_result' fail_expr
 
 matchSinglePat :: CoreExpr -> HsMatchContext Name -> LPat Id
-               -> Type -> MatchResult -> DsM MatchResult
+               -> Type -> MatchResult -> DsM (Maybe (Id, CoreExpr), MatchResult)
 -- matchSinglePat ensures that the scrutinee is a variable
 -- and then calls match_single_pat_var
 --
@@ -851,12 +852,12 @@ matchSinglePat (Var var) ctx pat ty match_result
 
 matchSinglePat scrut hs_ctx pat ty match_result
   = do { var           <- selectSimpleMatchVarL pat
-       ; match_result' <- match_single_pat_var var hs_ctx pat ty match_result
-       ; return (adjustMatchResult (bindNonRec var scrut) match_result') }
+       ; (bndrs, match_result') <- match_single_pat_var var hs_ctx pat ty match_result
+       ; return (bndrs, adjustMatchResult (bindNonRec var scrut) match_result') }
 
 match_single_pat_var :: Id   -- See Note [Match Ids]
                      -> HsMatchContext Name -> LPat Id
-                     -> Type -> MatchResult -> DsM MatchResult
+                     -> Type -> MatchResult -> DsM (Maybe (Id, CoreExpr), MatchResult)
 match_single_pat_var var ctx pat ty match_result
   = ASSERT2( isInternalName (idName var), ppr var )
     do { pprTrace "match_single_pat_var" (ppr var $$ ppr pat) (return ())
@@ -871,8 +872,8 @@ match_single_pat_var var ctx pat ty match_result
 
        ; (bndrs, eqn_infos) <- expand_or_pats ty eqn_info
 
-         -- TODO: use bndrs
-       ; match [var] ty eqn_infos
+       ; eqn_infos' <- match [var] ty eqn_infos
+       ; return (bndrs, eqn_infos')
        }
   where
     has_or_pat = length (expandOrPat pat) > 1 -- FIXME: slowslowslow

@@ -916,11 +916,11 @@ dsDo stmts
     go _ (BindStmt pat rhs bind_op fail_op res1_ty) stmts
       = do  { body     <- goL stmts
             ; rhs'     <- dsLExpr rhs
-            ; var   <- selectSimpleMatchVarL pat
-            ; match <- matchSinglePat (Var var) (StmtCtxt DoExpr) pat
+            ; var      <- selectSimpleMatchVarL pat
+            ; (mb_bndr, match) <- matchSinglePat (Var var) (StmtCtxt DoExpr) pat
                                       res1_ty (cantFailMatchResult body)
             ; match_code <- handle_failure pat match fail_op
-            ; dsSyntaxExpr bind_op [rhs', Lam var match_code] }
+            ; dsSyntaxExpr bind_op [rhs', Lam var ((maybe id (Let . uncurry NonRec) mb_bndr) match_code)] }
 
     go _ (ApplicativeStmt args mb_join body_ty) stmts
       = do {

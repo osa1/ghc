@@ -117,7 +117,8 @@ matchGuards (LetStmt binds : stmts) ctx rhs rhs_ty = do
 matchGuards (BindStmt pat bind_rhs _ _ _ : stmts) ctx rhs rhs_ty = do
     match_result <- matchGuards stmts ctx rhs rhs_ty
     core_rhs <- dsLExpr bind_rhs
-    matchSinglePat core_rhs (StmtCtxt ctx) pat rhs_ty match_result
+    -- FIXME (osa)
+    snd <$> matchSinglePat core_rhs (StmtCtxt ctx) pat rhs_ty match_result
 
 matchGuards (LastStmt  {} : _) _ _ _ = panic "matchGuards LastStmt"
 matchGuards (ParStmt   {} : _) _ _ _ = panic "matchGuards ParStmt"
