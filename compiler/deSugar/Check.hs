@@ -297,7 +297,7 @@ uncoveredWithTy ty = PmResult FromBuiltin [] (TypeOfUncovered ty) []
 -- | Check a single pattern binding (let)
 checkSingle :: DynFlags -> DsMatchContext -> Id -> Pat Id -> DsM ()
 checkSingle dflags ctxt@(DsMatchContext _ locn) var p = do
-  tracePmD "checkSingle" (vcat [ppr ctxt, ppr var, ppr p])
+  pprTrace "checkSingle" (vcat [ppr ctxt, ppr var, ppr p]) (return ())
   mb_pm_res <- tryM (getResult (checkSingle' locn var p))
   case mb_pm_res of
     Left  _   -> warnPmIters dflags ctxt
@@ -309,8 +309,8 @@ checkSingle' locn var p = do
   liftD resetPmIterDs -- set the iter-no to zero
   fam_insts <- liftD dsGetFamInstEnvs
   clause    <- liftD $ translatePat fam_insts p
-  missing   <- mkInitialUncovered [var]
-  tracePm "checkSingle: missing" (vcat (map pprValVecDebug missing))
+  missing   <- mkInitialUncovered (replicate (length clause) var)
+  pprTrace "checkSingle: missing" (vcat (map pprValVecDebug missing)) (return ())
                                  -- no guards
   PartialResult prov cs us ds <- runMany (pmcheckI clause []) missing
   let us' = UncoveredPatterns us
@@ -694,6 +694,8 @@ translatePat fam_insts pat = case pat of
     tidy_p <- translatePat fam_insts (unLoc p)
     let sum_con = RealDataCon (sumDataCon alt arity)
     return [vanillaConPattern sum_con ty tidy_p]
+
+  OrPat ps -> concatMapM (translatePat fam_insts . unLoc) (concatMap expandOrPat ps)
 
   -- --------------------------------------------------------------------------
   -- Not supposed to happen
@@ -1262,9 +1264,9 @@ mkInitialUncovered vars = do
 pmcheckI :: PatVec -> [PatVec] -> ValVec -> PmM PartialResult
 pmcheckI ps guards vva = do
   n <- liftD incrCheckPmIterDs
-  tracePm "pmCheck" (ppr n <> colon <+> pprPatVec ps
+  pprTrace "pmCheck" (ppr n <> colon <+> pprPatVec ps
                         $$ hang (text "guards:") 2 (vcat (map pprPatVec guards))
-                        $$ pprValVecDebug vva)
+                        $$ pprValVecDebug vva) (return ())
   res <- pmcheck ps guards vva
   tracePm "pmCheckResult:" (ppr res)
   return res
@@ -1314,8 +1316,8 @@ pmcheck (p@(PmGrd pv e) : ps) guards vva@(ValVec vas delta)
           delta'   = delta { delta_tm_cs = tm_state }
       utail <$> pmcheckI (pv ++ ps) guards (ValVec (PmVar y : vas) delta')
 
-pmcheck [] _ (ValVec (_:_) _) = panic "pmcheck: nil-cons"
-pmcheck (_:_) _ (ValVec [] _) = panic "pmcheck: cons-nil"
+pmcheck []       _ (ValVec (_:_) _) = panic "pmcheck: nil-cons"
+pmcheck pv@(_:_) _ (ValVec []    _) = pprPanic "pmcheck: cons-nil" (ppr (length pv)) -- this is our case
 
 pmcheck (p:ps) guards (ValVec (va:vva) delta)
   = pmcheckHdI p ps guards va (ValVec vva delta)
@@ -1877,11 +1879,11 @@ tracePmD herald doc = do
 
 pprPmPatDebug :: PmPat a -> SDoc
 pprPmPatDebug (PmCon cc _arg_tys _con_tvs _con_dicts con_args)
-  = hsep [text "PmCon", ppr cc, hsep (map pprPmPatDebug con_args)]
+  = hsep [text "PmCon", ppr cc, sep $ punctuate comma (map pprPmPatDebug con_args)]
 pprPmPatDebug (PmVar vid) = text "PmVar" <+> ppr vid
 pprPmPatDebug (PmLit li)  = text "PmLit" <+> ppr li
 pprPmPatDebug (PmNLit i nl) = text "PmNLit" <+> ppr i <+> ppr nl
-pprPmPatDebug (PmGrd pv ge) = text "PmGrd" <+> hsep (map pprPmPatDebug pv)
+pprPmPatDebug (PmGrd pv ge) = text "PmGrd" <+> sep (punctuate comma (map pprPmPatDebug pv))
                                            <+> ppr ge
 
 pprPatVec :: PatVec -> SDoc

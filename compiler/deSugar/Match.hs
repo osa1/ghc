@@ -480,7 +480,8 @@ tidy1 _ (LitPat lit)
 tidy1 _ (NPat (L _ lit) mb_neg eq ty)
   = return (idDsWrapper, tidyNPat tidyLitPat lit mb_neg eq ty)
 
-tidy1 _ p@(OrPat _) = pprPanic "TODO: tidy1 OrPat" (ppr p)
+tidy1 _ (OrPat pats)
+  = return (idDsWrapper, OrPat pats) -- TODO(osa): not sure about this part
 
 -- Everything else goes through unchanged...
 tidy1 _ non_interesting_pat@(ListPat _ _ (Just _)) = return (idDsWrapper, non_interesting_pat)
@@ -731,7 +732,7 @@ matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
           -- [EquationInfo]
         ; eqns_info   <- mapM (mk_eqn_info new_vars) matches
         ; (bndrs, eqns_infos) <- bimap catMaybes concat <$>
-                                 mapAndUnzipM expand_or_pats eqns_info
+                                 mapAndUnzipM (expand_or_pats rhs_ty) eqns_info
 
         ; pprTrace "old eqns:" (ppr eqns_info) (return ())
         ; pprTrace "new eqns:" (ppr eqns_infos) (return ())
@@ -747,40 +748,6 @@ matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
                          matchEquations ctxt new_vars eqns_infos rhs_ty
         ; return (new_vars, mkLets (map (uncurry NonRec) bndrs) result_expr) }
   where
-    -- | For the fast path, first check if an equation has any or patterns.
-    eqn_has_or_pat :: EquationInfo -> Bool
-    eqn_has_or_pat (EqnInfo pats _) = any pat_has_or_pat pats
-      where
-        pat_has_or_pat :: Pat a -> Bool
-        -- FIXME: awful implementation
-        pat_has_or_pat p = length (expandOrPat (L l p)) > 1
-
-    expand_or_pats :: EquationInfo -> DsM (Maybe (Id, CoreExpr), [EquationInfo])
-    expand_or_pats eqn
-
-      | eqn_has_or_pat eqn
-      = do let bndrs = sortOn occName (concatMap (collectPatBinders . L l) (eqn_pats eqn))
-
-           let MatchResult can_fail old_ret = eqn_rhs eqn
-           let can_fail_b = can_fail == CanFail
-           fail_bndr      <- newSysLocalDsNoLP rhs_ty
-           rhs_join_point <- newSysLocalDsNoLP (mkLamTypes (bndrs ++ if can_fail_b then [fail_bndr] else []) rhs_ty)
-           old_rhs <- old_ret (Var fail_bndr)
-
-           let expanded = sequence (map (expandOrPat . L l) (eqn_pats eqn))
-           let new_rhs pat_bndrs = MatchResult can_fail
-                 (if can_fail_b then (\fail -> return (mkApps (Var rhs_join_point) (map Var pat_bndrs ++ [fail])))
-                                else (\_ -> return (mkApps (Var rhs_join_point) (map Var pat_bndrs))))
-
-
-           pprTrace "old_rhs:" (ppr old_rhs) (return ())
-           pprTrace "bndrs:" (ppr bndrs) (return ())
-           return (Just (rhs_join_point, mkLams (bndrs ++ if can_fail_b then [fail_bndr] else []) old_rhs),
-                   map (\pats -> EqnInfo (map unLoc pats) (new_rhs (sortOn occName (concatMap collectPatBinders pats)))) expanded)
-
-      | otherwise
-      = return (Nothing, [eqn])
-
     mk_eqn_info :: [Id] -> LMatch Id (LHsExpr Id) -> DsM EquationInfo
     mk_eqn_info vars (L _ (Match _ pats _ grhss))
       = do { dflags <- getDynFlags
@@ -795,6 +762,40 @@ matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
     handleWarnings = if isGenerated origin
                      then discardWarningsDs
                      else id
+
+expand_or_pats :: Type -> EquationInfo -> DsM (Maybe (Id, CoreExpr), [EquationInfo])
+expand_or_pats rhs_ty eqn
+
+  | eqn_has_or_pat eqn
+  = do let bndrs = sortOn occName (concatMap (collectPatBinders . L undefined) (eqn_pats eqn))
+
+       let MatchResult can_fail old_ret = eqn_rhs eqn
+       let can_fail_b = can_fail == CanFail
+       fail_bndr      <- newSysLocalDsNoLP rhs_ty
+       rhs_join_point <- newSysLocalDsNoLP (mkLamTypes (bndrs ++ if can_fail_b then [fail_bndr] else []) rhs_ty)
+       old_rhs <- old_ret (Var fail_bndr)
+
+       let expanded = sequence (map (expandOrPat . L undefined) (eqn_pats eqn))
+       let new_rhs pat_bndrs = MatchResult can_fail
+             (if can_fail_b then (\fail -> return (mkApps (Var rhs_join_point) (map Var pat_bndrs ++ [fail])))
+                            else (\_ -> return (mkApps (Var rhs_join_point) (map Var pat_bndrs))))
+
+
+       pprTrace "old_rhs:" (ppr old_rhs) (return ())
+       pprTrace "bndrs:" (ppr bndrs) (return ())
+       return (Just (rhs_join_point, mkLams (bndrs ++ if can_fail_b then [fail_bndr] else []) old_rhs),
+               map (\pats -> EqnInfo (map unLoc pats) (new_rhs (sortOn occName (concatMap collectPatBinders pats)))) expanded)
+
+  | otherwise
+  = return (Nothing, [eqn])
+
+-- | For the fast path, first check if an equation has any or patterns.
+eqn_has_or_pat :: EquationInfo -> Bool
+eqn_has_or_pat (EqnInfo pats _) = any pat_has_or_pat pats
+  where
+    pat_has_or_pat :: Pat a -> Bool
+    -- FIXME: awful implementation
+    pat_has_or_pat p = length (expandOrPat (L undefined p)) > 1
 
 
 matchEquations  :: HsMatchContext Name
@@ -858,15 +859,23 @@ match_single_pat_var :: Id   -- See Note [Match Ids]
                      -> Type -> MatchResult -> DsM MatchResult
 match_single_pat_var var ctx pat ty match_result
   = ASSERT2( isInternalName (idName var), ppr var )
-    do { dflags <- getDynFlags
+    do { pprTrace "match_single_pat_var" (ppr var $$ ppr pat) (return ())
+       ; dflags <- getDynFlags
        ; locn   <- getSrcSpanDs
 
                     -- Pattern match check warnings
-       ; checkSingle dflags (DsMatchContext ctx locn) var (unLoc pat)
-
+       ; unless has_or_pat $
+           checkSingle dflags (DsMatchContext ctx locn) var (unLoc pat)
        ; let eqn_info = EqnInfo { eqn_pats = [unLoc (decideBangHood dflags pat)]
                                 , eqn_rhs  = match_result }
-       ; match [var] ty [eqn_info] }
+
+       ; (bndrs, eqn_infos) <- expand_or_pats ty eqn_info
+
+         -- TODO: use bndrs
+       ; match [var] ty eqn_infos
+       }
+  where
+    has_or_pat = length (expandOrPat pat) > 1 -- FIXME: slowslowslow
 
 
 {-
