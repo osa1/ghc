@@ -1,0 +1,6 @@
+test('or1', normal, compile_and_run, [''])
+test('or2', normal, compile_and_run, [''])
+test('or3', normal, compile_and_run, [''])
+test('or4', normal, compile_and_run, [''])
+test('or5', normal, compile_and_run, [''])
+test('or6', normal, compile_and_run, [''])
