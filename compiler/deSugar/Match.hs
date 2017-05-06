@@ -48,6 +48,7 @@ import BasicTypes ( isGenerated, fl_value )
 import FastString
 import Unique
 import UniqDFM
+import HsUtils (collectPatBinders, collectPatTyBinders, collectPatDictBinders)
 
 import Data.Bifunctor (bimap)
 import Control.Monad( when, unless )
@@ -717,7 +718,7 @@ one pattern, and match simply only accepts one pattern.
 JJQC 30-Nov-1997
 -}
 
-matchWrapper ctxt mb_scr (MG { mg_alts = L l matches
+matchWrapper ctxt mb_scr (MG { mg_alts = L _ matches
                              , mg_arg_tys = arg_tys
                              , mg_res_ty = rhs_ty
                              , mg_origin = origin })
@@ -767,24 +768,50 @@ expand_or_pats :: Type -> EquationInfo -> DsM (Maybe (Id, CoreExpr), [EquationIn
 expand_or_pats rhs_ty eqn
 
   | eqn_has_or_pat eqn
-  = do let bndrs = sortOn occName (concatMap (collectPatBinders . L undefined) (eqn_pats eqn))
+  = do -- 3 types of binders to bind:
+       --
+       -- - Type binders (pat_tvs)
+       -- - Dictionary binders (pat_dicts)
+       -- - Value binders (pat_args)
+       --
+       -- We should use LHSs of pat_binds
+
+       let ty_bndrs   = sortOn occName (concatMap (collectPatTyBinders . L undefined) (eqn_pats eqn))
+       let dict_bndrs = sortOn occName (concatMap (collectPatDictBinders . L undefined) (eqn_pats eqn))
+       let val_bndrs  = sortOn occName (concatMap (collectPatBinders . L undefined) (eqn_pats eqn))
+       let pat_binds  = concatMap (collectPatBinds . L undefined) (eqn_pats eqn)
+       pprTrace "ty_bndrs: " (ppr ty_bndrs) (return ())
+       pprTrace "dict_bndrs: " (ppr dict_bndrs) (return ())
+       pprTrace "val_bndrs: " (ppr val_bndrs) (return ())
+       pprTrace "pat_binds: " (ppr pat_binds) (return ())
 
        let MatchResult can_fail old_ret = eqn_rhs eqn
        let can_fail_b = can_fail == CanFail
        fail_bndr      <- newSysLocalDsNoLP rhs_ty
-       rhs_join_point <- newSysLocalDsNoLP (mkLamTypes (bndrs ++ if can_fail_b then [fail_bndr] else []) rhs_ty)
+       rhs_join_point <-
+         newSysLocalDsNoLP $
+           mkLamTypes (ty_bndrs ++ dict_bndrs ++ val_bndrs ++ if can_fail_b then [fail_bndr] else []) rhs_ty
        old_rhs <- old_ret (Var fail_bndr)
 
        let expanded = sequence (map (expandOrPat . L undefined) (eqn_pats eqn))
-       let new_rhs pat_bndrs = MatchResult can_fail
-             (if can_fail_b then (\fail -> return (mkApps (Var rhs_join_point) (map Var pat_bndrs ++ [fail])))
-                            else (\_ -> return (mkApps (Var rhs_join_point) (map Var pat_bndrs))))
+       let new_rhs ty_bndrs dict_bndrs pat_bndrs =
+             let args = map (Type . mkTyVarTy) ty_bndrs ++ map Var (dict_bndrs ++ pat_bndrs)
+              in MatchResult can_fail
+                   (if can_fail_b
+                      then (\fail -> return (mkApps (Var rhs_join_point) (args ++ [fail])))
+                      else (\_    -> return (mkApps (Var rhs_join_point) args)))
 
-
-       pprTrace "old_rhs:" (ppr old_rhs) (return ())
-       pprTrace "bndrs:" (ppr bndrs) (return ())
-       return (Just (rhs_join_point, mkLams (bndrs ++ if can_fail_b then [fail_bndr] else []) old_rhs),
-               map (\pats -> EqnInfo (map unLoc pats) (new_rhs (sortOn occName (concatMap collectPatBinders pats)))) expanded)
+       -- pprTrace "old_rhs:" (ppr old_rhs) (return ())
+       -- pprTrace "bndrs:" (ppr bndrs) (return ())
+       pat_binds' <- concatMapM dsTcEvBinds pat_binds
+       return (Just (rhs_join_point,
+                     mkLams (ty_bndrs ++ dict_bndrs ++ val_bndrs ++ if can_fail_b then [fail_bndr] else []) $
+                     mkCoreLets pat_binds' $
+                     old_rhs),
+               map (\pats -> EqnInfo (map unLoc pats)
+                                     (new_rhs (sortOn occName (concatMap collectPatTyBinders pats))
+                                              (sortOn occName (concatMap collectPatDictBinders pats))
+                                              (sortOn occName (concatMap collectPatBinders pats)))) expanded)
 
   | otherwise
   = return (Nothing, [eqn])

@@ -78,6 +78,7 @@ module HsUtils(
   collectHsIdBinders,
   collectHsBindsBinders, collectHsBindBinders, collectMethodBinders,
   collectPatBinders, collectPatsBinders,
+  collectPatTyBinders, collectPatDictBinders, collectPatBinds,
   collectLStmtsBinders, collectStmtsBinders,
   collectLStmtBinders, collectStmtBinders,
 
@@ -928,6 +929,15 @@ collectStmtBinders ApplicativeStmt{} = []
 collectPatBinders :: LPat a -> [a]
 collectPatBinders pat = collect_lpat pat []
 
+collectPatDictBinders :: LPat Id -> [Id]
+collectPatDictBinders pat = collect_lpat_dicts pat []
+
+collectPatTyBinders :: LPat Id -> [Id]
+collectPatTyBinders pat = collect_lpat_tys pat []
+
+collectPatBinds :: LPat Id -> [TcEvBinds]
+collectPatBinds pat = collect_lpat_binds pat []
+
 collectPatsBinders :: [LPat a] -> [a]
 collectPatsBinders pats = foldr collect_lpat [] pats
 
@@ -961,6 +971,102 @@ collect_lpat (L _ pat) bndrs
 
     go (SigPatIn pat _)           = collect_lpat pat bndrs
     go (SigPatOut pat _)          = collect_lpat pat bndrs
+    go (SplicePat _)              = bndrs
+    go (CoPat _ pat _)            = go pat
+
+collect_lpat_dicts :: LPat Id -> [Id] -> [Id]
+collect_lpat_dicts (L _ pat) bndrs
+  = go pat
+  where
+    go (VarPat _)                 = bndrs
+    go (WildPat _)                = bndrs
+    go (LazyPat pat)              = collect_lpat_dicts pat bndrs
+
+    go (OrPat pats)               = collect_lpat_dicts (last pats) bndrs
+
+    go (BangPat pat)              = collect_lpat_dicts pat bndrs
+    go (AsPat _ pat)              = collect_lpat_dicts pat bndrs
+    go (ViewPat _ pat _)          = collect_lpat_dicts pat bndrs
+    go (ParPat  pat)              = collect_lpat_dicts pat bndrs
+
+    go (ListPat pats _ _)         = foldr collect_lpat_dicts bndrs pats
+    go (PArrPat pats _)           = foldr collect_lpat_dicts bndrs pats
+    go (TuplePat pats _ _)        = foldr collect_lpat_dicts bndrs pats
+    go (SumPat pat _ _ _)         = collect_lpat_dicts pat bndrs
+
+    go (ConPatIn _ ps)            = foldr collect_lpat_dicts bndrs (hsConPatArgs ps)
+    go (ConPatOut {pat_dicts=ps}) = bndrs ++ ps
+        -- See Note [Dictionary binders in ConPatOut]
+    go (LitPat _)                 = bndrs
+    go (NPat {})                  = bndrs
+    go (NPlusKPat _ _ _ _ _ _)    = bndrs
+
+    go (SigPatIn pat _)           = collect_lpat_dicts pat bndrs
+    go (SigPatOut pat _)          = collect_lpat_dicts pat bndrs
+    go (SplicePat _)              = bndrs
+    go (CoPat _ pat _)            = go pat
+
+collect_lpat_tys :: LPat Id -> [Id] -> [Id]
+collect_lpat_tys (L _ pat) bndrs
+  = go pat
+  where
+    go (VarPat _)                 = bndrs
+    go (WildPat _)                = bndrs
+    go (LazyPat pat)              = collect_lpat_tys pat bndrs
+
+    go (OrPat pats)               = collect_lpat_tys (last pats) bndrs
+
+    go (BangPat pat)              = collect_lpat_tys pat bndrs
+    go (AsPat _ pat)              = collect_lpat_tys pat bndrs
+    go (ViewPat _ pat _)          = collect_lpat_tys pat bndrs
+    go (ParPat  pat)              = collect_lpat_tys pat bndrs
+
+    go (ListPat pats _ _)         = foldr collect_lpat_tys bndrs pats
+    go (PArrPat pats _)           = foldr collect_lpat_tys bndrs pats
+    go (TuplePat pats _ _)        = foldr collect_lpat_tys bndrs pats
+    go (SumPat pat _ _ _)         = collect_lpat_tys pat bndrs
+
+    go (ConPatIn _ ps)            = foldr collect_lpat_tys bndrs (hsConPatArgs ps)
+    go (ConPatOut {pat_tvs=ps})   = bndrs ++ ps
+        -- See Note [Dictionary binders in ConPatOut]
+    go (LitPat _)                 = bndrs
+    go (NPat {})                  = bndrs
+    go (NPlusKPat _ _ _ _ _ _)    = bndrs
+
+    go (SigPatIn pat _)           = collect_lpat_tys pat bndrs
+    go (SigPatOut pat _)          = collect_lpat_tys pat bndrs
+    go (SplicePat _)              = bndrs
+    go (CoPat _ pat _)            = go pat
+
+collect_lpat_binds :: LPat Id -> [TcEvBinds] -> [TcEvBinds]
+collect_lpat_binds (L _ pat) bndrs
+  = go pat
+  where
+    go (VarPat _)                 = bndrs
+    go (WildPat _)                = bndrs
+    go (LazyPat pat)              = collect_lpat_binds pat bndrs
+
+    go (OrPat pats)               = collect_lpat_binds (last pats) bndrs
+
+    go (BangPat pat)              = collect_lpat_binds pat bndrs
+    go (AsPat _ pat)              = collect_lpat_binds pat bndrs
+    go (ViewPat _ pat _)          = collect_lpat_binds pat bndrs
+    go (ParPat  pat)              = collect_lpat_binds pat bndrs
+
+    go (ListPat pats _ _)         = foldr collect_lpat_binds bndrs pats
+    go (PArrPat pats _)           = foldr collect_lpat_binds bndrs pats
+    go (TuplePat pats _ _)        = foldr collect_lpat_binds bndrs pats
+    go (SumPat pat _ _ _)         = collect_lpat_binds pat bndrs
+
+    go (ConPatIn _ ps)            = foldr collect_lpat_binds bndrs (hsConPatArgs ps)
+    go (ConPatOut {pat_binds=bs}) = bs : bndrs
+        -- See Note [Dictionary binders in ConPatOut]
+    go (LitPat _)                 = bndrs
+    go (NPat {})                  = bndrs
+    go (NPlusKPat _ _ _ _ _ _)    = bndrs
+
+    go (SigPatIn pat _)           = collect_lpat_binds pat bndrs
+    go (SigPatOut pat _)          = collect_lpat_binds pat bndrs
     go (SplicePat _)              = bndrs
     go (CoPat _ pat _)            = go pat
 

@@ -297,7 +297,7 @@ uncoveredWithTy ty = PmResult FromBuiltin [] (TypeOfUncovered ty) []
 -- | Check a single pattern binding (let)
 checkSingle :: DynFlags -> DsMatchContext -> Id -> Pat Id -> DsM ()
 checkSingle dflags ctxt@(DsMatchContext _ locn) var p = do
-  pprTrace "checkSingle" (vcat [ppr ctxt, ppr var, ppr p]) (return ())
+  -- pprTrace "checkSingle" (vcat [ppr ctxt, ppr var, ppr p]) (return ())
   mb_pm_res <- tryM (getResult (checkSingle' locn var p))
   case mb_pm_res of
     Left  _   -> warnPmIters dflags ctxt
@@ -310,7 +310,7 @@ checkSingle' locn var p = do
   fam_insts <- liftD dsGetFamInstEnvs
   clause    <- liftD $ translatePat fam_insts p
   missing   <- mkInitialUncovered (replicate (length clause) var)
-  pprTrace "checkSingle: missing" (vcat (map pprValVecDebug missing)) (return ())
+  -- pprTrace "checkSingle: missing" (vcat (map pprValVecDebug missing)) (return ())
                                  -- no guards
   PartialResult prov cs us ds <- runMany (pmcheckI clause []) missing
   let us' = UncoveredPatterns us
@@ -1264,11 +1264,11 @@ mkInitialUncovered vars = do
 pmcheckI :: PatVec -> [PatVec] -> ValVec -> PmM PartialResult
 pmcheckI ps guards vva = do
   n <- liftD incrCheckPmIterDs
-  pprTrace "pmCheck" (ppr n <> colon <+> pprPatVec ps
-                        $$ hang (text "guards:") 2 (vcat (map pprPatVec guards))
-                        $$ pprValVecDebug vva) (return ())
+  -- pprTrace "pmCheck" (ppr n <> colon <+> pprPatVec ps
+  --                       $$ hang (text "guards:") 2 (vcat (map pprPatVec guards))
+  --                       $$ pprValVecDebug vva) (return ())
   res <- pmcheck ps guards vva
-  tracePm "pmCheckResult:" (ppr res)
+  -- tracePm "pmCheckResult:" (ppr res)
   return res
 {-# INLINE pmcheckI #-}
 

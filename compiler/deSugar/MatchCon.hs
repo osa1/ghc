@@ -139,13 +139,17 @@ matchOneConLike vars ty (eqn1 : eqns)   -- All eqns for a single constructor
               shift (_, eqn@(EqnInfo { eqn_pats = ConPatOut{ pat_tvs = tvs, pat_dicts = ds,
                                                              pat_binds = bind, pat_args = args
                                                   } : pats }))
-                = do ds_bind <- dsTcEvBinds bind
+                = do pprTrace "pat_tvs: " (ppr tvs) (return ())
+                     pprTrace "pat_dicts: " (ppr ds) (return ())
+                     pprTrace "pat_binds: " (ppr bind) (return ())
+                     pprTrace "pat_args: " (ppr args) (return ())
+                     ds_bind <- dsTcEvBinds bind
                      return ( wrapBinds (tvs `zip` tvs1)
                             . wrapBinds (ds  `zip` dicts1)
                             . mkCoreLets ds_bind
                             , eqn { eqn_pats = conArgPats val_arg_tys args ++ pats }
                             )
-              shift (_, (EqnInfo { eqn_pats = ps })) = pprPanic "matchOneCon/shift" (ppr ps)
+              shift (_, EqnInfo { eqn_pats = ps }) = pprPanic "matchOneCon/shift" (ppr ps)
 
         ; arg_vars <- selectConMatchVars val_arg_tys args1
                 -- Use the first equation as a source of
