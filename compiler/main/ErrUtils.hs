@@ -14,7 +14,7 @@ module ErrUtils (
         Severity(..),
 
         -- * Messages
-        ErrMsg, errMsgDoc,
+        ErrMsg, errMsgDoc, errMsgSpan,
         ErrDoc, errDoc, errDocImportant, errDocContext, errDocSupplementary,
         WarnMsg, MsgDoc,
         Messages, ErrorMessages, WarningMessages,
@@ -349,9 +349,12 @@ emptyMessages = (emptyBag, emptyBag)
 isEmptyMessages :: Messages -> Bool
 isEmptyMessages (warns, errs) = isEmptyBag warns && isEmptyBag errs
 
-warnIsErrorMsg :: DynFlags -> ErrMsg
-warnIsErrorMsg dflags
-    = mkPlainErrMsg dflags noSrcSpan (text "\nFailing due to -Werror.")
+warnIsErrorMsg :: DynFlags -> WarnMsg -> ErrMsg
+warnIsErrorMsg dflags ErrMsg{ errMsgSpan = span, errMsgReason = reason }
+    = mkPlainErrMsg dflags span $
+        text "\nFailing due to -Werror" <>
+        maybe empty ((char '=' <>) . text . drop 2) -- drop "-W" flag prefix
+          (warningReasonFlagMsg dflags reason)
 
 errorsFound :: DynFlags -> Messages -> Bool
 errorsFound _dflags (_warns, errs) = not (isEmptyBag errs)

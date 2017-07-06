@@ -323,10 +323,17 @@ instance Exception GhcApiError
 -- -Werror is enabled, or print them out otherwise.
 printOrThrowWarnings :: DynFlags -> Bag WarnMsg -> IO ()
 printOrThrowWarnings dflags warns
-  | anyBag (isWarnMsgFatal dflags) warns
-  = throwIO $ mkSrcErr $ warns `snocBag` warnIsErrorMsg dflags
-  | otherwise
+  | null warn_errs
   = printBagOfErrors dflags warns
+  | otherwise
+  = throwIO (mkSrcErr (warns `unionBags` listToBag warn_errs))
+  where
+    -- Warnings which are made errors with -Werror flags
+    warn_errs =
+      [ warnIsErrorMsg dflags warn
+      | warn <- bagToList warns
+      , isWarnMsgFatal dflags warn
+      ]
 
 handleFlagWarnings :: DynFlags -> [Warn] -> IO ()
 handleFlagWarnings dflags warns = do

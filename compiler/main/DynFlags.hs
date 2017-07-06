@@ -54,7 +54,7 @@ module DynFlags (
         Option(..), showOpt,
         DynLibLoader(..),
         fFlags, fLangFlags, xFlags,
-        wWarningFlags,
+        wWarningFlags, warningReasonFlagMsg,
         dynFlagDependencies,
         tablesNextToCode, mkTablesNextToCode,
         makeDynFlagsConsistent,
@@ -1843,18 +1843,22 @@ defaultLogAction dflags reason severity srcSpan style msg
           printErrs  = defaultLogActionHPrintDoc  dflags stderr
           putStrSDoc = defaultLogActionHPutStrDoc dflags stdout
           -- Pretty print the warning flag, if any (#10752)
-          message = mkLocMessageAnn flagMsg severity srcSpan msg
-          flagMsg = case reason of
-                        NoReason -> Nothing
-                        Reason flag -> (\spec -> "-W" ++ flagSpecName spec ++ flagGrp flag) <$>
-                                          flagSpecOf flag
+          message = mkLocMessageAnn (warningReasonFlagMsg dflags reason) severity srcSpan msg
 
-          flagGrp flag
-              | gopt Opt_ShowWarnGroups dflags =
-                    case smallestGroups flag of
-                        [] -> ""
-                        groups -> " (in " ++ intercalate ", " (map ("-W"++) groups) ++ ")"
-              | otherwise = ""
+warningReasonFlagMsg :: DynFlags -> WarnReason -> Maybe String
+warningReasonFlagMsg dflags reason =
+    case reason of
+      NoReason -> Nothing
+      Reason flag -> do
+        spec <- flagSpecOf flag
+        return ("-W" ++ flagSpecName spec ++ flagGrp flag)
+  where
+    flagGrp flag
+        | gopt Opt_ShowWarnGroups dflags =
+              case smallestGroups flag of
+                  [] -> ""
+                  groups -> " (in " ++ intercalate ", " (map ("-W"++) groups) ++ ")"
+        | otherwise = ""
 
 -- | Like 'defaultLogActionHPutStrDoc' but appends an extra newline.
 defaultLogActionHPrintDoc :: DynFlags -> Handle -> SDoc -> PprStyle -> IO ()
