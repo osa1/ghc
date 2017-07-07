@@ -1843,11 +1843,39 @@ defaultLogAction dflags reason severity srcSpan style msg
           printErrs  = defaultLogActionHPrintDoc  dflags stderr
           putStrSDoc = defaultLogActionHPutStrDoc dflags stdout
           -- Pretty print the warning flag, if any (#10752)
-          message = mkLocMessageAnn flagMsg severity srcSpan msg
-          flagMsg = case reason of
-                        NoReason -> Nothing
-                        Reason flag -> (\spec -> "-W" ++ flagSpecName spec ++ flagGrp flag) <$>
-                                          flagSpecOf flag
+          message = mkLocMessageAnn flagMsg severity' srcSpan msg
+
+          -- promote warning messages to error messages if -Werror or
+          -- -Werror=warn_flag is enabled
+          (severity', flagMsg) =
+            case severity of
+              SevWarning ->
+                case reason of
+                  NoReason
+                    | gopt Opt_WarnIsError dflags ->
+                        (SevError, Nothing)
+                    | otherwise ->
+                        (SevWarning, Nothing)
+                  Reason wflag
+                    | wopt_fatal wflag dflags ->
+                        (SevError,
+                         do spec <- flagSpecOf wflag
+                            return $
+                              "-W" ++ flagSpecName spec ++ flagGrp wflag ++
+                              ", -Werror=" ++ flagSpecName spec)
+                    | otherwise ->
+                        (SevWarning,
+                         do spec <- flagSpecOf wflag
+                            return $
+                              "-W" ++ flagSpecName spec ++ flagGrp wflag)
+              _ ->
+                case reason of
+                  NoReason ->
+                    (severity, Nothing)
+                  Reason flag ->
+                    (severity,
+                     do spec <- flagSpecOf flag
+                        return ("-W" ++ flagSpecName spec ++ flagGrp flag))
 
           flagGrp flag
               | gopt Opt_ShowWarnGroups dflags =

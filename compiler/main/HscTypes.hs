@@ -324,7 +324,7 @@ instance Exception GhcApiError
 printOrThrowWarnings :: DynFlags -> Bag WarnMsg -> IO ()
 printOrThrowWarnings dflags warns
   | anyBag (isWarnMsgFatal dflags) warns
-  = throwIO $ mkSrcErr $ warns `snocBag` warnIsErrorMsg dflags
+  = throwIO $ mkSrcErr warns
   | otherwise
   = printBagOfErrors dflags warns
 

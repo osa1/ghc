@@ -32,7 +32,7 @@ module ErrUtils (
         emptyMessages, mkLocMessage, mkLocMessageAnn, makeIntoWarning,
         mkErrMsg, mkPlainErrMsg, mkErrDoc, mkLongErrMsg, mkWarnMsg,
         mkPlainWarnMsg,
-        warnIsErrorMsg, mkLongWarnMsg,
+        mkLongWarnMsg,
 
         -- * Utilities
         doIfSet, doIfSet_dyn,
@@ -348,10 +348,6 @@ emptyMessages = (emptyBag, emptyBag)
 
 isEmptyMessages :: Messages -> Bool
 isEmptyMessages (warns, errs) = isEmptyBag warns && isEmptyBag errs
-
-warnIsErrorMsg :: DynFlags -> ErrMsg
-warnIsErrorMsg dflags
-    = mkPlainErrMsg dflags noSrcSpan (text "\nFailing due to -Werror.")
 
 errorsFound :: DynFlags -> Messages -> Bool
 errorsFound _dflags (_warns, errs) = not (isEmptyBag errs)
