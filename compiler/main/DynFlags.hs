@@ -585,7 +585,12 @@ data GeneralFlag
 -- | Used when outputting warnings: if a reason is given, it is
 -- displayed. If a warning isn't controlled by a flag, this is made
 -- explicit at the point of use.
-data WarnReason = NoReason | Reason !WarningFlag
+data WarnReason
+  = NoReason
+  -- | Warning was enabled with the flag
+  | Reason !WarningFlag
+  -- | Warning was made an error because of -Werror or -Werror=WarningFlag
+  | ErrReason !(Maybe WarningFlag)
   deriving Show
 
 instance Outputable WarnReason where
@@ -594,6 +599,8 @@ instance Outputable WarnReason where
 instance ToJson WarnReason where
   json NoReason = JSNull
   json (Reason wf) = JSString (show wf)
+  json (ErrReason Nothing) = JSString "Opt_WarnIsError"
+  json (ErrReason (Just wf)) = JSString (show wf)
 
 data WarningFlag =
 -- See Note [Updating flag description in the User's Guide]
@@ -1852,11 +1859,18 @@ defaultLogAction dflags reason severity srcSpan style msg
       flagMsg =
         case reason of
           NoReason -> Nothing
-          Reason flag -> do
-            spec <- flagSpecOf flag
-            return ("-W" ++ flagSpecName spec ++ flagGrp flag)
+          Reason wflag -> do
+            spec <- flagSpecOf wflag
+            return ("-W" ++ flagSpecName spec ++ warnFlagGrp wflag)
+          ErrReason Nothing ->
+            return "-Werror"
+          ErrReason (Just wflag) -> do
+            spec <- flagSpecOf wflag
+            return $
+              "-W" ++ flagSpecName spec ++ warnFlagGrp wflag ++
+              ", -Werror=" ++ flagSpecName spec
 
-      flagGrp flag
+      warnFlagGrp flag
           | gopt Opt_ShowWarnGroups dflags =
                 case smallestGroups flag of
                     [] -> ""
