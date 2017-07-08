@@ -667,14 +667,14 @@ prettyPrintGhcErrors dflags
 
 -- | Checks if given 'WarnMsg' is a fatal warning.
 isWarnMsgFatal :: DynFlags -> WarnMsg -> Maybe (Maybe WarningFlag)
-isWarnMsgFatal dflags ErrMsg{errMsgReason = reason}
-  | Reason wflag <- reason
-  , wopt_fatal wflag dflags
-  = Just (Just wflag)
-  | gopt Opt_WarnIsError dflags
-  = Just Nothing
-  | otherwise
-  = Nothing
+isWarnMsgFatal dflags ErrMsg{errMsgReason = Reason wflag}
+  = if wopt_fatal wflag dflags
+      then Just (Just wflag)
+      else Nothing
+isWarnMsgFatal dflags _
+  = if gopt Opt_WarnIsError dflags
+      then Just Nothing
+      else Nothing
 
 traceCmd :: DynFlags -> String -> String -> IO a -> IO a
 -- trace the command (at two levels of verbosity)
