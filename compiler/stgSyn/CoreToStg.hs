@@ -11,7 +11,7 @@
 -- And, as we have the info in hand, we may convert some lets to
 -- let-no-escapes.
 
-module CoreToStg ( coreToStg, coreExprToStg ) where
+module CoreToStg ( coreToStg ) where
 
 #include "HsVersions.h"
 
@@ -204,11 +204,6 @@ coreToStg :: DynFlags -> Module -> CoreProgram -> [StgTopBinding]
 coreToStg dflags this_mod pgm
   = pgm'
   where (_, _, pgm') = coreTopBindsToStg dflags this_mod emptyVarEnv pgm
-
-coreExprToStg :: CoreExpr -> StgExpr
-coreExprToStg expr
-  = new_expr where (new_expr,_) = initCts emptyVarEnv (coreToStgExpr expr)
-
 
 coreTopBindsToStg
     :: DynFlags
