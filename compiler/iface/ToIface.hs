@@ -12,7 +12,6 @@ module ToIface
     , toIfaceTyVar
       -- * Types
     , toIfaceType, toIfaceTypeX
-    , toIfaceKind
     , toIfaceTcArgs
     , toIfaceTyCon
     , toIfaceTyCon_name
@@ -29,17 +28,8 @@ module ToIface
     , toIfaceExpr
     , toIfaceBang
     , toIfaceSrcBang
-    , toIfaceLetBndr
     , toIfaceIdDetails
     , toIfaceIdInfo
-    , toIfUnfolding
-    , toIfaceOneShot
-    , toIfaceTickish
-    , toIfaceBind
-    , toIfaceAlt
-    , toIfaceCon
-    , toIfaceApp
-    , toIfaceVar
     ) where
 
 #include "HsVersions.h"
