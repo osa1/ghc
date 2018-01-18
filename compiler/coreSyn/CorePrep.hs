@@ -5,7 +5,7 @@
 Core pass to saturate constructors and PrimOps
 -}
 
-{-# LANGUAGE BangPatterns, CPP, MultiWayIf #-}
+{-# LANGUAGE BangPatterns, CPP, MultiWayIf, GeneralizedNewtypeDeriving #-}
 
 module CorePrep (
       corePrepPgm, corePrepExpr, cvtLitInteger,
@@ -62,6 +62,11 @@ import Data.Bits
 import MonadUtils       ( mapAccumLM )
 import Data.List        ( mapAccumL )
 import Control.Monad
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.State
+import Control.Monad.Trans.Reader
+import qualified Data.Set as S
+import CostCentre       ( CostCentre, ccFromThisModule )
 
 {-
 -- ---------------------------------------------------------------------------
@@ -124,6 +129,8 @@ The goal of this pass is to prepare for code generation.
     (non-type) applications where we can, and make sure that we
     annotate according to scoping rules when floating.
 
+12. Collect cost centres (including cost centres in unfoldings).
+
 This is all done modulo type applications and abstractions, so that
 when type erasure is done for conversion to STG, we don't end up with
 any trivial or useless bindings.
@@ -160,6 +167,36 @@ type CpeApp  = CoreExpr    -- Non-terminal 'app'
 type CpeBody = CoreExpr    -- Non-terminal 'body'
 type CpeRhs  = CoreExpr    -- Non-terminal 'rhs'
 
+newtype CpeM result
+  = CpeM (ReaderT (Maybe Module) (StateT (S.Set CostCentre) UniqSM) result)
+  deriving (Functor, Applicative, Monad)
+
+instance MonadUnique CpeM where
+    getUniqueSupplyM = CpeM (lift (lift getUniqueSupplyM))
+    getUniqueM = CpeM (lift (lift getUniqueM))
+    getUniquesM = CpeM (lift (lift getUniquesM))
+
+initCpeM :: Module -> UniqSupply -> CpeM result -> (result, S.Set CostCentre)
+initCpeM mod_name us (CpeM m) =
+    initUs_ us (runStateT (runReaderT m (Just mod_name)) S.empty)
+
+initCpeMIgnoreCCs :: UniqSupply -> CpeM result -> result
+initCpeMIgnoreCCs us (CpeM m) =
+    fst (initUs_ us (runStateT (runReaderT m Nothing) S.empty))
+
+collectCC :: CostCentre -> CpeM ()
+collectCC cc = CpeM $ do
+    mb_mod_name <- ask
+    case mb_mod_name of
+      Nothing ->
+        return ()
+      Just mod_name ->
+        lift $ modify $ \local_ccs ->
+          if (cc `ccFromThisModule` mod_name) then
+            S.insert cc local_ccs
+          else
+            local_ccs
+
 {-
 ************************************************************************
 *                                                                      *
@@ -169,7 +206,7 @@ type CpeRhs  = CoreExpr    -- Non-terminal 'rhs'
 -}
 
 corePrepPgm :: HscEnv -> Module -> ModLocation -> CoreProgram -> [TyCon]
-            -> IO CoreProgram
+            -> IO (CoreProgram, S.Set CostCentre)
 corePrepPgm hsc_env this_mod mod_loc binds data_tycons =
     withTiming (pure dflags)
                (text "CorePrep"<+>brackets (ppr this_mod))
@@ -181,13 +218,14 @@ corePrepPgm hsc_env this_mod mod_loc binds data_tycons =
             -- NB: we must feed mkImplicitBinds through corePrep too
             -- so that they are suitably cloned and eta-expanded
 
-        binds_out = initUs_ us $ do
+        (binds_out, ccs) =
+          initCpeM this_mod us $ do
                       floats1 <- corePrepTopBinds initialCorePrepEnv binds
                       floats2 <- corePrepTopBinds initialCorePrepEnv implicit_binds
                       return (deFloatTop (floats1 `appendFloats` floats2))
 
     endPassIO hsc_env alwaysQualify CorePrep binds_out []
-    return binds_out
+    return (binds_out, ccs)
   where
     dflags = hsc_dflags hsc_env
 
@@ -196,11 +234,11 @@ corePrepExpr dflags hsc_env expr =
     withTiming (pure dflags) (text "CorePrep [expr]") (const ()) $ do
     us <- mkSplitUniqSupply 's'
     initialCorePrepEnv <- mkInitialCorePrepEnv dflags hsc_env
-    let new_expr = initUs_ us (cpeBodyNF initialCorePrepEnv expr)
+    let new_expr = initCpeMIgnoreCCs us (cpeBodyNF initialCorePrepEnv expr)
     dumpIfSet_dyn dflags Opt_D_dump_prep "CorePrep" (ppr new_expr)
     return new_expr
 
-corePrepTopBinds :: CorePrepEnv -> [CoreBind] -> UniqSM Floats
+corePrepTopBinds :: CorePrepEnv -> [CoreBind] -> CpeM Floats
 -- Note [Floating out of top level bindings]
 corePrepTopBinds initialCorePrepEnv binds
   = go initialCorePrepEnv binds
@@ -398,10 +436,10 @@ Into this one:
 -}
 
 cpeBind :: TopLevelFlag -> CorePrepEnv -> CoreBind
-        -> UniqSM (CorePrepEnv,
-                   Floats,         -- Floating value bindings
-                   Maybe CoreBind) -- Just bind' <=> returned new bind; no float
-                                   -- Nothing <=> added bind' to floats instead
+        -> CpeM (CorePrepEnv,
+                 Floats,         -- Floating value bindings
+                 Maybe CoreBind) -- Just bind' <=> returned new bind; no float
+                                 -- Nothing <=> added bind' to floats instead
 cpeBind top_lvl env (NonRec bndr rhs)
   | not (isJoinId bndr)
   = do { (_, bndr1) <- cpCloneBndr env bndr
@@ -463,7 +501,7 @@ cpeBind top_lvl env (Rec pairs)
 ---------------
 cpePair :: TopLevelFlag -> RecFlag -> Demand -> Bool
         -> CorePrepEnv -> OutId -> CoreExpr
-        -> UniqSM (Floats, CpeRhs)
+        -> CpeM (Floats, CpeRhs)
 -- Used for all bindings
 -- The binder is already cloned, hence an OutId
 cpePair top_lvl is_rec dmd is_unlifted env bndr rhs
@@ -518,7 +556,7 @@ cpePair top_lvl is_rec dmd is_unlifted env bndr rhs
       | otherwise
       = dontFloat floats rhs
 
-dontFloat :: Floats -> CpeRhs -> UniqSM (Floats, CpeBody)
+dontFloat :: Floats -> CpeRhs -> CpeM (Floats, CpeBody)
 -- Non-empty floats, but do not want to float from rhs
 -- So wrap the rhs in the floats
 -- But: rhs1 might have lambdas, and we can't
@@ -545,7 +583,7 @@ it seems good for CorePrep to be robust.
 
 ---------------
 cpeJoinPair :: CorePrepEnv -> JoinId -> CoreExpr
-            -> UniqSM (JoinId, CpeRhs)
+            -> CpeM (JoinId, CpeRhs)
 -- Used for all join bindings
 cpeJoinPair env bndr rhs
   = ASSERT(isJoinId bndr)
@@ -585,7 +623,7 @@ for us to mess with the arity because a join point is never exported.
 --              CpeRhs: produces a result satisfying CpeRhs
 -- ---------------------------------------------------------------------------
 
-cpeRhsE :: CorePrepEnv -> CoreExpr -> UniqSM (Floats, CpeRhs)
+cpeRhsE :: CorePrepEnv -> CoreExpr -> CpeM (Floats, CpeRhs)
 -- If
 --      e  ===>  (bs, e')
 -- then
@@ -614,11 +652,20 @@ cpeRhsE env (Tick tickish expr)
   | tickishPlace tickish == PlaceNonLam && tickish `tickishScopesLike` SoftScope
   = do { (floats, body) <- cpeRhsE env expr
          -- See [Floating Ticks in CorePrep]
+       ; collect_tick
        ; return (unitFloat (FloatTick tickish) `appendFloats` floats, body) }
   | otherwise
   = do { body <- cpeBodyNF env expr
+       ; collect_tick
        ; return (emptyFloats, mkTick tickish' body) }
   where
+    collect_tick
+      | ProfNote cc _ _ <- tickish
+      , WayProf `elem` ways (cpe_dynFlags env)
+      = collectCC cc
+      | otherwise
+      = return ()
+
     tickish' | Breakpoint n fvs <- tickish
              -- See also 'substTickish'
              = Breakpoint n (map (getIdFromTrivialExpr . lookupCorePrepEnv env) fvs)
@@ -690,7 +737,7 @@ cvtLitInteger dflags mk_integer _ i
 -- let-bound using 'wrapBinds').  Generally you want this, esp.
 -- when you've reached a binding form (e.g., a lambda) and
 -- floating any further would be incorrect.
-cpeBodyNF :: CorePrepEnv -> CoreExpr -> UniqSM CpeBody
+cpeBodyNF :: CorePrepEnv -> CoreExpr -> CpeM CpeBody
 cpeBodyNF env expr
   = do { (floats, body) <- cpeBody env expr
        ; return (wrapBinds floats body) }
@@ -705,14 +752,14 @@ cpeBodyNF env expr
 --      case (let x = y in z) of ...
 --      ==> let x = y in case z of ...
 --
-cpeBody :: CorePrepEnv -> CoreExpr -> UniqSM (Floats, CpeBody)
+cpeBody :: CorePrepEnv -> CoreExpr -> CpeM (Floats, CpeBody)
 cpeBody env expr
   = do { (floats1, rhs) <- cpeRhsE env expr
        ; (floats2, body) <- rhsToBody rhs
        ; return (floats1 `appendFloats` floats2, body) }
 
 --------
-rhsToBody :: CpeRhs -> UniqSM (Floats, CpeBody)
+rhsToBody :: CpeRhs -> CpeM (Floats, CpeBody)
 -- Remove top level lambdas by let-binding
 
 rhsToBody (Tick t expr)
@@ -762,7 +809,7 @@ only variables in function position.  But if we are sure to make
 runRW# strict (which we do in MkId), this can't happen
 -}
 
-cpeApp :: CorePrepEnv -> CoreExpr -> UniqSM (Floats, CpeRhs)
+cpeApp :: CorePrepEnv -> CoreExpr -> CpeM (Floats, CpeRhs)
 -- May return a CpeRhs because of saturating primops
 cpeApp top_env expr
   = do { let (terminal, args, depth) = collect_args expr
@@ -795,7 +842,7 @@ cpeApp top_env expr
             -> CoreExpr
             -> [ArgInfo]
             -> Int
-            -> UniqSM (Floats, CpeRhs)
+            -> CpeM (Floats, CpeRhs)
     cpe_app env (Var f) (CpeApp Type{} : CpeApp arg : args) depth
         | f `hasKey` lazyIdKey          -- Replace (lazy a) with a, and
        || f `hasKey` noinlineIdKey      -- Replace (noinline a) with a
@@ -877,7 +924,7 @@ cpeApp top_env expr
         -> Type
         -> Floats
         -> [Demand]
-        -> UniqSM (CpeApp, Floats)
+        -> CpeM (CpeApp, Floats)
     rebuild_app [] app _ floats ss = do
       MASSERT(null ss) -- make sure we used all the strictness info
       return (app, floats)
@@ -990,7 +1037,7 @@ okCpeArg expr    = not (exprIsTrivial expr)
 
 -- This is where we arrange that a non-trivial argument is let-bound
 cpeArg :: CorePrepEnv -> Demand
-       -> CoreArg -> Type -> UniqSM (Floats, CpeArg)
+       -> CoreArg -> Type -> CpeM (Floats, CpeArg)
 cpeArg env dmd arg arg_ty
   = do { (floats1, arg1) <- cpeRhsE env arg     -- arg1 can be a lambda
        ; (floats2, arg2) <- if want_float floats1 arg1
@@ -1033,7 +1080,7 @@ maybeSaturate deals with saturating primops and constructors
 The type is the type of the entire application
 -}
 
-maybeSaturate :: Id -> CpeApp -> Int -> UniqSM CpeRhs
+maybeSaturate :: Id -> CpeApp -> Int -> CpeM CpeRhs
 maybeSaturate fn expr n_args
   | Just DataToTagOp <- isPrimOpId_maybe fn     -- DataToTag must have an evaluated arg
                                                 -- A gruesome special case
@@ -1050,14 +1097,14 @@ maybeSaturate fn expr n_args
     sat_expr     = cpeEtaExpand excess_arity expr
 
 -------------
-saturateDataToTag :: CpeApp -> UniqSM CpeApp
+saturateDataToTag :: CpeApp -> CpeM CpeApp
 -- See Note [dataToTag magic]
 saturateDataToTag sat_expr
   = do { let (eta_bndrs, eta_body) = collectBinders sat_expr
        ; eta_body' <- eval_data2tag_arg eta_body
        ; return (mkLams eta_bndrs eta_body') }
   where
-    eval_data2tag_arg :: CpeApp -> UniqSM CpeBody
+    eval_data2tag_arg :: CpeApp -> CpeM CpeBody
     eval_data2tag_arg app@(fun `App` arg)
         | exprIsHNF arg         -- Includes nullary constructors
         = return app            -- The arg is evaluated
@@ -1546,16 +1593,20 @@ getMkIntegerId = cpe_mkIntegerId
 -- Cloning binders
 -- ---------------------------------------------------------------------------
 
-cpCloneBndrs :: CorePrepEnv -> [InVar] -> UniqSM (CorePrepEnv, [OutVar])
+cpCloneBndrs :: CorePrepEnv -> [InVar] -> CpeM (CorePrepEnv, [OutVar])
 cpCloneBndrs env bs = mapAccumLM cpCloneBndr env bs
 
-cpCloneBndr  :: CorePrepEnv -> InVar -> UniqSM (CorePrepEnv, OutVar)
+cpCloneBndr  :: CorePrepEnv -> InVar -> CpeM (CorePrepEnv, OutVar)
 cpCloneBndr env bndr
   | not (isId bndr)
   = return (env, bndr)
 
   | otherwise
   = do { bndr' <- clone_it bndr
+
+       -- Collect cost centers in unfolding if it exists
+       ; forM_ (maybeUnfoldingTemplate (realIdUnfolding bndr)) $
+           mapM_ collectCC . collectCostCentres
 
        -- Drop (now-useless) rules/unfoldings
        -- See Note [Drop unfoldings and rules]
@@ -1613,7 +1664,7 @@ evaldUnfolding) for two reasons
 -- to give the code generator a handle to hang it on
 -- ---------------------------------------------------------------------------
 
-fiddleCCall :: Id -> UniqSM Id
+fiddleCCall :: Id -> CpeM Id
 fiddleCCall id
   | isFCallId id = (id `setVarUnique`) <$> getUniqueM
   | otherwise    = return id
@@ -1622,7 +1673,7 @@ fiddleCCall id
 -- Generating new binders
 -- ---------------------------------------------------------------------------
 
-newVar :: Type -> UniqSM Id
+newVar :: Type -> CpeM Id
 newVar ty
  = seqType ty `seq` do
      uniq <- getUniqueM

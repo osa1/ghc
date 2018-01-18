@@ -1309,15 +1309,16 @@ hscGenHardCode hsc_env cgguts mod_summary output_filename = do
         -------------------
         -- PREPARE FOR CODE GENERATION
         -- Do saturation and convert to A-normal form
-        prepd_binds <- {-# SCC "CorePrep" #-}
+        (prepd_binds, local_ccs_core) <- {-# SCC "CorePrep" #-}
                        corePrepPgm hsc_env this_mod location
                                    core_binds data_tycons
         -----------------  Convert to STG ------------------
-        (stg_binds, cost_centre_info)
+        (stg_binds, (local_ccs_stg, ccss))
             <- {-# SCC "CoreToStg" #-}
                myCoreToStg dflags this_mod prepd_binds
 
-        let prof_init = profilingInitCode this_mod cost_centre_info
+        let cost_centre_info = (S.toList local_ccs_core ++ local_ccs_stg, ccss)
+            prof_init = profilingInitCode this_mod cost_centre_info
             foreign_stubs = foreign_stubs0 `appendStubC` prof_init
 
         ------------------  Code generation ------------------
@@ -1374,7 +1375,7 @@ hscInteractive hsc_env cgguts mod_summary = do
     -------------------
     -- PREPARE FOR CODE GENERATION
     -- Do saturation and convert to A-normal form
-    prepd_binds <- {-# SCC "CorePrep" #-}
+    (prepd_binds, _) <- {-# SCC "CorePrep" #-}
                    corePrepPgm hsc_env this_mod location core_binds data_tycons
     -----------------  Generate byte code ------------------
     comp_bc <- byteCodeGen hsc_env this_mod prepd_binds data_tycons mod_breaks
@@ -1612,7 +1613,7 @@ hscDeclsWithLocation hsc_env0 str source linenumber =
 
     {- Prepare For Code Generation -}
     -- Do saturation and convert to A-normal form
-    prepd_binds <- {-# SCC "CorePrep" #-}
+    (prepd_binds, _) <- {-# SCC "CorePrep" #-}
       liftIO $ corePrepPgm hsc_env this_mod iNTERACTIVELoc core_binds data_tycons
 
     {- Generate byte code -}

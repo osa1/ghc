@@ -7,11 +7,8 @@
 {-
  This is now a sort-of-normal STG-to-STG pass (WDP 94/06), run by stg2stg.
 
-  - Traverses the STG program collecting the cost centres. These are required
+  - Traverses the STG program collecting CAF cost centres. These are required
     to declare the cost centres at the start of code generation.
-
-    Note: because of cross-module unfolding, some of these cost centres may be
-    from other modules.
 
   - Puts on CAF cost-centres if the user has asked for individual CAF
     cost-centres.
@@ -50,16 +47,14 @@ stgMassageForProfiling dflags mod_name _us stg_binds
   = let
         ((local_ccs, cc_stacks),
          stg_binds2)
-          = initMM mod_name (do_top_bindings stg_binds)
+          = initMM (do_top_bindings stg_binds)
 
         (fixed_ccs, fixed_cc_stacks)
           = if gopt Opt_AutoSccsOnIndividualCafs dflags
             then ([],[])  -- don't need "all CAFs" CC
             else ([all_cafs_cc], [all_cafs_ccs])
-
-        local_ccs_no_dups  = nubSort local_ccs
     in
-    ((fixed_ccs ++ local_ccs_no_dups,
+    ((fixed_ccs ++ local_ccs,
       fixed_cc_stacks ++ cc_stacks), stg_binds2)
   where
 
@@ -148,12 +143,6 @@ stgMassageForProfiling dflags mod_name _us stg_binds
     do_expr (StgOpApp con args res_ty)
       = return (StgOpApp con args res_ty)
 
-    do_expr (StgTick note@(ProfNote cc _ _) expr) = do
-        -- Ha, we found a cost centre!
-        collectCC cc
-        expr' <- do_expr expr
-        return (StgTick note expr')
-
     do_expr (StgTick ti expr) = do
         expr' <- do_expr expr
         return (StgTick ti expr')
@@ -204,10 +193,9 @@ stgMassageForProfiling dflags mod_name _us stg_binds
         -- We should really attach (PushCC cc CurrentCCS) to the rhs,
         -- but need to reinstate PushCC for that.
     do_rhs (StgRhsClosure _closure_cc _bi _fv _u []
-               (StgTick (ProfNote cc False{-not tick-} _push)
+               (StgTick (ProfNote _cc False{-not tick-} _push)
                         (StgConApp con args _)))
-      = do collectCC cc
-           return (StgRhsCon currentCCS con args)
+      = return (StgRhsCon currentCCS con args)
 
     do_rhs (StgRhsClosure _ bi fv u args expr) = do
         expr' <- do_expr expr
@@ -222,8 +210,7 @@ stgMassageForProfiling dflags mod_name _us stg_binds
 
 newtype MassageM result
   = MassageM {
-      unMassageM :: Module              -- module name
-                 -> CollectedCCs
+      unMassageM :: CollectedCCs
                  -> (CollectedCCs, result)
     }
 
@@ -231,7 +218,7 @@ instance Functor MassageM where
       fmap = liftM
 
 instance Applicative MassageM where
-      pure x = MassageM (\_ ccs -> (ccs, x))
+      pure x = MassageM (\ccs -> (ccs, x))
       (<*>) = ap
       (*>) = thenMM_
 
@@ -241,31 +228,21 @@ instance Monad MassageM where
 
 -- the initMM function also returns the final CollectedCCs
 
-initMM :: Module        -- module name, which we may consult
-       -> MassageM a
+initMM :: MassageM a
        -> (CollectedCCs, a)
 
-initMM mod_name (MassageM m) = m mod_name ([],[])
+initMM (MassageM m) = m ([],[])
 
 thenMM  :: MassageM a -> (a -> MassageM b) -> MassageM b
 thenMM_ :: MassageM a -> (MassageM b) -> MassageM b
 
-thenMM expr cont = MassageM $ \mod ccs ->
-    case unMassageM expr mod ccs of { (ccs2, result) ->
-    unMassageM (cont result) mod ccs2 }
+thenMM expr cont = MassageM $ \ccs ->
+    case unMassageM expr ccs of { (ccs2, result) ->
+    unMassageM (cont result) ccs2 }
 
-thenMM_ expr cont = MassageM $ \mod ccs ->
-    case unMassageM expr mod ccs of { (ccs2, _) ->
-    unMassageM cont mod ccs2 }
-
-
-collectCC :: CostCentre -> MassageM ()
-collectCC cc
- = MassageM $ \mod_name (local_ccs, ccss)
-  -> if (cc `ccFromThisModule` mod_name) then
-        ((cc : local_ccs, ccss), ())
-     else
-        ((local_ccs, ccss), ())
+thenMM_ expr cont = MassageM $ \ccs ->
+    case unMassageM expr ccs of { (ccs2, _) ->
+    unMassageM cont ccs2 }
 
 -- Version of collectCC used when we definitely want to declare this
 -- CC as local, even if its module name is not the same as the current
@@ -273,12 +250,12 @@ collectCC cc
 -- test prof001,prof002.
 collectNewCC :: CostCentre -> MassageM ()
 collectNewCC cc
- = MassageM $ \_mod_name (local_ccs, ccss)
+ = MassageM $ \(local_ccs, ccss)
               -> ((cc : local_ccs, ccss), ())
 
 collectCCS :: CostCentreStack -> MassageM ()
 
 collectCCS ccs
- = MassageM $ \_mod_name (local_ccs, ccss)
+ = MassageM $ \(local_ccs, ccss)
               -> ASSERT(not (noCCSAttached ccs))
                        ((local_ccs, ccs : ccss), ())
