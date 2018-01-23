@@ -41,7 +41,6 @@ module CoreSyn (
         collectBinders, collectTyBinders, collectTyAndValBinders,
         collectNBinders,
         collectArgs, collectArgsTicks, flattenBinds,
-        collectCostCentres,
 
         exprToType, exprToCoercion_maybe,
         applyTypeToArg,
@@ -2076,29 +2075,6 @@ collectArgsTicks skipTick expr
     go (Tick t e) as ts
       | skipTick t      = go e as (t:ts)
     go e          as ts = (e, as, reverse ts)
-
--- | Collects cost centers, does not look inside unfoldings.
-collectCostCentres :: Expr a -> [CostCentre]
-collectCostCentres e0
-  = go [] e0
-  where
-    go cs e = case e of
-      Var{} -> cs
-      Lit{} -> cs
-      App e1 e2 -> go (go cs e1) e2
-      Lam _ e -> go cs e
-      Let b e -> go (go_bind cs b) e
-      Case scrt _ _ alts -> go_alts (go cs scrt) alts
-      Cast e _ -> go cs e
-      Tick (ProfNote cc _ _) e -> go (cc : cs) e
-      Tick _ e -> go cs e
-      Type{} -> cs
-      Coercion{} -> cs
-
-    go_alts = foldr (\(_con, _bndrs, e) cs -> go cs e)
-
-    go_bind cs (NonRec _ e) = go cs e
-    go_bind cs (Rec bs) = foldr (\(_, e) cs' -> go cs' e) cs bs
 
 
 {-
