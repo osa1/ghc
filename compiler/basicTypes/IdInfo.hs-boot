@@ -8,3 +8,4 @@ vanillaIdInfo :: IdInfo
 coVarDetails :: IdDetails
 isCoVarDetails :: IdDetails -> Bool
 pprIdDetails :: IdDetails -> SDoc
+
