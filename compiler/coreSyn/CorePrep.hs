@@ -67,7 +67,7 @@ import qualified Data.Set as S
 
 {-
 -- ---------------------------------------------------------------------------
--- Overview
+-- Note [CorePrep Overview]
 -- ---------------------------------------------------------------------------
 
 The goal of this pass is to prepare for code generation.
@@ -1700,6 +1700,8 @@ wrapTicks (Floats flag floats0) expr =
 -- Collecting cost centres
 -- ---------------------------------------------------------------------------
 
+-- | Collect cost centres defined in the current module, including those in
+-- unfoldings.
 collectCostCentres :: Module -> CoreProgram -> S.Set CostCentre
 collectCostCentres mod_name
   = foldl' go_bind S.empty
@@ -1726,4 +1728,6 @@ collectCostCentres mod_name
     go_bind cs (Rec bs) =
       foldl' (\cs' (b, e) -> go (maybe cs' (go cs') (get_unf b)) e) cs bs
 
+    -- Unfoldings may have cost centres that in the original definion are
+    -- optimized away, see #5889.
     get_unf = maybeUnfoldingTemplate . realIdUnfolding

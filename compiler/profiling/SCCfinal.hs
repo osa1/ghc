@@ -10,8 +10,9 @@
   - Traverses the STG program collecting CAF cost centres. These are required
     to declare the cost centres at the start of code generation.
 
-  - Puts on CAF cost-centres if the user has asked for individual CAF
-    cost-centres.
+  - Generates and puts on CAF cost-centres if the user has asked for individual
+    CAF cost-centres. Non-CAF cost-centres are collected by CorePrep, see step
+    12 in Note [CorePrep Overview].
 -}
 
 module SCCfinal ( stgMassageForProfiling ) where
