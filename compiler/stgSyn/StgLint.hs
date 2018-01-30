@@ -28,6 +28,9 @@ import TyCon
 import Util
 import SrcLoc
 import Outputable
+import DynFlags
+import Module
+import CoreSyn
 import Control.Monad
 
 #include "HsVersions.h"
@@ -59,11 +62,12 @@ generation.  Solution: don't use it!  (KSW 2000-05).
 -}
 
 lintStgTopBindings :: Bool  -- ^ have we run Unarise yet?
+                   -> DynFlags -> Module
                    -> String -> [StgTopBinding] -> [StgTopBinding]
 
-lintStgTopBindings unarised whodunnit binds
+lintStgTopBindings unarised dflags mod_name whodunnit binds
   = {-# SCC "StgLint" #-}
-    case (initL unarised (lint_binds binds)) of
+    case (initL unarised dflags mod_name (lint_binds binds)) of
       Nothing  -> binds
       Just msg -> pprPanic "" (vcat [
                         text "*** Stg Lint ErrMsgs: in" <+>
@@ -81,7 +85,7 @@ lintStgTopBindings unarised whodunnit binds
         addInScopeVars binders $
             lint_binds binds
 
-    lint_bind (StgTopLifted bind) = lintStgBinds bind
+    lint_bind (StgTopLifted bind) = lintStgBinds bind True
     lint_bind (StgTopStringLit v _) = return [v]
 
 lintStgArg :: StgArg -> LintM (Maybe Type)
@@ -92,23 +96,24 @@ lintStgVar :: Id -> LintM (Maybe Kind)
 lintStgVar v = do checkInScope v
                   return (Just (idType v))
 
-lintStgBinds :: StgBinding -> LintM [Id] -- Returns the binders
-lintStgBinds (StgNonRec binder rhs) = do
-    lint_binds_help (binder,rhs)
+lintStgBinds :: StgBinding
+             -> Bool{- top level -} -> LintM [Id] -- Returns the binders
+lintStgBinds (StgNonRec binder rhs) top_lvl = do
+    lint_binds_help top_lvl (binder,rhs)
     return [binder]
 
-lintStgBinds (StgRec pairs)
+lintStgBinds (StgRec pairs) top_lvl
   = addInScopeVars binders $ do
-        mapM_ lint_binds_help pairs
+        mapM_ (lint_binds_help top_lvl) pairs
         return binders
   where
     binders = [b | (b,_) <- pairs]
 
-lint_binds_help :: (Id, StgRhs) -> LintM ()
-lint_binds_help (binder, rhs)
+lint_binds_help :: Bool -> (Id, StgRhs) -> LintM ()
+lint_binds_help top_lvl (binder, rhs)
   = addLoc (RhsOf binder) $ do
         -- Check the rhs
-        _maybe_rhs_ty <- lintStgRhs rhs
+        _maybe_rhs_ty <- lintStgRhs top_lvl rhs
 
         -- Check binder doesn't have unlifted type
         checkL (isJoinId binder || not (isUnliftedType binder_ty))
@@ -128,18 +133,35 @@ lint_binds_help (binder, rhs)
   where
     binder_ty = idType binder
 
-lintStgRhs :: StgRhs -> LintM (Maybe Type)   -- Just ty => type is exact
+lintStgRhs :: Bool -- ^ top level
+           -> StgRhs -> LintM (Maybe Type)   -- Just ty => type is exact
 
-lintStgRhs (StgRhsClosure _ _ _ _ [] expr)
+lintStgRhs top_lvl rhs@(StgRhsClosure _ _ _ _ []
+                          expr@(StgTick (ProfNote _cc False{-not tick-} _push)
+                                        (StgConApp con args _)))
+  | top_lvl
+  = do dflags <- getDynFlags
+       mod_name <- getModName
+       checkL (isDllConApp dflags mod_name con args) msg
+       lintStgExpr expr
+  | otherwise -- not top level
+  = do addErrL msg
+       lintStgExpr expr
+  where
+    msg = text "Top level con binding should have its tick removed" $$
+          ppr rhs
+
+
+lintStgRhs _ (StgRhsClosure _ _ _ _ [] expr)
   = lintStgExpr expr
 
-lintStgRhs (StgRhsClosure _ _ _ _ binders expr)
+lintStgRhs _ (StgRhsClosure _ _ _ _ binders expr)
   = addLoc (LambdaBodyOf binders) $
       addInScopeVars binders $ runMaybeT $ do
         body_ty <- MaybeT $ lintStgExpr expr
         return (mkFunTys (map idType binders) body_ty)
 
-lintStgRhs rhs@(StgRhsCon _ con args) = do
+lintStgRhs _ rhs@(StgRhsCon _ con args) = do
     -- TODO: Check arg_tys
     when (isUnboxedTupleCon con || isUnboxedSumCon con) $
       addErrL (text "StgRhsCon is an unboxed tuple or sum application" $$
@@ -183,13 +205,13 @@ lintStgExpr (StgLam bndrs _) = do
     return Nothing
 
 lintStgExpr (StgLet binds body) = do
-    binders <- lintStgBinds binds
+    binders <- lintStgBinds binds False
     addLoc (BodyOfLetRec binders) $
       addInScopeVars binders $
         lintStgExpr body
 
 lintStgExpr (StgLetNoEscape binds body) = do
-    binders <- lintStgBinds binds
+    binders <- lintStgBinds binds False
     addLoc (BodyOfLetRec binders) $
       addInScopeVars binders $
         lintStgExpr body
@@ -284,6 +306,8 @@ lintAlt scrut_ty (DataAlt con, args, rhs) = do
 
 newtype LintM a = LintM
     { unLintM :: LintFlags
+              -> DynFlags
+              -> Module
               -> [LintLocInfo]      -- Locations
               -> IdSet              -- Local vars in scope
               -> Bag MsgDoc        -- Error messages so far
@@ -316,9 +340,9 @@ pp_binders bs
     pp_binder b
       = hsep [ppr b, dcolon, ppr (idType b)]
 
-initL :: Bool -> LintM a -> Maybe MsgDoc
-initL unarised (LintM m)
-  = case (m lf [] emptyVarSet emptyBag) of { (_, errs) ->
+initL :: Bool -> DynFlags -> Module -> LintM a -> Maybe MsgDoc
+initL unarised dflags mod_name (LintM m)
+  = case m lf dflags mod_name [] emptyVarSet emptyBag of { (_, errs) ->
     if isEmptyBag errs then
         Nothing
     else
@@ -331,7 +355,7 @@ instance Functor LintM where
       fmap = liftM
 
 instance Applicative LintM where
-      pure a = LintM $ \_lf _loc _scope errs -> (a, errs)
+      pure a = LintM $ \_lf _dflags _mod_name _loc _scope errs -> (a, errs)
       (<*>) = ap
       (*>)  = thenL_
 
@@ -340,21 +364,22 @@ instance Monad LintM where
     (>>)  = (*>)
 
 thenL :: LintM a -> (a -> LintM b) -> LintM b
-thenL m k = LintM $ \lf loc scope errs
-  -> case unLintM m lf loc scope errs of
-      (r, errs') -> unLintM (k r) lf loc scope errs'
+thenL m k = LintM $ \lf dflags mod_name loc scope errs
+  -> case unLintM m lf dflags mod_name loc scope errs of
+      (r, errs') -> unLintM (k r) lf dflags mod_name loc scope errs'
 
 thenL_ :: LintM a -> LintM b -> LintM b
-thenL_ m k = LintM $ \lf loc scope errs
-  -> case unLintM m lf loc scope errs of
-      (_, errs') -> unLintM k lf loc scope errs'
+thenL_ m k = LintM $ \lf dflags mod_name loc scope errs
+  -> case unLintM m lf dflags mod_name loc scope errs of
+      (_, errs') -> unLintM k lf dflags mod_name loc scope errs'
 
 checkL :: Bool -> MsgDoc -> LintM ()
 checkL True  _   = return ()
 checkL False msg = addErrL msg
 
 addErrL :: MsgDoc -> LintM ()
-addErrL msg = LintM $ \_lf loc _scope errs -> ((), addErr errs msg loc)
+addErrL msg
+  = LintM $ \_lf _dflags _mod_name loc _scope errs -> ((), addErr errs msg loc)
 
 addErr :: Bag MsgDoc -> MsgDoc -> [LintLocInfo] -> Bag MsgDoc
 addErr errs_so_far msg locs
@@ -365,17 +390,23 @@ addErr errs_so_far msg locs
     mk_msg []      = msg
 
 addLoc :: LintLocInfo -> LintM a -> LintM a
-addLoc extra_loc m = LintM $ \lf loc scope errs
-   -> unLintM m lf (extra_loc:loc) scope errs
+addLoc extra_loc m = LintM $ \lf dflags mod_name loc scope errs
+   -> unLintM m lf dflags mod_name (extra_loc:loc) scope errs
 
 addInScopeVars :: [Id] -> LintM a -> LintM a
-addInScopeVars ids m = LintM $ \lf loc scope errs
+addInScopeVars ids m = LintM $ \lf dflags mod_name loc scope errs
  -> let
         new_set = mkVarSet ids
-    in unLintM m lf loc (scope `unionVarSet` new_set) errs
+    in unLintM m lf dflags mod_name loc (scope `unionVarSet` new_set) errs
 
 getLintFlags :: LintM LintFlags
-getLintFlags = LintM $ \lf _loc _scope errs -> (lf, errs)
+getLintFlags = LintM $ \lf _dflags _mod_name _loc _scope errs -> (lf, errs)
+
+instance HasDynFlags LintM where
+  getDynFlags = LintM $ \_lf dflags _mod_name _loc _scope errs -> (dflags, errs)
+
+getModName :: LintM Module
+getModName = LintM $ \_lf _dflags mod_name _loc _scope errs -> (mod_name, errs)
 
 {-
 Checking function applications: we only check that the type has the
@@ -439,7 +470,7 @@ stgEqType ty1 ty2
     reps2 = typePrimRep ty2
 
 checkInScope :: Id -> LintM ()
-checkInScope id = LintM $ \_lf loc scope errs
+checkInScope id = LintM $ \_lf _dflags _mod_name loc scope errs
  -> if isLocalId id && not (id `elemVarSet` scope) then
         ((), addErr errs (hsep [ppr id, dcolon, ppr (idType id),
                                 text "is out of scope"]) loc)
@@ -447,7 +478,7 @@ checkInScope id = LintM $ \_lf loc scope errs
         ((), errs)
 
 checkTys :: Type -> Type -> MsgDoc -> LintM ()
-checkTys ty1 ty2 msg = LintM $ \_lf loc _scope errs
+checkTys ty1 ty2 msg = LintM $ \_lf _dflags _mod_name loc _scope errs
   -> if (ty1 `stgEqType` ty2)
      then ((), errs)
      else ((), addErr errs msg loc)

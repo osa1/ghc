@@ -11,7 +11,7 @@
 -- And, as we have the info in hand, we may convert some lets to
 -- let-no-escapes.
 
-module CoreToStg ( coreToStg, coreExprToStg ) where
+module CoreToStg ( coreToStg ) where
 
 #include "HsVersions.h"
 
@@ -29,7 +29,7 @@ import MkId             ( coercionTokenId )
 import Id
 import IdInfo
 import DataCon
-import CostCentre       ( noCCS )
+import CostCentre       ( noCCS, dontCareCCS, currentCCS )
 import VarEnv
 import Module
 import Name             ( isExternalName, nameOccName )
@@ -205,11 +205,6 @@ coreToStg dflags this_mod pgm
   = pgm'
   where (_, _, pgm') = coreTopBindsToStg dflags this_mod emptyVarEnv pgm
 
-coreExprToStg :: CoreExpr -> StgExpr
-coreExprToStg expr
-  = new_expr where (new_expr,_) = initCts emptyVarEnv (coreToStgExpr expr)
-
-
 coreTopBindsToStg
     :: DynFlags
     -> Module
@@ -248,7 +243,7 @@ coreTopBindToStg dflags this_mod env body_fvs (NonRec id rhs)
         how_bound = LetBound TopLet $! manifestArity rhs
 
         (stg_rhs, fvs') =
-            initCts env $ do
+            initCts env (WayProf `elem` ways dflags) $ do
               (stg_rhs, fvs') <- coreToTopStgRhs dflags this_mod body_fvs (id,rhs)
               return (stg_rhs, fvs')
 
@@ -271,7 +266,7 @@ coreTopBindToStg dflags this_mod env body_fvs (Rec pairs)
         env' = extendVarEnvList env extra_env'
 
         (stg_rhss, fvs')
-          = initCts env' $ do
+          = initCts env' (WayProf `elem` ways dflags) $ do
                (stg_rhss, fvss') <- mapAndUnzipM (coreToTopStgRhs dflags this_mod body_fvs) pairs
                let fvs' = unionFVInfos fvss'
                return (stg_rhss, fvs')
@@ -337,7 +332,8 @@ mkTopStgRhs :: DynFlags -> Module -> FreeVarsInfo
             -> Id -> StgBinderInfo -> StgExpr
             -> StgRhs
 
-mkTopStgRhs dflags this_mod = mkStgRhs' con_updateable
+mkTopStgRhs dflags this_mod
+  = mkStgRhs' con_updateable True (WayProf `elem` ways dflags)
         -- Dynamic StgConApps are updatable
   where con_updateable con args = isDllConApp dflags this_mod con args
 
@@ -716,39 +712,52 @@ coreToStgRhs :: FreeVarsInfo      -- Free var info for the scope of the binding
 
 coreToStgRhs scope_fv_info (bndr, rhs) = do
     (new_rhs, rhs_fvs) <- coreToStgExpr rhs
-    return (mkStgRhs rhs_fvs bndr bndr_info new_rhs, rhs_fvs)
+    prof <- isProfiling
+    return (mkStgRhs prof rhs_fvs bndr bndr_info new_rhs, rhs_fvs)
   where
     bndr_info = lookupFVInfo scope_fv_info bndr
 
-mkStgRhs :: FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
-mkStgRhs = mkStgRhs' con_updateable
+mkStgRhs :: Bool -> FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
+mkStgRhs = mkStgRhs' con_updateable False
   where con_updateable _ _ = False
 
 mkStgRhs' :: (DataCon -> [StgArg] -> Bool)
-            -> FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
-mkStgRhs' con_updateable rhs_fvs bndr binder_info rhs
+          -> Bool -- ^ is this a top level binding?
+          -> Bool -- ^ are we profiling?
+          -> FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
+mkStgRhs' con_updateable top_level prof rhs_fvs bndr binder_info rhs
   | StgLam bndrs body <- rhs
-  = StgRhsClosure noCCS binder_info
-                   (getFVs rhs_fvs)
-                   ReEntrant
-                   bndrs body
+  = StgRhsClosure ccs binder_info
+                  (getFVs rhs_fvs)
+                  ReEntrant
+                  bndrs body
+
   | isJoinId bndr -- must be nullary join point
   = ASSERT(idJoinArity bndr == 0)
-    StgRhsClosure noCCS binder_info
-                   (getFVs rhs_fvs)
-                   ReEntrant -- ignored for LNE
-                   [] rhs
+    StgRhsClosure ccs binder_info
+                  (getFVs rhs_fvs)
+                  ReEntrant -- ignored for LNE
+                  [] rhs
+
   | StgConApp con args _ <- unticked_rhs
   , not (con_updateable con args)
   = -- CorePrep does this right, but just to make sure
     ASSERT2( not (isUnboxedTupleCon con || isUnboxedSumCon con)
            , ppr bndr $$ ppr con $$ ppr args)
-    StgRhsCon noCCS con args
+    -- Top-level (static) data is not counted in heap profiles; nor do we set
+    -- CCCS from it; so we just slam in dontCareCostCentre
+    StgRhsCon ccs con args
+
   | otherwise
-  = StgRhsClosure noCCS binder_info
-                   (getFVs rhs_fvs)
-                   upd_flag [] rhs
+  = StgRhsClosure ccs binder_info
+                  (getFVs rhs_fvs)
+                  upd_flag [] rhs
  where
+    -- Top-level (static) data is not counted in heap profiles; nor do we set
+    -- CCCS from it; so we just slam in dontCareCostCentre
+    ccs | prof && top_level = dontCareCCS
+        | prof = currentCCS
+        | otherwise = noCCS
 
     (_, unticked_rhs) = stripStgTicksTop (not . tickishIsCode) rhs
 
@@ -816,6 +825,7 @@ isPAP env _               = False
 
 newtype CtsM a = CtsM
     { unCtsM :: IdEnv HowBound
+             -> Bool -- are we profiling?
              -> a
     }
 
@@ -860,8 +870,8 @@ topLevelBound _                   = False
 
 -- The std monad functions:
 
-initCts :: IdEnv HowBound -> CtsM a -> a
-initCts env m = unCtsM m env
+initCts :: IdEnv HowBound -> Bool -> CtsM a -> a
+initCts env prof m = unCtsM m env prof
 
 
 
@@ -869,11 +879,11 @@ initCts env m = unCtsM m env
 {-# INLINE returnCts #-}
 
 returnCts :: a -> CtsM a
-returnCts e = CtsM $ \_ -> e
+returnCts e = CtsM $ \_ _ -> e
 
 thenCts :: CtsM a -> (a -> CtsM b) -> CtsM b
-thenCts m k = CtsM $ \env
-  -> unCtsM (k (unCtsM m env)) env
+thenCts m k = CtsM $ \env prof
+  -> unCtsM (k (unCtsM m env prof)) env prof
 
 instance Functor CtsM where
     fmap = liftM
@@ -886,25 +896,27 @@ instance Monad CtsM where
     (>>=)  = thenCts
 
 instance MonadFix CtsM where
-    mfix expr = CtsM $ \env ->
-                       let result = unCtsM (expr result) env
+    mfix expr = CtsM $ \env prof ->
+                       let result = unCtsM (expr result) env prof
                        in  result
 
 -- Functions specific to this monad:
 
 extendVarEnvCts :: [(Id, HowBound)] -> CtsM a -> CtsM a
 extendVarEnvCts ids_w_howbound expr
-   =    CtsM $   \env
-   -> unCtsM expr (extendVarEnvList env ids_w_howbound)
+   =    CtsM $   \env prof
+   -> unCtsM expr (extendVarEnvList env ids_w_howbound) prof
 
 lookupVarCts :: Id -> CtsM HowBound
-lookupVarCts v = CtsM $ \env -> lookupBinding env v
+lookupVarCts v = CtsM $ \env _ -> lookupBinding env v
 
 lookupBinding :: IdEnv HowBound -> Id -> HowBound
 lookupBinding env v = case lookupVarEnv env v of
                         Just xx -> xx
                         Nothing -> ASSERT2( isGlobalId v, ppr v ) ImportBound
 
+isProfiling :: CtsM Bool
+isProfiling = CtsM $ \_ prof -> prof
 
 -- ---------------------------------------------------------------------------
 -- Free variable information

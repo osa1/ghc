@@ -2,18 +2,7 @@
 {-# LANGUAGE CPP #-}
 
 -----------------------------------------------------------------------------
--- Modify and collect code generation for final STG program
-
-{-
- This is now a sort-of-normal STG-to-STG pass (WDP 94/06), run by stg2stg.
-
-  - Traverses the STG program collecting CAF cost centres. These are required
-    to declare the cost centres at the start of code generation.
-
-  - Generates and puts on CAF cost-centres if the user has asked for individual
-    CAF cost-centres. Non-CAF cost-centres are collected by CorePrep, see step
-    12 in Note [CorePrep Overview].
--}
+-- Generate CAF cost centres
 
 module SCCfinal ( stgMassageForProfiling ) where
 
@@ -30,7 +19,6 @@ import Module
 import UniqSupply       ( UniqSupply )
 import Outputable
 import DynFlags
-import CoreSyn          ( Tickish(..) )
 import FastString
 import SrcLoc
 import Util
@@ -89,16 +77,6 @@ stgMassageForProfiling dflags mod_name _us stg_binds
     ----------
     do_top_rhs :: Id -> StgRhs -> MassageM StgRhs
 
-    do_top_rhs _ (StgRhsClosure _ _ _ _ []
-                     (StgTick (ProfNote _cc False{-not tick-} _push)
-                              (StgConApp con args _)))
-      | not (isDllConApp dflags mod_name con args)
-        -- Trivial _scc_ around nothing but static data
-        -- Eliminate _scc_ ... and turn into StgRhsCon
-
-        -- isDllConApp checks for LitLit args too
-      = return (StgRhsCon dontCareCCS con args)
-
     do_top_rhs binder (StgRhsClosure _ bi fv u [] body)
       = do
         -- Top level CAF without a cost centre attached
@@ -117,94 +95,13 @@ stgMassageForProfiling dflags mod_name _us stg_binds
                         return ccs
                    else
                         return all_cafs_ccs
-        body' <- do_expr body
-        return (StgRhsClosure caf_ccs bi fv u [] body')
+        return (StgRhsClosure caf_ccs bi fv u [] body)
 
-    do_top_rhs _ (StgRhsClosure _no_ccs bi fv u args body)
-      = do body' <- do_expr body
-           return (StgRhsClosure dontCareCCS bi fv u args body')
+    do_top_rhs _ rhs@StgRhsClosure{}
+      = return rhs
 
-    do_top_rhs _ (StgRhsCon _ con args)
-        -- Top-level (static) data is not counted in heap
-        -- profiles; nor do we set CCCS from it; so we
-        -- just slam in dontCareCostCentre
-      = return (StgRhsCon dontCareCCS con args)
-
-    ------
-    do_expr :: StgExpr -> MassageM StgExpr
-
-    do_expr (StgLit l) = return (StgLit l)
-
-    do_expr (StgApp fn args)
-      = return (StgApp fn args)
-
-    do_expr (StgConApp con args ty_args)
-      = return (StgConApp con args ty_args)
-
-    do_expr (StgOpApp con args res_ty)
-      = return (StgOpApp con args res_ty)
-
-    do_expr (StgTick ti expr) = do
-        expr' <- do_expr expr
-        return (StgTick ti expr')
-
-    do_expr (StgCase expr bndr alt_type alts) = do
-        expr' <- do_expr expr
-        alts' <- mapM do_alt alts
-        return (StgCase expr' bndr alt_type alts')
-      where
-        do_alt (id, bs, e) = do
-            e' <- do_expr e
-            return (id, bs, e')
-
-    do_expr (StgLet b e) = do
-          (b,e) <- do_let b e
-          return (StgLet b e)
-
-    do_expr (StgLetNoEscape b e) = do
-          (b,e) <- do_let b e
-          return (StgLetNoEscape b e)
-
-    do_expr other = pprPanic "SCCfinal.do_expr" (ppr other)
-
-    ----------------------------------
-
-    do_let (StgNonRec b rhs) e = do
-        rhs' <- do_rhs rhs
-        e' <- do_expr e
-        return (StgNonRec b rhs',e')
-
-    do_let (StgRec pairs) e = do
-        pairs' <- mapM do_pair pairs
-        e' <- do_expr e
-        return (StgRec pairs', e')
-      where
-        do_pair (b, rhs) = do
-             rhs2 <- do_rhs rhs
-             return (b, rhs2)
-
-    ----------------------------------
-    do_rhs :: StgRhs -> MassageM StgRhs
-        -- We play much the same game as we did in do_top_rhs above;
-        -- but we don't have to worry about cafs etc.
-
-        -- throw away the SCC if we don't have to count entries.  This
-        -- is a little bit wrong, because we're attributing the
-        -- allocation of the constructor to the wrong place (XXX)
-        -- We should really attach (PushCC cc CurrentCCS) to the rhs,
-        -- but need to reinstate PushCC for that.
-    do_rhs (StgRhsClosure _closure_cc _bi _fv _u []
-               (StgTick (ProfNote _cc False{-not tick-} _push)
-                        (StgConApp con args _)))
-      = return (StgRhsCon currentCCS con args)
-
-    do_rhs (StgRhsClosure _ bi fv u args expr) = do
-        expr' <- do_expr expr
-        return (StgRhsClosure currentCCS bi fv u args expr')
-
-    do_rhs (StgRhsCon _ con args)
-      = return (StgRhsCon currentCCS con args)
-
+    do_top_rhs _ rhs@StgRhsCon{}
+      = return rhs
 
 -- -----------------------------------------------------------------------------
 -- Boring monad stuff for this

@@ -64,8 +64,10 @@ stg2stg dflags module_name binds
 
   where
     stg_linter unarised
-      | gopt Opt_DoStgLinting dflags = lintStgTopBindings unarised
-      | otherwise                    = \ _whodunnit binds -> binds
+      | gopt Opt_DoStgLinting dflags
+      = lintStgTopBindings unarised dflags module_name
+      | otherwise
+      = \ _whodunnit binds -> binds
 
     -------------------------------------------
     do_stg_pass (binds, us, ccs) to_do
