@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE MultiWayIf #-}
 
 --
 -- (c) The GRASP/AQUA Project, Glasgow University, 1993-1998
@@ -29,10 +30,10 @@ import MkId             ( coercionTokenId )
 import Id
 import IdInfo
 import DataCon
-import CostCentre       ( noCCS, dontCareCCS, currentCCS )
+import CostCentre
 import VarEnv
 import Module
-import Name             ( isExternalName, nameOccName )
+import Name             ( isExternalName, nameOccName, nameModule_maybe )
 import OccName          ( occNameFS )
 import BasicTypes       ( Arity )
 import TysWiredIn       ( unboxedUnitDataCon )
@@ -46,6 +47,7 @@ import ForeignCall
 import Demand           ( isUsedOnce )
 import PrimOp           ( PrimCall(..) )
 import UniqFM
+import SrcLoc           ( mkGeneralSrcSpan )
 
 import Data.Maybe    (isJust, fromMaybe)
 import Control.Monad (liftM, ap)
@@ -200,52 +202,71 @@ import Control.Monad (liftM, ap)
 -- Setting variable info: top-level, binds, RHSs
 -- --------------------------------------------------------------
 
-coreToStg :: DynFlags -> Module -> CoreProgram -> [StgTopBinding]
+coreToStg :: DynFlags -> Module -> CoreProgram
+          -> ([StgTopBinding], CollectedCCs)
 coreToStg dflags this_mod pgm
-  = pgm'
-  where (_, _, pgm') = coreTopBindsToStg dflags this_mod emptyVarEnv pgm
+  = (pgm', final_ccs)
+  where
+    (_, _, (local_ccs, local_cc_stacks), pgm')
+      = coreTopBindsToStg dflags this_mod emptyVarEnv emptyCollectedCCs pgm
+
+    prof = WayProf `elem` ways dflags
+
+    final_ccs
+      | prof && gopt Opt_AutoSccsOnIndividualCafs dflags
+      = (local_ccs,local_cc_stacks)  -- don't need "all CAFs" CC
+      | prof
+      = (all_cafs_cc:local_ccs, all_cafs_ccs:local_cc_stacks)
+      | otherwise
+      = emptyCollectedCCs
+
+    (all_cafs_cc, all_cafs_ccs) = getAllCAFsCC this_mod
 
 coreTopBindsToStg
     :: DynFlags
     -> Module
     -> IdEnv HowBound           -- environment for the bindings
+    -> CollectedCCs
     -> CoreProgram
-    -> (IdEnv HowBound, FreeVarsInfo, [StgTopBinding])
+    -> (IdEnv HowBound, FreeVarsInfo, CollectedCCs, [StgTopBinding])
 
-coreTopBindsToStg _      _        env [] = (env, emptyFVInfo, [])
-coreTopBindsToStg dflags this_mod env (b:bs)
-  = (env2, fvs2, b':bs')
+coreTopBindsToStg _      _        env ccs []
+  = (env, emptyFVInfo, ccs, [])
+coreTopBindsToStg dflags this_mod env ccs (b:bs)
+  = (env2, fvs2, ccs2, b':bs')
   where
         -- Notice the mutually-recursive "knot" here:
         --   env accumulates down the list of binds,
         --   fvs accumulates upwards
-        (env1, fvs2, b' ) = coreTopBindToStg dflags this_mod env fvs1 b
-        (env2, fvs1, bs') = coreTopBindsToStg dflags this_mod env1 bs
+        (env1, fvs2, ccs1, b' ) =
+          coreTopBindToStg dflags this_mod env fvs1 ccs b
+        (env2, fvs1, ccs2, bs') =
+          coreTopBindsToStg dflags this_mod env1 ccs1 bs
 
 coreTopBindToStg
         :: DynFlags
         -> Module
         -> IdEnv HowBound
         -> FreeVarsInfo         -- Info about the body
+        -> CollectedCCs
         -> CoreBind
-        -> (IdEnv HowBound, FreeVarsInfo, StgTopBinding)
+        -> (IdEnv HowBound, FreeVarsInfo, CollectedCCs, StgTopBinding)
 
-coreTopBindToStg _ _ env body_fvs (NonRec id (Lit (MachStr str)))
+coreTopBindToStg _ _ env body_fvs ccs (NonRec id (Lit (MachStr str)))
   -- top-level string literal
   = let
         env' = extendVarEnv env id how_bound
         how_bound = LetBound TopLet 0
-    in (env', body_fvs, StgTopStringLit id str)
+    in (env', body_fvs, ccs, StgTopStringLit id str)
 
-coreTopBindToStg dflags this_mod env body_fvs (NonRec id rhs)
+coreTopBindToStg dflags this_mod env body_fvs ccs (NonRec id rhs)
   = let
         env'      = extendVarEnv env id how_bound
         how_bound = LetBound TopLet $! manifestArity rhs
 
-        (stg_rhs, fvs') =
-            initCts env (WayProf `elem` ways dflags) $ do
-              (stg_rhs, fvs') <- coreToTopStgRhs dflags this_mod body_fvs (id,rhs)
-              return (stg_rhs, fvs')
+        ((stg_rhs, fvs'), ccs') =
+            initCts env dflags this_mod ccs $
+              coreToTopStgRhs body_fvs (id,rhs)
 
         bind = StgTopLifted $ StgNonRec id stg_rhs
     in
@@ -254,9 +275,9 @@ coreTopBindToStg dflags this_mod env body_fvs (NonRec id rhs)
       --     as well as 'id', but that led to a black hole
       --     where printing the assertion error tripped the
       --     assertion again!
-    (env', fvs' `unionFVInfo` body_fvs, bind)
+    (env', fvs' `unionFVInfo` body_fvs, ccs', bind)
 
-coreTopBindToStg dflags this_mod env body_fvs (Rec pairs)
+coreTopBindToStg dflags this_mod env body_fvs ccs (Rec pairs)
   = ASSERT( not (null pairs) )
     let
         binders = map fst pairs
@@ -265,16 +286,17 @@ coreTopBindToStg dflags this_mod env body_fvs (Rec pairs)
                      | (b, rhs) <- pairs ]
         env' = extendVarEnvList env extra_env'
 
-        (stg_rhss, fvs')
-          = initCts env' (WayProf `elem` ways dflags) $ do
-               (stg_rhss, fvss') <- mapAndUnzipM (coreToTopStgRhs dflags this_mod body_fvs) pairs
+        ((stg_rhss, fvs'), ccs')
+          = initCts env' dflags this_mod ccs $ do
+               (stg_rhss, fvss') <-
+                 mapAndUnzipM (coreToTopStgRhs body_fvs) pairs
                let fvs' = unionFVInfos fvss'
                return (stg_rhss, fvs')
 
         bind = StgTopLifted $ StgRec (zip binders stg_rhss)
     in
     ASSERT2(consistentCafInfo (head binders) bind, ppr binders)
-    (env', fvs' `unionFVInfo` body_fvs, bind)
+    (env', fvs' `unionFVInfo` body_fvs, ccs', bind)
 
 
 -- Assertion helper: this checks that the CafInfo on the Id matches
@@ -293,17 +315,15 @@ consistentCafInfo id bind
     is_sat_thing = occNameFS (nameOccName (idName id)) == fsLit "sat"
 
 coreToTopStgRhs
-        :: DynFlags
-        -> Module
-        -> FreeVarsInfo         -- Free var info for the scope of the binding
+        :: FreeVarsInfo         -- Free var info for the scope of the binding
         -> (Id,CoreExpr)
         -> CtsM (StgRhs, FreeVarsInfo)
 
-coreToTopStgRhs dflags this_mod scope_fv_info (bndr, rhs)
+coreToTopStgRhs scope_fv_info (bndr, rhs)
   = do { (new_rhs, rhs_fvs) <- coreToStgExpr rhs
 
-       ; let stg_rhs   = mkTopStgRhs dflags this_mod rhs_fvs bndr bndr_info new_rhs
-             stg_arity = stgRhsArity stg_rhs
+       ; stg_rhs <- mkStgRhs True rhs_fvs bndr bndr_info new_rhs
+       ; let stg_arity = stgRhsArity stg_rhs
        ; return (ASSERT2( arity_ok stg_arity, mk_arity_msg stg_arity) stg_rhs,
                  rhs_fvs) }
   where
@@ -327,15 +347,6 @@ coreToTopStgRhs dflags this_mod scope_fv_info (bndr, rhs)
         = vcat [ppr bndr,
                 text "Id arity:" <+> ppr id_arity,
                 text "STG arity:" <+> ppr stg_arity]
-
-mkTopStgRhs :: DynFlags -> Module -> FreeVarsInfo
-            -> Id -> StgBinderInfo -> StgExpr
-            -> StgRhs
-
-mkTopStgRhs dflags this_mod
-  = mkStgRhs' con_updateable True (WayProf `elem` ways dflags)
-        -- Dynamic StgConApps are updatable
-  where con_updateable con args = isDllConApp dflags this_mod con args
 
 -- ---------------------------------------------------------------------------
 -- Expressions
@@ -712,53 +723,89 @@ coreToStgRhs :: FreeVarsInfo      -- Free var info for the scope of the binding
 
 coreToStgRhs scope_fv_info (bndr, rhs) = do
     (new_rhs, rhs_fvs) <- coreToStgExpr rhs
-    prof <- isProfiling
-    return (mkStgRhs prof rhs_fvs bndr bndr_info new_rhs, rhs_fvs)
+    stg_rhs <- mkStgRhs False rhs_fvs bndr bndr_info new_rhs
+    return (stg_rhs, rhs_fvs)
   where
     bndr_info = lookupFVInfo scope_fv_info bndr
 
-mkStgRhs :: Bool -> FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
-mkStgRhs = mkStgRhs' con_updateable False
-  where con_updateable _ _ = False
+mkStgRhs :: Bool -- ^ is this a top level binding?
+         -> FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> CtsM StgRhs
+mkStgRhs top_level rhs_fvs bndr binder_info rhs = do
+    dflags <- getDynFlags
+    this_mod <- getModule
 
-mkStgRhs' :: (DataCon -> [StgArg] -> Bool)
-          -> Bool -- ^ is this a top level binding?
-          -> Bool -- ^ are we profiling?
-          -> FreeVarsInfo -> Id -> StgBinderInfo -> StgExpr -> StgRhs
-mkStgRhs' con_updateable top_level prof rhs_fvs bndr binder_info rhs
-  | StgLam bndrs body <- rhs
-  = StgRhsClosure ccs binder_info
-                  (getFVs rhs_fvs)
-                  ReEntrant
-                  bndrs body
+    let con_updateable
+          | top_level
+          = -- Dynamic StgConApps are updatable
+            \con args -> isDllConApp dflags this_mod con args
+          | otherwise
+          = \_ _ -> False
 
-  | isJoinId bndr -- must be nullary join point
-  = ASSERT(idJoinArity bndr == 0)
-    StgRhsClosure ccs binder_info
-                  (getFVs rhs_fvs)
-                  ReEntrant -- ignored for LNE
-                  [] rhs
+        prof = WayProf `elem` ways dflags
 
-  | StgConApp con args _ <- unticked_rhs
-  , not (con_updateable con args)
-  = -- CorePrep does this right, but just to make sure
-    ASSERT2( not (isUnboxedTupleCon con || isUnboxedSumCon con)
-           , ppr bndr $$ ppr con $$ ppr args)
-    -- Top-level (static) data is not counted in heap profiles; nor do we set
-    -- CCCS from it; so we just slam in dontCareCostCentre
-    StgRhsCon ccs con args
+        -- Top-level (static) data is not counted in heap profiles; nor do we
+        -- set CCCS from it; so we just slam in dontCareCostCentre
+        ccs
+          | prof && top_level = dontCareCCS
+          | prof = currentCCS
+          | otherwise = noCCS
 
-  | otherwise
-  = StgRhsClosure ccs binder_info
-                  (getFVs rhs_fvs)
-                  upd_flag [] rhs
+    if | StgLam bndrs body <- rhs
+       -> -- StgLam can't have empty arguments, so not CAF
+          ASSERT(not (null bndrs))
+          return $
+          StgRhsClosure ccs binder_info
+                        (getFVs rhs_fvs)
+                        ReEntrant
+                        bndrs body
+
+       | isJoinId bndr -- must be nullary join point
+       -> ASSERT(idJoinArity bndr == 0)
+          ASSERT(not top_level)
+          return $
+          StgRhsClosure ccs binder_info
+                        (getFVs rhs_fvs)
+                        ReEntrant -- ignored for LNE
+                        [] rhs
+
+       | StgConApp con args _ <- unticked_rhs
+       , not (con_updateable con args)
+       -> -- CorePrep does this right, but just to make sure
+          ASSERT2( not (isUnboxedTupleCon con || isUnboxedSumCon con)
+                 , ppr bndr $$ ppr con $$ ppr args)
+          return $
+          -- Top-level (static) data is not counted in heap profiles; nor do we
+          -- set CCCS from it; so we just slam in dontCareCostCentre
+          StgRhsCon ccs con args
+
+       -- Rest is for CAFs
+       | top_level && prof
+       -> do caf_ccs <-
+               if gopt Opt_AutoSccsOnIndividualCafs dflags then do
+                 let cc = mkAutoCC bndr modl CafCC
+                     ccs = mkSingletonCCS cc
+                            -- careful: the binder might be :Main.main,
+                            -- which doesn't belong to module mod_name.
+                            -- bug #249, tests prof001, prof002
+                     modl | Just m <- nameModule_maybe (idName bndr) = m
+                          | otherwise = this_mod
+                 collectNewCC cc
+                 collectCCS ccs
+                 return ccs
+               else do
+                 let (_, all_cafs_ccs) = getAllCAFsCC this_mod
+                 return all_cafs_ccs
+             return $
+               StgRhsClosure caf_ccs binder_info
+                             (getFVs rhs_fvs)
+                             upd_flag [] rhs
+
+       | otherwise
+       -> return $
+          StgRhsClosure ccs binder_info
+                        (getFVs rhs_fvs)
+                        upd_flag [] rhs
  where
-    -- Top-level (static) data is not counted in heap profiles; nor do we set
-    -- CCCS from it; so we just slam in dontCareCostCentre
-    ccs | prof && top_level = dontCareCCS
-        | prof = currentCCS
-        | otherwise = noCCS
-
     (_, unticked_rhs) = stripStgTicksTop (not . tickishIsCode) rhs
 
     upd_flag | isUsedOnce (idDemandInfo bndr) = SingleEntry
@@ -820,13 +867,17 @@ isPAP env _               = False
 -- ---------------------------------------------------------------------------
 
 -- There's a lot of stuff to pass around, so we use this CtsM
--- ("core-to-STG monad") monad to help.  All the stuff here is only passed
--- *down*.
+-- ("core-to-STG monad") monad to help.
 
 newtype CtsM a = CtsM
-    { unCtsM :: IdEnv HowBound
-             -> Bool -- are we profiling?
-             -> a
+    { unCtsM :: IdEnv HowBound -- only passed down
+             -> DynFlags       -- only passed down, used for checking if we're
+                               -- in profiling mode and AutoSccsOnIndividualCafs
+                               -- flag
+             -> Module         -- only passed down, used for generating CAF
+                               -- cost centre stacks
+             -> CollectedCCs   -- CAF cost centres accumulated here
+             -> (a, CollectedCCs)
     }
 
 data HowBound
@@ -870,8 +921,9 @@ topLevelBound _                   = False
 
 -- The std monad functions:
 
-initCts :: IdEnv HowBound -> Bool -> CtsM a -> a
-initCts env prof m = unCtsM m env prof
+initCts :: IdEnv HowBound -> DynFlags -> Module -> CollectedCCs -> CtsM a
+        -> (a, CollectedCCs)
+initCts env dflags this_mod ccs m = unCtsM m env dflags this_mod ccs
 
 
 
@@ -879,11 +931,12 @@ initCts env prof m = unCtsM m env prof
 {-# INLINE returnCts #-}
 
 returnCts :: a -> CtsM a
-returnCts e = CtsM $ \_ _ -> e
+returnCts e = CtsM $ \_ _ _ ccs -> (e, ccs)
 
 thenCts :: CtsM a -> (a -> CtsM b) -> CtsM b
-thenCts m k = CtsM $ \env prof
-  -> unCtsM (k (unCtsM m env prof)) env prof
+thenCts m k = CtsM $ \env dflags this_mod ccs
+  -> let (a, ccs') = unCtsM m env dflags this_mod ccs
+      in unCtsM (k a) env dflags this_mod ccs'
 
 instance Functor CtsM where
     fmap = liftM
@@ -896,27 +949,53 @@ instance Monad CtsM where
     (>>=)  = thenCts
 
 instance MonadFix CtsM where
-    mfix expr = CtsM $ \env prof ->
-                       let result = unCtsM (expr result) env prof
-                       in  result
+    mfix expr =
+      CtsM $ \env dflags this_mod ccs ->
+             let (result, ccs') = unCtsM (expr result) env dflags this_mod ccs
+             in  (result, ccs')
+
+instance HasDynFlags CtsM where
+    getDynFlags = CtsM $ \_ dflags _ ccs -> (dflags, ccs)
+
+instance HasModule CtsM where
+    getModule = CtsM $ \_ _ this_mod ccs -> (this_mod, ccs)
 
 -- Functions specific to this monad:
 
 extendVarEnvCts :: [(Id, HowBound)] -> CtsM a -> CtsM a
 extendVarEnvCts ids_w_howbound expr
-   =    CtsM $   \env prof
-   -> unCtsM expr (extendVarEnvList env ids_w_howbound) prof
+   =    CtsM $   \env dflags this_mod
+   -> unCtsM expr (extendVarEnvList env ids_w_howbound) dflags this_mod
 
 lookupVarCts :: Id -> CtsM HowBound
-lookupVarCts v = CtsM $ \env _ -> lookupBinding env v
+lookupVarCts v = CtsM $ \env _ _ ccs -> (lookupBinding env v, ccs)
 
 lookupBinding :: IdEnv HowBound -> Id -> HowBound
 lookupBinding env v = case lookupVarEnv env v of
                         Just xx -> xx
                         Nothing -> ASSERT2( isGlobalId v, ppr v ) ImportBound
 
-isProfiling :: CtsM Bool
-isProfiling = CtsM $ \_ prof -> prof
+-- Version of collectCC used when we definitely want to declare this
+-- CC as local, even if its module name is not the same as the current
+-- module name (eg. the special :Main module) see bug #249, #1472,
+-- test prof001,prof002.
+collectNewCC :: CostCentre -> CtsM ()
+collectNewCC cc
+  = CtsM $ \_ _ _ (local_ccs, ccss) -> ((), (cc : local_ccs, ccss))
+
+collectCCS :: CostCentreStack -> CtsM ()
+collectCCS ccs = CtsM $ \_ _ _ (local_ccs, ccss) ->
+                 ASSERT(not (noCCSAttached ccs))
+                 ((), (local_ccs, ccs : ccss))
+
+getAllCAFsCC :: Module -> (CostCentre, CostCentreStack)
+getAllCAFsCC this_mod =
+    let
+      span = mkGeneralSrcSpan (mkFastString "<entire-module>") -- XXX do better
+      all_cafs_cc  = mkAllCafsCC this_mod span
+      all_cafs_ccs = mkSingletonCCS all_cafs_cc
+    in
+      (all_cafs_cc, all_cafs_ccs)
 
 -- ---------------------------------------------------------------------------
 -- Free variable information
