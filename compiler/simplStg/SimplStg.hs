@@ -20,7 +20,6 @@ import UnariseStg       ( unarise )
 import StgCse           ( stgCse )
 
 import DynFlags
-import Module           ( Module )
 import ErrUtils
 import SrcLoc
 import UniqSupply       ( mkSplitUniqSupply )
@@ -28,11 +27,10 @@ import Outputable
 import Control.Monad
 
 stg2stg :: DynFlags                  -- includes spec of what stg-to-stg passes to do
-        -> Module                    -- module name (profiling only)
         -> [StgTopBinding]           -- input...
         -> IO [StgTopBinding]        -- output program
 
-stg2stg dflags module_name binds
+stg2stg dflags binds
   = do  { showPass dflags "Stg2Stg"
         ; us <- mkSplitUniqSupply 'g'
 
@@ -59,10 +57,8 @@ stg2stg dflags module_name binds
 
   where
     stg_linter unarised
-      | gopt Opt_DoStgLinting dflags
-      = lintStgTopBindings unarised dflags module_name
-      | otherwise
-      = \ _whodunnit binds -> binds
+      | gopt Opt_DoStgLinting dflags = lintStgTopBindings unarised
+      | otherwise                    = \ _whodunnit binds -> binds
 
     -------------------------------------------
     do_stg_pass binds to_do
