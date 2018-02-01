@@ -5,8 +5,8 @@ module CostCentre (
 
         CostCentreStack,
         CollectedCCs, emptyCollectedCCs, appendCollectedCCs,
-        noCCS, currentCCS, dontCareCCS,
-        noCCSAttached, isCurrentCCS,
+        currentCCS, dontCareCCS,
+        isCurrentCCS,
         maybeSingletonCCS,
 
         mkUserCC, mkAutoCC, mkAllCafsCC,
@@ -160,9 +160,7 @@ mkAllCafsCC m loc = AllCafsCC { cc_mod = m, cc_loc = loc }
 --        pre-defined CCSs, see below).
 
 data CostCentreStack
-  = NoCCS
-
-  | CurrentCCS          -- Pinned on a let(rec)-bound
+  = CurrentCCS          -- Pinned on a let(rec)-bound
                         -- thunk/function/constructor, this says that the
                         -- cost centre to be attached to the object, when it
                         -- is allocated, is whatever is in the
@@ -191,18 +189,13 @@ emptyCollectedCCs = ([], [])
 appendCollectedCCs :: CollectedCCs -> CollectedCCs -> CollectedCCs
 appendCollectedCCs (cc1, ccs1) (cc2, ccs2) = (cc1 ++ cc2, ccs1 ++ ccs2)
 
-noCCS, currentCCS, dontCareCCS :: CostCentreStack
+currentCCS, dontCareCCS :: CostCentreStack
 
-noCCS                   = NoCCS
 currentCCS              = CurrentCCS
 dontCareCCS             = DontCareCCS
 
 -----------------------------------------------------------------------------
 -- Predicates on Cost-Centre Stacks
-
-noCCSAttached :: CostCentreStack -> Bool
-noCCSAttached NoCCS                     = True
-noCCSAttached _                         = False
 
 isCurrentCCS :: CostCentreStack -> Bool
 isCurrentCCS CurrentCCS                 = True
@@ -227,7 +220,6 @@ mkSingletonCCS cc = SingletonCCS cc
 -- expression.
 
 instance Outputable CostCentreStack where
-  ppr NoCCS             = text "NO_CCS"
   ppr CurrentCCS        = text "CCCS"
   ppr DontCareCCS       = text "CCS_DONT_CARE"
   ppr (SingletonCCS cc) = ppr cc <> text "_ccs"
