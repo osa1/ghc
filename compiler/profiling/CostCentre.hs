@@ -4,7 +4,7 @@ module CostCentre (
                 -- All abstract except to friend: ParseIface.y
 
         CostCentreStack,
-        CollectedCCs, emptyCollectedCCs, appendCollectedCCs,
+        CollectedCCs, emptyCollectedCCs,
         currentCCS, dontCareCCS,
         isCurrentCCS,
         maybeSingletonCCS,
@@ -185,9 +185,6 @@ type CollectedCCs
 
 emptyCollectedCCs :: CollectedCCs
 emptyCollectedCCs = ([], [])
-
-appendCollectedCCs :: CollectedCCs -> CollectedCCs -> CollectedCCs
-appendCollectedCCs (cc1, ccs1) (cc2, ccs2) = (cc1 ++ cc2, ccs1 ++ ccs2)
 
 currentCCS, dontCareCCS :: CostCentreStack
 
