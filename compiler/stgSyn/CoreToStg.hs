@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE MultiWayIf #-}
 
 --
 -- (c) The GRASP/AQUA Project, Glasgow University, 1993-1998
