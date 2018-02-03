@@ -824,6 +824,13 @@ mkStgRhs rhs_fvs bndr binder_info rhs
                   ReEntrant
                   bndrs body
 
+  | isJoinId bndr -- must be a nullary join point
+  = ASSERT(idJoinArity bndr == 0)
+    StgRhsClosure currentCCS binder_info
+                  (getFVs rhs_fvs)
+                  ReEntrant -- ignored for LNE
+                  [] rhs
+
   | StgConApp con args _ <- unticked_rhs
   = StgRhsCon currentCCS con args
 
