@@ -254,25 +254,46 @@ lintAlt scrut_ty (DataAlt con, args, rhs) = do
            cons    = tyConDataCons tycon
            arg_tys = dataConInstArgTys con tys_applied
                 -- This does not work for existential constructors
+           arg_prim_reps = concatMap typePrimRep arg_tys
+                -- After unarise only prim reps should match
+           bndr_tys = map idType args
+           bndr_prim_reps = concatMap typePrimRep bndr_tys
 
          checkL (con `elem` cons) (mkAlgAltMsg2 scrut_ty con)
-         checkL (args `lengthIs` dataConRepArity con) (mkAlgAltMsg3 con args)
+
+         LintFlags unarised <- getLintFlags
          when (isVanillaDataCon con) $
-           mapM_ check (zipEqual "lintAlgAlt:stg" arg_tys args)
-         return ()
+           if unarised then do
+             check_arg_len "After unarise" arg_prim_reps bndr_prim_reps
+             zipWithM_ check_prim_rep arg_prim_reps bndr_prim_reps
+           else do
+             check_arg_len "Before unarise" arg_tys bndr_tys
+             zipWithM_ check_ty arg_tys bndr_tys
       _ ->
          addErrL (mkAltMsg1 scrut_ty)
 
     addInScopeVars args $
          lintStgExpr rhs
   where
-    check (ty, arg) = checkTys ty (idType arg) (mkAlgAltMsg4 ty arg)
+    check_arg_len unarised args bndrs =
+      checkL (length args == length bndrs) $
+        text unarised <> text ", in some algebraic case alternative, " <>
+        text "length of con args and binders don't match:" $$
+        ppr args $$ ppr bndrs
 
-    -- elem: yes, the elem-list here can sometimes be long-ish,
-    -- but as it's use-once, probably not worth doing anything different
-    -- We give it its own copy, so it isn't overloaded.
-    elem _ []       = False
-    elem x (y:ys)   = x==y || elem x ys
+    check_ty arg_ty bndr_ty =
+      checkL (arg_ty `stgEqType` bndr_ty) $
+        text "Before unarise, in some algebraic case alternative, " <>
+        text "type of con arg doesn't match type of binder:" $$
+        text "arg type:" <+> ppr arg_ty $$
+        text "bndr type:" <+> ppr bndr_ty
+
+    check_prim_rep arg_prim_rep bndr_prim_rep =
+      checkL (arg_prim_rep == bndr_prim_rep) $
+        text "After unarise, in some algebraic case alternative, " <>
+        text "prim rep of con arg doesn't match prim rep of binder:" $$
+        text "arg prim rep:" <+> ppr arg_prim_rep $$
+        text "bndr prim rep:" <+> ppr bndr_prim_rep
 
 {-
 ************************************************************************
@@ -494,14 +515,6 @@ mkAlgAltMsg3 con alts
         text "In some algebraic case alternative, number of arguments doesn't match constructor:",
         ppr con <+> parens (text "arity" <+> ppr (dataConRepArity con)),
         ppr alts
-    ]
-
-mkAlgAltMsg4 :: Type -> Id -> MsgDoc
-mkAlgAltMsg4 ty arg
-  = vcat [
-        text "In some algebraic case alternative, type of argument doesn't match data constructor:",
-        ppr ty,
-        ppr arg
     ]
 
 _mkRhsMsg :: Id -> Type -> MsgDoc
