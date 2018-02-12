@@ -129,7 +129,7 @@ lintStgRhs rhs@(StgRhsCon _ con args) = do
       addErrL (text "StgRhsCon is an unboxed tuple or sum application" $$
                ppr rhs)
     mapM_ lintStgArg args
-    mapM_ checkPostUnarisationConArg args
+    mapM_ checkPostUnariseConArg args
 
 lintStgExpr :: StgExpr -> LintM ()
 
@@ -146,7 +146,7 @@ lintStgExpr app@(StgConApp con args _arg_tys) = do
       addErrL (text "Unboxed sum after unarise:" $$
                ppr app)
     mapM_ lintStgArg args
-    mapM_ checkPostUnarisationConArg args
+    mapM_ checkPostUnariseConArg args
 
 lintStgExpr (StgOpApp _ args _) =
     mapM_ lintStgArg args
@@ -193,7 +193,7 @@ lintAlt (LitAlt _, _, rhs) =
     lintStgExpr rhs
 
 lintAlt (DataAlt _, bndrs, rhs) = do
-    mapM_ checkPostUnarisationBndr bndrs
+    mapM_ checkPostUnariseBndr bndrs
     addInScopeVars bndrs (lintStgExpr rhs)
 
 {-
@@ -276,32 +276,34 @@ checkL True  _   = return ()
 checkL False msg = addErrL msg
 
 -- Case alts shouldn't have unboxed sum, unboxed tuple, or void binders.
-checkPostUnarisationBndr :: Id -> LintM ()
-checkPostUnarisationBndr bndr = do
+checkPostUnariseBndr :: Id -> LintM ()
+checkPostUnariseBndr bndr = do
     lf <- getLintFlags
     when (lf_unarised lf) $
-      forM_ (checkPostUnarisationId bndr) $ \unexpected ->
+      forM_ (checkPostUnariseId bndr) $ \unexpected ->
         addErrL $
           text "After unarisation, binder " <>
-          ppr bndr <> text " has " <> text unexpected <> text " type"
+          ppr bndr <> text " has " <> text unexpected <> text " type " <>
+          ppr (idType bndr)
 
 -- Arguments shouldn't have sum, tuple, or void types.
-checkPostUnarisationConArg :: StgArg -> LintM ()
-checkPostUnarisationConArg arg = case arg of
+checkPostUnariseConArg :: StgArg -> LintM ()
+checkPostUnariseConArg arg = case arg of
     StgLitArg _ ->
       return ()
     StgVarArg id -> do
       lf <- getLintFlags
       when (lf_unarised lf) $
-        forM_ (checkPostUnarisationId id) $ \unexpected ->
+        forM_ (checkPostUnariseId id) $ \unexpected ->
           addErrL $
             text "After unarisation, arg " <>
-            ppr id <> text " has " <> text unexpected <> text " type"
+            ppr id <> text " has " <> text unexpected <> text " type " <>
+            ppr (idType id)
 
 -- Post-unarisation args and case alt binders should not have unboxed tuple,
 -- unboxed sum, or void types. Return what the binder is if it is one of these.
-checkPostUnarisationId :: Id -> Maybe String
-checkPostUnarisationId id =
+checkPostUnariseId :: Id -> Maybe String
+checkPostUnariseId id =
     let
       id_ty = idType id
       is_sum, is_tuple, is_void :: Maybe String
