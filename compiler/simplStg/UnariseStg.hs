@@ -415,6 +415,7 @@ elimCase _ args bndr alt_ty alts
 
 unariseAlts :: UnariseEnv -> AltType -> InId -> [StgAlt] -> UniqSM [StgAlt]
 unariseAlts rho (MultiValAlt n) bndr [(DEFAULT, [], e)]
+  | isUnboxedTupleBndr bndr
   = do (rho', ys) <- unariseConArgBinder rho bndr
        e' <- unariseExpr rho' e
        return [(DataAlt (tupleDataCon Unboxed n), ys, e')]
