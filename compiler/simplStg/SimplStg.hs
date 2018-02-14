@@ -80,6 +80,7 @@ stg2stg dflags binds
            dumpIfSet_dyn dflags Opt_D_verbose_stg2stg what
               (vcat (map ppr binds2))
            stg_linter False what binds2
+           return binds2
 
 -- -----------------------------------------------------------------------------
 -- StgToDo:  abstraction of stg-to-stg passes to run.
