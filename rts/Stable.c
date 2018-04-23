@@ -98,23 +98,6 @@ static spEntry *stable_ptr_free = NULL;
 static unsigned int SPT_size = 0;
 #define INIT_SPT_SIZE 64
 
-/* Each time the stable pointer table is enlarged, we temporarily retain the old
- * version to ensure dereferences are thread-safe (see Note [Enlarging the
- * stable pointer table]).  Since we double the size of the table each time, we
- * can (theoretically) enlarge it at most N times on an N-bit machine.  Thus,
- * there will never be more than N old versions of the table.
- */
-#if SIZEOF_VOID_P == 4
-#define MAX_N_OLD_SPTS 32
-#elif SIZEOF_VOID_P == 8
-#define MAX_N_OLD_SPTS 64
-#else
-#error unknown SIZEOF_VOID_P
-#endif
-
-static spEntry *old_SPTs[MAX_N_OLD_SPTS];
-static uint32_t n_old_SPTs = 0;
-
 #if defined(THREADED_RTS)
 Mutex stable_mutex;
 #endif
@@ -214,7 +197,7 @@ enlargeStableNameTable(void)
     SNT_size *= 2;
     stable_name_table =
         stgReallocBytes(stable_name_table,
-                        SNT_size * sizeof *stable_name_table,
+                        SNT_size * sizeof(*stable_name_table),
                         "enlargeStableNameTable");
 
     initSnEntryFreeList(stable_name_table + old_SNT_size, old_SNT_size, NULL);
@@ -224,62 +207,32 @@ static void
 enlargeStablePtrTable(void)
 {
     uint32_t old_SPT_size = SPT_size;
-    spEntry *new_stable_ptr_table;
 
     // 2nd and subsequent times
     SPT_size *= 2;
 
-    /* We temporarily retain the old version instead of freeing it; see Note
-     * [Enlarging the stable pointer table].
-     */
-    new_stable_ptr_table =
-        stgMallocBytes(SPT_size * sizeof *stable_ptr_table,
+    // Do not realloc here! We need to update `stable_ptr_table`
+    // atomically to avoid races with concurrent accesses from
+    // foreign code. See #10296.
+    spEntry *new_stable_ptr_table =
+        stgMallocBytes(SPT_size * sizeof(*stable_ptr_table),
                        "enlargeStablePtrTable");
+
     memcpy(new_stable_ptr_table,
            stable_ptr_table,
-           old_SPT_size * sizeof *stable_ptr_table);
-    ASSERT(n_old_SPTs < MAX_N_OLD_SPTS);
-    old_SPTs[n_old_SPTs++] = stable_ptr_table;
+           old_SPT_size * sizeof(*stable_ptr_table));
 
-    /* When using the threaded RTS, the update of stable_ptr_table is assumed to
-     * be atomic, so that another thread simultaneously dereferencing a stable
-     * pointer will always read a valid address.
-     */
-    stable_ptr_table = new_stable_ptr_table;
+    initSpEntryFreeList(new_stable_ptr_table + old_SPT_size, old_SPT_size, NULL);
 
-    initSpEntryFreeList(stable_ptr_table + old_SPT_size, old_SPT_size, NULL);
+    spEntry *old_stable_ptr_table =
+        (spEntry*)xchg((P_)&stable_ptr_table, (W_)new_stable_ptr_table);
+
+    stgFree(old_stable_ptr_table);
 }
-
-/* Note [Enlarging the stable pointer table]
- *
- * To enlarge the stable pointer table, we allocate a new table, copy the
- * existing entries, and then store the old version of the table in old_SPTs
- * until we free it during GC.  By not immediately freeing the old version
- * (or equivalently by not growing the table using realloc()), we ensure that
- * another thread simultaneously dereferencing a stable pointer using the old
- * version can safely access the table without causing a segfault (see Trac
- * #10296).
- *
- * Note that because the stable pointer table is doubled in size each time it is
- * enlarged, the total memory needed to store the old versions is always less
- * than that required to hold the current version.
- */
-
 
 /* -----------------------------------------------------------------------------
  * Freeing entries and tables
  * -------------------------------------------------------------------------- */
-
-static void
-freeOldSPTs(void)
-{
-    uint32_t i;
-
-    for (i = 0; i < n_old_SPTs; i++) {
-        stgFree(old_SPTs[i]);
-    }
-    n_old_SPTs = 0;
-}
 
 void
 exitStableTables(void)
@@ -297,8 +250,6 @@ exitStableTables(void)
         stgFree(stable_ptr_table);
     stable_ptr_table = NULL;
     SPT_size = 0;
-
-    freeOldSPTs();
 
 #if defined(THREADED_RTS)
     closeMutex(&stable_mutex);
@@ -416,11 +367,9 @@ lookupStableName (StgPtr p)
 StgStablePtr
 getStablePtr(StgPtr p)
 {
-  StgWord sp;
-
   stableLock();
   if (!stable_ptr_free) enlargeStablePtrTable();
-  sp = stable_ptr_free - stable_ptr_table;
+  StgWord sp = stable_ptr_free - stable_ptr_table;
   stable_ptr_free  = (spEntry*)(stable_ptr_free->addr);
   stable_ptr_table[sp].addr = p;
   stableUnlock();
@@ -483,11 +432,6 @@ rememberOldStableNameAddresses(void)
 void
 markStableTables(evac_fn evac, void *user)
 {
-    /* Since no other thread can currently be dereferencing a stable pointer, it
-     * is safe to free the old versions of the table.
-     */
-    freeOldSPTs();
-
     markStablePtrTable(evac, user);
     rememberOldStableNameAddresses();
 }
