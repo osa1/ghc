@@ -265,6 +265,8 @@ hs_init_ghc(int *argc, char **argv[], RtsConfig rts_config)
     getStablePtr((StgPtr)cannotCompactPinned_closure);
     getStablePtr((StgPtr)cannotCompactMutable_closure);
     getStablePtr((StgPtr)nestedAtomically_closure);
+    getStablePtr((StgPtr)absentSumFieldError_closure);
+        // See Note [aBSENT_SUM_FIELD_ERROR_ID] in MkCore
 
     getStablePtr((StgPtr)runSparks_closure);
     getStablePtr((StgPtr)ensureIOManagerIsRunning_closure);

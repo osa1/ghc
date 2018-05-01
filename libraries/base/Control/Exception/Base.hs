@@ -95,7 +95,7 @@ module Control.Exception.Base (
         -- * Calls for GHC runtime
         recSelError, recConError, runtimeError,
         nonExhaustiveGuardsError, patError, noMethodBindingError,
-        absentError, typeError,
+        absentError, absentSumFieldError, typeError,
         nonTermination, nestedAtomically,
   ) where
 
@@ -384,6 +384,9 @@ recSelError              s = throw (RecSelError ("No match in record selector "
                                                  ++ unpackCStringUtf8# s))  -- No location info unfortunately
 runtimeError             s = errorWithoutStackTrace (unpackCStringUtf8# s)                   -- No location info unfortunately
 absentError              s = errorWithoutStackTrace ("Oops!  Entered absent arg " ++ unpackCStringUtf8# s)
+
+absentSumFieldError :: a
+absentSumFieldError = absentError " in unboxed sum."#
 
 nonExhaustiveGuardsError s = throw (PatternMatchFail (untangle s "Non-exhaustive guards in"))
 recConError              s = throw (RecConError      (untangle s "Missing field in record construction"))
