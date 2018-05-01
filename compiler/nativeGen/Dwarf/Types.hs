@@ -492,7 +492,16 @@ pprUnwindExpr spIsCFA expr
         pprE (UwPlus u1 u2)   = pprE u1 $$ pprE u2 $$ pprByte dW_OP_plus
         pprE (UwMinus u1 u2)  = pprE u1 $$ pprE u2 $$ pprByte dW_OP_minus
         pprE (UwTimes u1 u2)  = pprE u1 $$ pprE u2 $$ pprByte dW_OP_mul
-    in text "\t.uleb128 1f-.-1" $$ -- DW_FORM_block length
+    in
+       -- DW_FORM_block length:
+       -- text "\t.uleb128 1f-.-1" $$
+       -- uleb128 directive causes #15068 so we encode it manually
+       pprByte 177 $$
+       pprByte 173 $$
+       pprByte 174 $$
+       pprByte 173 $$
+       pprByte 230 $$
+       pprByte 49 $$
        pprE expr $$
        text "1:"
 
