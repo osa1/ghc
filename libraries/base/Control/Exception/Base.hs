@@ -95,7 +95,7 @@ module Control.Exception.Base (
         -- * Calls for GHC runtime
         recSelError, recConError, runtimeError,
         nonExhaustiveGuardsError, patError, noMethodBindingError,
-        absentError, typeError,
+        absentError, absentSumFieldError, typeError,
         nonTermination, nestedAtomically,
   ) where
 
@@ -398,3 +398,7 @@ nonTermination = toException NonTermination
 -- GHC's RTS calls this
 nestedAtomically :: SomeException
 nestedAtomically = toException NestedAtomically
+
+-- Unarise introduces uses of this
+absentSumFieldError :: a
+absentSumFieldError = absentError " in unboxed sum."#

@@ -244,9 +244,16 @@ hs_init_ghc(int *argc, char **argv[], RtsConfig rts_config)
     /* initialise the stable pointer table */
     initStableTables();
 
-    /* Add some GC roots for things in the base package that the RTS
+    /*
+     * Note [Stable GC roots]
+     *
+     * Add some GC roots for things in the base package that the RTS
      * knows about.  We don't know whether these turn out to be CAFs
      * or refer to CAFs, but we have to assume that they might.
+     *
+     * Because these stable pointers will make retain any CAF
+     * references in these closures `Id`s of these can be safely
+     * marked as non-CAFFY in the compiler.
      */
     getStablePtr((StgPtr)runIO_closure);
     getStablePtr((StgPtr)runNonIO_closure);
@@ -265,6 +272,8 @@ hs_init_ghc(int *argc, char **argv[], RtsConfig rts_config)
     getStablePtr((StgPtr)cannotCompactPinned_closure);
     getStablePtr((StgPtr)cannotCompactMutable_closure);
     getStablePtr((StgPtr)nestedAtomically_closure);
+    getStablePtr((StgPtr)absentSumFieldError_closure);
+        // See Note [aBSENT_SUM_FIELD_ERROR_ID] in MkCore
 
     getStablePtr((StgPtr)runSparks_closure);
     getStablePtr((StgPtr)ensureIOManagerIsRunning_closure);
