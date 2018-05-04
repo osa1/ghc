@@ -45,8 +45,18 @@ PRELUDE_CLOSURE(base_GHCziIOziException_cannotCompactPinned_closure);
 PRELUDE_CLOSURE(base_GHCziIOziException_cannotCompactMutable_closure);
 PRELUDE_CLOSURE(base_ControlziExceptionziBase_nonTermination_closure);
 PRELUDE_CLOSURE(base_ControlziExceptionziBase_nestedAtomically_closure);
-PRELUDE_CLOSURE(base_ControlziExceptionziBase_absentSumFieldError_closure);
 PRELUDE_CLOSURE(base_GHCziEventziThread_blockedOnBadFD_closure);
+
+// Error Ids
+PRELUDE_CLOSURE(base_ControlziExceptionziBase_runtimeError_closure);
+PRELUDE_CLOSURE(base_ControlziExceptionziBase_nonExhaustiveGuardsError_closure);
+PRELUDE_CLOSURE(base_ControlziExceptionziBase_noMethodBindingError_closure);
+PRELUDE_CLOSURE(base_ControlziExceptionziBase_patError_closure);
+PRELUDE_CLOSURE(base_ControlziExceptionziBase_recConError_closure);
+PRELUDE_CLOSURE(base_ControlziExceptionziBase_recSelError_closure);
+PRELUDE_CLOSURE(base_ControlziExceptionziBase_absentError_closure);
+PRELUDE_CLOSURE(base_ControlziExceptionziBase_typeError_closure);
+PRELUDE_CLOSURE(base_ControlziExceptionziBase_absentSumFieldError_closure);
 
 PRELUDE_CLOSURE(base_GHCziConcziSync_runSparks_closure);
 PRELUDE_CLOSURE(base_GHCziConcziIO_ensureIOManagerIsRunning_closure);
@@ -100,7 +110,26 @@ PRELUDE_INFO(base_GHCziStable_StablePtr_con_info);
 #define nonTermination_closure    DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_nonTermination_closure)
 #define nestedAtomically_closure  DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_nestedAtomically_closure)
 #define blockedOnBadFD_closure    DLL_IMPORT_DATA_REF(base_GHCziEventziThread_blockedOnBadFD_closure)
-#define absentSumFieldError_closure DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_absentSumFieldError_closure)
+
+// Error Ids
+#define runtimeError_closure \
+    DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_runtimeError_closure)
+#define nonExhaustiveGuardsError_closure \
+    DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_nonExhaustiveGuardsError_closure)
+#define noMethodBindingError_closure \
+    DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_noMethodBindingError_closure)
+#define patError_closure \
+    DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_patError_closure)
+#define recConError_closure \
+    DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_recConError_closure)
+#define recSelError_closure \
+    DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_recSelError_closure)
+#define absentError_closure \
+    DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_absentError_closure)
+#define typeError_closure \
+    DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_typeError_closure)
+#define absentSumFieldError_closure \
+    DLL_IMPORT_DATA_REF(base_ControlziExceptionziBase_absentSumFieldError_closure)
 
 #define Czh_con_info              DLL_IMPORT_DATA_REF(ghczmprim_GHCziTypes_Czh_con_info)
 #define Izh_con_info              DLL_IMPORT_DATA_REF(ghczmprim_GHCziTypes_Izh_con_info)

@@ -578,7 +578,6 @@ mkUbxSum dc ty_args args0
 
       slotRubbishArg :: SlotTy -> StgArg
       slotRubbishArg PtrSlot    = StgVarArg aBSENT_SUM_FIELD_ERROR_ID
-                         -- See Note [aBSENT_SUM_FIELD_ERROR_ID] in MkCore
       slotRubbishArg WordSlot   = StgLitArg (MachWord 0)
       slotRubbishArg Word64Slot = StgLitArg (MachWord64 0)
       slotRubbishArg FloatSlot  = StgLitArg (MachFloat 0)

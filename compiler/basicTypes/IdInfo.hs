@@ -309,7 +309,7 @@ vanillaIdInfo
 -- | More informative 'IdInfo' we can use when we know the 'Id' has no CAF references
 noCafIdInfo :: IdInfo
 noCafIdInfo  = vanillaIdInfo `setCafInfo`    NoCafRefs
-        -- Used for built-in type Ids in MkId.
+        -- Used for built-in type Ids in MkId and error Ids in MkCore.
 
 {-
 ************************************************************************

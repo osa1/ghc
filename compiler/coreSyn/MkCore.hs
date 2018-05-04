@@ -687,9 +687,14 @@ well shouldn't be yanked on, but if one is, then you will get a
 friendly message from @absentErr@ (rather than a totally random
 crash).
 
-@parError@ is a special version of @error@ which the compiler does
-not know to be a bottoming Id.  It is used in the @_par_@ and @_seq_@
-templates, but we don't ever expect to generate code for it.
+Note [CAFFY-ness of error Ids]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Error Ids can be CAFFY, but we don't want to mark them as such to avoid
+bloating SRTs for compiler-generated error checks. Instead we mark them
+as non-CAFFY here, and add them as GC roots. See Note [Stable GC roots]
+in RtsStartup.c. This also allows us to use error Ids in later phases
+than `TidyPgm` (which is when we calculate CAFFY-ness of definitions)
+without worrying about changing CAFFY-ness of closures.
 -}
 
 errorIds :: [Id]
@@ -701,7 +706,8 @@ errorIds
       rEC_CON_ERROR_ID,
       rEC_SEL_ERROR_ID,
       aBSENT_ERROR_ID,
-      tYPE_ERROR_ID   -- Used with Opt_DeferTypeErrors, see #10284
+      tYPE_ERROR_ID,  -- Used with Opt_DeferTypeErrors, see #10284
+      aBSENT_SUM_FIELD_ERROR_ID  -- Introduced by unarise for unboxed sums
       ]
 
 recSelErrorName, runtimeErrorName, absentErrorName :: Name
@@ -738,33 +744,18 @@ nO_METHOD_BINDING_ERROR_ID      = mkRuntimeErrorId noMethodBindingErrorName
 nON_EXHAUSTIVE_GUARDS_ERROR_ID  = mkRuntimeErrorId nonExhaustiveGuardsErrorName
 tYPE_ERROR_ID                   = mkRuntimeErrorId typeErrorName
 
--- Note [aBSENT_SUM_FIELD_ERROR_ID]
--- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
--- Absent argument error for unused unboxed sum fields are different than absent
--- error used in dummy worker functions (see `mkAbsentErrorApp`):
---
--- - `absentSumFieldError` can't take arguments because it's used in unarise for
---   unused pointer fields in unboxed sums. Applying an argument would require
---   allocating a thunk, and the whole point of using unboxed sums is to avoid
---   allocations.
---
--- - `absentSumFieldError` can't be CAFFY because that would mean making some
---   non-CAFFY definitions that use unboxed sums CAFFY in unarise.
---
---   To make `absentSumFieldError` non-CAFFY we get a stable pointer to it in
---   RtsStartup.c and mark it as non-CAFFY here. See also Note [Stable GC roots]
---   in RtsStartup.c
---
--- Getting this wrong causes hard-to-debug runtime issues, see #15038.
-
+-- | Used for unused pointer fields in unboxed sums. Introduced by
+-- unarise. Different than `aBSENT_ERROR_ID`: We don't want to introduce
+-- a thunk allocation in unarise so this doesn't take an argument.
 aBSENT_SUM_FIELD_ERROR_ID
   = mkVanillaGlobalWithInfo absentSumFieldErrorName
       (mkSpecForAllTys [alphaTyVar] (mkTyVarTy alphaTyVar)) -- forall a . a
-      (vanillaIdInfo `setStrictnessInfo` mkClosedStrictSig [] exnRes
-                     `setArityInfo` 0
-                     `setCafInfo` NoCafRefs)
-                     -- OK to make this non-CAFFY: See Note [Stable GC roots]
-                     -- in RtsStartup.c
+      (errorIdInfo `setStrictnessInfo` mkClosedStrictSig [] exnRes
+                   `setArityInfo` 0)
+
+-- See Note [The CAFFY-ness of error Ids]
+errorIdInfo :: IdInfo
+errorIdInfo = noCafIdInfo
 
 mkRuntimeErrorId :: Name -> Id
 -- Error function
@@ -776,18 +767,9 @@ mkRuntimeErrorId :: Name -> Id
 mkRuntimeErrorId name
  = mkVanillaGlobalWithInfo name runtimeErrorTy bottoming_info
  where
-    bottoming_info = vanillaIdInfo `setStrictnessInfo`    strict_sig
-                                   `setArityInfo`         1
+    bottoming_info = errorIdInfo `setStrictnessInfo`    strict_sig
+                                 `setArityInfo`         1
                         -- Make arity and strictness agree
-
-        -- Do *not* mark them as NoCafRefs, because they can indeed have
-        -- CAF refs.  For example, pAT_ERROR_ID calls GHC.Err.untangle,
-        -- which has some CAFs
-        -- In due course we may arrange that these error-y things are
-        -- regarded by the GC as permanently live, in which case we
-        -- can give them NoCaf info.  As it is, any function that calls
-        -- any pc_bottoming_Id will itself have CafRefs, which bloats
-        -- SRTs.
 
     strict_sig = mkClosedStrictSig [evalDmd] exnRes
               -- exnRes: these throw an exception, not just diverge
@@ -889,7 +871,7 @@ aBSENT_ERROR_ID
    absent_ty = mkSpecForAllTys [alphaTyVar] (mkFunTy addrPrimTy alphaTy)
    -- Not runtime-rep polymorphic. aBSENT_ERROR_ID is only used for
    -- lifted-type things; see Note [Absent errors] in WwLib
-   arity_info = vanillaIdInfo `setArityInfo` 1
+   arity_info = errorIdInfo `setArityInfo` 1
    -- NB: no bottoming strictness info, unlike other error-ids.
    -- See Note [aBSENT_ERROR_ID]
 

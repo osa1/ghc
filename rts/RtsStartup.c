@@ -272,8 +272,17 @@ hs_init_ghc(int *argc, char **argv[], RtsConfig rts_config)
     getStablePtr((StgPtr)cannotCompactPinned_closure);
     getStablePtr((StgPtr)cannotCompactMutable_closure);
     getStablePtr((StgPtr)nestedAtomically_closure);
+
+    // See Note [CAFFY-ness of error Ids] in MkCore
+    getStablePtr((StgPtr)runtimeError_closure);
+    getStablePtr((StgPtr)nonExhaustiveGuardsError_closure);
+    getStablePtr((StgPtr)noMethodBindingError_closure);
+    getStablePtr((StgPtr)patError_closure);
+    getStablePtr((StgPtr)recConError_closure);
+    getStablePtr((StgPtr)recSelError_closure);
+    getStablePtr((StgPtr)absentError_closure);
+    getStablePtr((StgPtr)typeError_closure);
     getStablePtr((StgPtr)absentSumFieldError_closure);
-        // See Note [aBSENT_SUM_FIELD_ERROR_ID] in MkCore
 
     getStablePtr((StgPtr)runSparks_closure);
     getStablePtr((StgPtr)ensureIOManagerIsRunning_closure);
