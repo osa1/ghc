@@ -383,7 +383,7 @@ emitPrimOp dflags [res] DataToTagOp [arg]
 
 --  #define unsafeFreezzeArrayzh(r,a)
 --      {
---        SET_INFO((StgClosure *)a,&stg_MUT_ARR_PTRS_FROZEN0_info);
+--        SET_INFO((StgClosure *)a,&stg_MUT_ARR_PTRS_FROZEN_DIRTY_info);
 --        r = a;
 --      }
 emitPrimOp _      [res] UnsafeFreezeArrayOp [arg]
