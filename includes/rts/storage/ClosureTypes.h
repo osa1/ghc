@@ -78,8 +78,7 @@
 #define CATCH_RETRY_FRAME             56
 #define CATCH_STM_FRAME               57
 #define WHITEHOLE                     58
-#define SMALL_MUT_ARR_PTRS_CLEAN      59
-#define SMALL_MUT_ARR_PTRS_DIRTY      60
+#define SMALL_MUT_ARR_PTRS            59
 #define SMALL_MUT_ARR_PTRS_FROZEN0    61
 #define SMALL_MUT_ARR_PTRS_FROZEN     62
 #define COMPACT_NFDATA                63

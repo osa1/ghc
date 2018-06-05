@@ -421,7 +421,7 @@ stg_newSmallArrayzh ( W_ n /* words */, gcptr init )
     }
     TICK_ALLOC_PRIM(SIZEOF_StgSmallMutArrPtrs, WDS(n), 0);
 
-    SET_HDR(arr, stg_SMALL_MUT_ARR_PTRS_DIRTY_info, CCCS);
+    SET_HDR(arr, stg_SMALL_MUT_ARR_PTRS_info, CCCS);
     StgSmallMutArrPtrs_ptrs(arr) = n;
 
     // Initialise all elements of the array with the value in R2
@@ -440,12 +440,12 @@ stg_unsafeThawSmallArrayzh ( gcptr arr )
 {
     // See stg_unsafeThawArrayzh
     if (StgHeader_info(arr) != stg_SMALL_MUT_ARR_PTRS_FROZEN0_info) {
-        SET_INFO(arr, stg_SMALL_MUT_ARR_PTRS_DIRTY_info);
+        SET_INFO(arr, stg_SMALL_MUT_ARR_PTRS_info);
         recordMutable(arr);
         // must be done after SET_INFO, because it ASSERTs closure_MUTABLE()
         return (arr);
     } else {
-        SET_INFO(arr, stg_SMALL_MUT_ARR_PTRS_DIRTY_info);
+        SET_INFO(arr, stg_SMALL_MUT_ARR_PTRS_info);
         return (arr);
     }
 }
@@ -457,7 +457,7 @@ stg_cloneSmallArrayzh ( gcptr src, W_ offset, W_ n )
 
 stg_cloneSmallMutableArrayzh ( gcptr src, W_ offset, W_ n )
 {
-    cloneSmallArray(stg_SMALL_MUT_ARR_PTRS_DIRTY_info, src, offset, n)
+    cloneSmallArray(stg_SMALL_MUT_ARR_PTRS_info, src, offset, n)
 }
 
 // We have to escape the "z" in the name.
@@ -468,14 +468,14 @@ stg_freezzeSmallArrayzh ( gcptr src, W_ offset, W_ n )
 
 stg_thawSmallArrayzh ( gcptr src, W_ offset, W_ n )
 {
-    cloneSmallArray(stg_SMALL_MUT_ARR_PTRS_DIRTY_info, src, offset, n)
+    cloneSmallArray(stg_SMALL_MUT_ARR_PTRS_info, src, offset, n)
 }
 
 stg_copySmallArrayzh ( gcptr src, W_ src_off, gcptr dst, W_ dst_off, W_ n)
 {
     W_ dst_p, src_p, bytes;
 
-    SET_INFO(dst, stg_SMALL_MUT_ARR_PTRS_DIRTY_info);
+    SET_INFO(dst, stg_SMALL_MUT_ARR_PTRS_info);
 
     dst_p = dst + SIZEOF_StgSmallMutArrPtrs + WDS(dst_off);
     src_p = src + SIZEOF_StgSmallMutArrPtrs + WDS(src_off);
@@ -489,7 +489,7 @@ stg_copySmallMutableArrayzh ( gcptr src, W_ src_off, gcptr dst, W_ dst_off, W_ n
 {
     W_ dst_p, src_p, bytes;
 
-    SET_INFO(dst, stg_SMALL_MUT_ARR_PTRS_DIRTY_info);
+    SET_INFO(dst, stg_SMALL_MUT_ARR_PTRS_info);
 
     dst_p = dst + SIZEOF_StgSmallMutArrPtrs + WDS(dst_off);
     src_p = src + SIZEOF_StgSmallMutArrPtrs + WDS(src_off);
@@ -518,7 +518,7 @@ stg_casSmallArrayzh ( gcptr arr, W_ ind, gcptr old, gcptr new )
         return (1,h);
     } else {
         // Compare and Swap Succeeded:
-        SET_HDR(arr, stg_SMALL_MUT_ARR_PTRS_DIRTY_info, CCCS);
+        SET_HDR(arr, stg_SMALL_MUT_ARR_PTRS_info, CCCS);
         return (0,new);
     }
 }

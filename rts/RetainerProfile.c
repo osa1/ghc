@@ -475,8 +475,7 @@ push( StgClosure *c, retainer c_child_r, StgClosure **first_child )
         break;
 
         // StgMutArrPtr.ptrs, no SRT
-    case SMALL_MUT_ARR_PTRS_CLEAN:
-    case SMALL_MUT_ARR_PTRS_DIRTY:
+    case SMALL_MUT_ARR_PTRS:
     case SMALL_MUT_ARR_PTRS_FROZEN:
     case SMALL_MUT_ARR_PTRS_FROZEN0:
         init_ptrs(&se.info, ((StgSmallMutArrPtrs *)c)->ptrs,
@@ -970,8 +969,7 @@ isRetainer( StgClosure *c )
     case MUT_VAR_DIRTY:
     case MUT_ARR_PTRS_CLEAN:
     case MUT_ARR_PTRS_DIRTY:
-    case SMALL_MUT_ARR_PTRS_CLEAN:
-    case SMALL_MUT_ARR_PTRS_DIRTY:
+    case SMALL_MUT_ARR_PTRS:
     case BLOCKING_QUEUE:
 
         // thunks are retainers.

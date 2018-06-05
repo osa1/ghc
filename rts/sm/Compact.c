@@ -495,8 +495,7 @@ update_fwd_large( bdescr *bd )
           continue;
       }
 
-    case SMALL_MUT_ARR_PTRS_CLEAN:
-    case SMALL_MUT_ARR_PTRS_DIRTY:
+    case SMALL_MUT_ARR_PTRS:
     case SMALL_MUT_ARR_PTRS_FROZEN:
     case SMALL_MUT_ARR_PTRS_FROZEN0:
       // follow everything
@@ -696,8 +695,7 @@ thread_obj (const StgInfoTable *info, StgPtr p)
         return (StgPtr)a + mut_arr_ptrs_sizeW(a);
     }
 
-    case SMALL_MUT_ARR_PTRS_CLEAN:
-    case SMALL_MUT_ARR_PTRS_DIRTY:
+    case SMALL_MUT_ARR_PTRS:
     case SMALL_MUT_ARR_PTRS_FROZEN:
     case SMALL_MUT_ARR_PTRS_FROZEN0:
         // follow everything

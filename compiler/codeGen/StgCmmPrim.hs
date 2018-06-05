@@ -211,7 +211,7 @@ shouldInlinePrimOp dflags ThawArrayOp [src, src_off, (CmmLit (CmmInt n w))]
 shouldInlinePrimOp dflags NewSmallArrayOp [(CmmLit (CmmInt n w)), init]
   | wordsToBytes dflags (asUnsigned w n) <= fromIntegral (maxInlineAllocSize dflags) =
       Just $ \ [res] ->
-      doNewArrayOp res (smallArrPtrsRep (fromInteger n)) mkSMAP_DIRTY_infoLabel
+      doNewArrayOp res (smallArrPtrsRep (fromInteger n)) mkSMAP_infoLabel
       [ (mkIntExpr dflags (fromInteger n),
          fixedHdrSize dflags + oFFSET_StgSmallMutArrPtrs_ptrs dflags)
       ]
@@ -231,7 +231,7 @@ shouldInlinePrimOp dflags CloneSmallArrayOp [src, src_off, (CmmLit (CmmInt n w))
 
 shouldInlinePrimOp dflags CloneSmallMutableArrayOp [src, src_off, (CmmLit (CmmInt n w))]
   | wordsToBytes dflags (asUnsigned w n) <= fromIntegral (maxInlineAllocSize dflags) =
-      Just $ \ [res] -> emitCloneSmallArray mkSMAP_DIRTY_infoLabel res src src_off (fromInteger n)
+      Just $ \ [res] -> emitCloneSmallArray mkSMAP_infoLabel res src src_off (fromInteger n)
 
 shouldInlinePrimOp dflags FreezeSmallArrayOp [src, src_off, (CmmLit (CmmInt n w))]
   | wordsToBytes dflags (asUnsigned w n) <= fromIntegral (maxInlineAllocSize dflags) =
@@ -239,7 +239,7 @@ shouldInlinePrimOp dflags FreezeSmallArrayOp [src, src_off, (CmmLit (CmmInt n w)
 
 shouldInlinePrimOp dflags ThawSmallArrayOp [src, src_off, (CmmLit (CmmInt n w))]
   | wordsToBytes dflags (asUnsigned w n) <= fromIntegral (maxInlineAllocSize dflags) =
-      Just $ \ [res] -> emitCloneSmallArray mkSMAP_DIRTY_infoLabel res src src_off (fromInteger n)
+      Just $ \ [res] -> emitCloneSmallArray mkSMAP_infoLabel res src src_off (fromInteger n)
 
 shouldInlinePrimOp dflags primop args
   | primOpOutOfLine primop = Nothing
@@ -2160,7 +2160,7 @@ emitCopySmallArray copy src0 src_off dst0 dst_off n = do
     dst     <- assignTempE dst0
 
     -- Set the dirty bit in the header.
-    emit (setInfo dst (CmmLit (CmmLabel mkSMAP_DIRTY_infoLabel)))
+    emit (setInfo dst (CmmLit (CmmLabel mkSMAP_infoLabel)))
 
     dst_p <- assignTempE $ cmmOffsetExprW dflags
              (cmmOffsetB dflags dst (smallArrPtrsHdrSize dflags)) dst_off
@@ -2288,7 +2288,7 @@ doWriteSmallPtrArrayOp addr idx val = do
     dflags <- getDynFlags
     let ty = cmmExprType dflags val
     mkBasicIndexedWrite (smallArrPtrsHdrSize dflags) Nothing addr ty idx val
-    emit (setInfo addr (CmmLit (CmmLabel mkSMAP_DIRTY_infoLabel)))
+    emit (setInfo addr (CmmLit (CmmLabel mkSMAP_infoLabel)))
 
 ------------------------------------------------------------------------------
 -- Atomic read-modify-write

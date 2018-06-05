@@ -312,13 +312,8 @@ printClosure( const StgClosure *obj )
         debugBelch("MUT_ARR_PTRS_FROZEN(size=%" FMT_Word ")\n", (W_)((StgMutArrPtrs *)obj)->ptrs);
         break;
 
-    case SMALL_MUT_ARR_PTRS_CLEAN:
-        debugBelch("SMALL_MUT_ARR_PTRS_CLEAN(size=%" FMT_Word ")\n",
-                   (W_)((StgSmallMutArrPtrs *)obj)->ptrs);
-        break;
-
-    case SMALL_MUT_ARR_PTRS_DIRTY:
-        debugBelch("SMALL_MUT_ARR_PTRS_DIRTY(size=%" FMT_Word ")\n",
+    case SMALL_MUT_ARR_PTRS:
+        debugBelch("SMALL_MUT_ARR_PTRS(size=%" FMT_Word ")\n",
                    (W_)((StgSmallMutArrPtrs *)obj)->ptrs);
         break;
 
@@ -933,8 +928,7 @@ const char *closure_type_names[] = {
  [CATCH_RETRY_FRAME]     = "CATCH_RETRY_FRAME",
  [CATCH_STM_FRAME]       = "CATCH_STM_FRAME",
  [WHITEHOLE]             = "WHITEHOLE",
- [SMALL_MUT_ARR_PTRS_CLEAN] = "SMALL_MUT_ARR_PTRS_CLEAN",
- [SMALL_MUT_ARR_PTRS_DIRTY] = "SMALL_MUT_ARR_PTRS_DIRTY",
+ [SMALL_MUT_ARR_PTRS]    = "SMALL_MUT_ARR_PTRS",
  [SMALL_MUT_ARR_PTRS_FROZEN0] = "SMALL_MUT_ARR_PTRS_FROZEN0",
  [SMALL_MUT_ARR_PTRS_FROZEN] = "SMALL_MUT_ARR_PTRS_FROZEN",
  [COMPACT_NFDATA]        = "COMPACT_NFDATA"

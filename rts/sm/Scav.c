@@ -662,8 +662,7 @@ scavenge_block (bdescr *bd)
         break;
     }
 
-    case SMALL_MUT_ARR_PTRS_CLEAN:
-    case SMALL_MUT_ARR_PTRS_DIRTY:
+    case SMALL_MUT_ARR_PTRS:
         // follow everything
     {
         StgPtr next;
@@ -678,13 +677,6 @@ scavenge_block (bdescr *bd)
             evacuate((StgClosure **)p);
         }
         gct->eager_promotion = saved_eager_promotion;
-
-        if (gct->failed_to_evac) {
-            ((StgClosure *)q)->header.info = &stg_SMALL_MUT_ARR_PTRS_DIRTY_info;
-        } else {
-            ((StgClosure *)q)->header.info = &stg_SMALL_MUT_ARR_PTRS_CLEAN_info;
-        }
-
         gct->failed_to_evac = true; // always put it on the mutable list.
         break;
     }
@@ -1060,8 +1052,7 @@ scavenge_mark_stack(void)
             break;
         }
 
-        case SMALL_MUT_ARR_PTRS_CLEAN:
-        case SMALL_MUT_ARR_PTRS_DIRTY:
+        case SMALL_MUT_ARR_PTRS:
             // follow everything
         {
             StgPtr next;
@@ -1078,13 +1069,6 @@ scavenge_mark_stack(void)
                 evacuate((StgClosure **)p);
             }
             gct->eager_promotion = saved_eager;
-
-            if (gct->failed_to_evac) {
-                ((StgClosure *)q)->header.info = &stg_SMALL_MUT_ARR_PTRS_DIRTY_info;
-            } else {
-                ((StgClosure *)q)->header.info = &stg_SMALL_MUT_ARR_PTRS_CLEAN_info;
-            }
-
             gct->failed_to_evac = true; // mutable anyhow.
             break;
         }
@@ -1382,10 +1366,9 @@ scavenge_one(StgPtr p)
         break;
     }
 
-    case SMALL_MUT_ARR_PTRS_CLEAN:
-    case SMALL_MUT_ARR_PTRS_DIRTY:
+    case SMALL_MUT_ARR_PTRS:
     {
-        StgPtr next, q;
+        StgPtr next;
         bool saved_eager;
 
         // We don't eagerly promote objects pointed to by a mutable
@@ -1394,19 +1377,11 @@ scavenge_one(StgPtr p)
         // avoid traversing it during minor GCs.
         saved_eager = gct->eager_promotion;
         gct->eager_promotion = false;
-        q = p;
         next = p + small_mut_arr_ptrs_sizeW((StgSmallMutArrPtrs*)p);
         for (p = (P_)((StgSmallMutArrPtrs *)p)->payload; p < next; p++) {
             evacuate((StgClosure **)p);
         }
         gct->eager_promotion = saved_eager;
-
-        if (gct->failed_to_evac) {
-            ((StgClosure *)q)->header.info = &stg_SMALL_MUT_ARR_PTRS_DIRTY_info;
-        } else {
-            ((StgClosure *)q)->header.info = &stg_SMALL_MUT_ARR_PTRS_CLEAN_info;
-        }
-
         gct->failed_to_evac = true;
         break;
     }

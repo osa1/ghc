@@ -114,8 +114,7 @@ eval:
         STACK,
         TREC_CHUNK,
         WHITEHOLE,
-        SMALL_MUT_ARR_PTRS_CLEAN,
-        SMALL_MUT_ARR_PTRS_DIRTY,
+        SMALL_MUT_ARR_PTRS,
         COMPACT_NFDATA: {
         jump stg_raisezh(base_GHCziIOziException_cannotCompactMutable_closure);
     }

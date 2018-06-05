@@ -404,8 +404,7 @@ closure_sizeW_ (const StgClosure *p, const StgInfoTable *info)
     case MUT_ARR_PTRS_FROZEN:
     case MUT_ARR_PTRS_FROZEN0:
         return mut_arr_ptrs_sizeW((StgMutArrPtrs*)p);
-    case SMALL_MUT_ARR_PTRS_CLEAN:
-    case SMALL_MUT_ARR_PTRS_DIRTY:
+    case SMALL_MUT_ARR_PTRS:
     case SMALL_MUT_ARR_PTRS_FROZEN:
     case SMALL_MUT_ARR_PTRS_FROZEN0:
         return small_mut_arr_ptrs_sizeW((StgSmallMutArrPtrs*)p);
