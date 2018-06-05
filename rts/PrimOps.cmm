@@ -275,28 +275,15 @@ stg_newArrayzh ( W_ n /* words */, gcptr init )
 
 stg_unsafeThawArrayzh ( gcptr arr )
 {
-    // SUBTLETY TO DO WITH THE OLD GEN MUTABLE LIST
-    //
-    // A MUT_ARR_PTRS lives on the mutable list, but a MUT_ARR_PTRS_FROZEN_CLEAN
-    // normally doesn't.  However, when we freeze a MUT_ARR_PTRS, we leave
-    // it on the mutable list for the GC to remove (removing something from
-    // the mutable list is not easy).
-    //
-    // So that we can tell whether a MUT_ARR_PTRS_FROZEN_CLEAN is on the mutable list,
-    // when we freeze it we set the info ptr to be MUT_ARR_PTRS_FROZEN_DIRTY
-    // to indicate that it is still on the mutable list.
-    //
-    // So, when we thaw a MUT_ARR_PTRS_FROZEN_CLEAN, we must cope with two cases:
-    // either it is on a mut_list, or it isn't.  We adopt the convention that
-    // the closure type is MUT_ARR_PTRS_FROZEN_DIRTY if it is on the mutable list,
-    // and MUT_ARR_PTRS_FROZEN_CLEAN otherwise.  In fact it wouldn't matter if
-    // we put it on the mutable list more than once, but it would get scavenged
-    // multiple times during GC, which would be unnecessarily slow.
-    //
+    // A MUT_ARR_PTRS always lives on a mut_list, but FROZEN_MUT_ARR_PTRS
+    // doesn't. To decide whether to add the thawed array to a mut_list we check
+    // the info table. MUT_ARR_PTRS_FROZEN_DIRTY means it's already on a
+    // mut_list so no need to add it again. MUT_ARR_PTRS_FROZEN_CLEAN means it's
+    // not and we should add it to a mut_list.
     if (StgHeader_info(arr) != stg_MUT_ARR_PTRS_FROZEN_DIRTY_info) {
         SET_INFO(arr,stg_MUT_ARR_PTRS_DIRTY_info);
+        // must be done after SET_INFO, because it ASSERTs closure_MUTABLE():
         recordMutable(arr);
-        // must be done after SET_INFO, because it ASSERTs closure_MUTABLE()
         return (arr);
     } else {
         SET_INFO(arr,stg_MUT_ARR_PTRS_DIRTY_info);
