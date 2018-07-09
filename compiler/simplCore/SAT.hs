@@ -111,11 +111,11 @@ satBind (Rec pairs) interesting_ids = do
     return (Rec (zipEqual "satBind" binders rhss'), mergeIdSATInfos sat_info_rhss')
 
 data App = VarApp Id | TypeApp Type | CoApp Coercion
-data Staticness a = Static a | NotStatic
+data Staticness = Static App | NotStatic
 
 type IdAppInfo = (Id, SATInfo)
 
-type SATInfo = [Staticness App]
+type SATInfo = [Staticness]
 type IdSATInfo = IdEnv SATInfo
 emptyIdSATInfo :: IdSATInfo
 emptyIdSATInfo = emptyUFM
@@ -128,7 +128,7 @@ pprIdSATInfo id_sat_info = vcat (map pprIdAndSATInfo (Map.toList id_sat_info))
 pprSATInfo :: SATInfo -> SDoc
 pprSATInfo staticness = hcat $ map pprStaticness staticness
 
-pprStaticness :: Staticness App -> SDoc
+pprStaticness :: Staticness -> SDoc
 pprStaticness (Static (VarApp _))  = text "SV"
 pprStaticness (Static (TypeApp _)) = text "ST"
 pprStaticness (Static (CoApp _))   = text "SC"
@@ -428,6 +428,6 @@ saTransform binder arg_staticness rhs_binders rhs_body
                                    (idUnique binder)
                                    (exprType shadow_rhs)
 
-isStaticValue :: Staticness App -> Bool
+isStaticValue :: Staticness -> Bool
 isStaticValue (Static (VarApp _)) = True
 isStaticValue _                   = False
