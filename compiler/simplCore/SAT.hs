@@ -59,7 +59,6 @@ import CoreUtils
 import Type
 import Coercion
 import Id
-import Name
 import VarEnv
 import UniqSupply
 import Util
@@ -275,12 +274,13 @@ To do the transformation, the game plan is to:
    original arguments to the function but discards
    the ones that are static and makes a call to the
    SATed version with the remainder. We intend that
-   this will be inlined later, removing the overhead
+   this will be inlined later, removing the overhead.
+   We call this function "wrapper".
 
-2. Bind this nonrecursive RHS over the original body
-   WITH THE SAME UNIQUE as the original body so that
-   any recursive calls to the original now go via
-   the small wrapper
+2. Bind this wrapper RHS over the original body, but
+   rename the original function name in the body to
+   the wrapper so that any recursive calls now go via
+   the wrapper.
 
 3. Rebind the original function to a new one which contains
    our SATed function and just makes a call to it:
@@ -289,46 +289,35 @@ To do the transformation, the game plan is to:
 Example: transform this
 
     map :: forall a b. (a->b) -> [a] -> [b]
-    map = /\ab. \(f:a->b) (as:[a]) -> body[map]
+    map = /\ab. \(f::a->b) (as::[a]) -> body[map]
 to
     map :: forall a b. (a->b) -> [a] -> [b]
-    map = /\ab. \(f:a->b) (as:[a]) ->
-         letrec map' :: [a] -> [b]
-                    -- The "worker function
-                map' = \(as:[a]) ->
-                         let map :: forall a' b'. (a -> b) -> [a] -> [b]
-                                -- The "shadow function
-                             map = /\a'b'. \(f':(a->b) (as:[a]).
-                                   map' as
-                         in body[map]
+    map = /\ab. \(f::a->b) (as::[a]) ->
+         let map' :: [a] -> [b]
+                 -- The "worker" function
+             map' = \(as::[a]) ->
+                      let map_wrapper :: forall a' b'. (a -> b) -> [a] -> [b]
+                             -- The "wrapper" function
+                          map_wrapper = /\a'b'. \(f':(a->b) (as:[a]) ->
+                                map' as
+                      in body[map][map_wrapper / map]
+                           -- substitute 'map_wrapper' for 'map'
          in map' as
-
-Note [Shadow binding]
-~~~~~~~~~~~~~~~~~~~~~
-The calls to the inner map inside body[map] should get inlined
-by the local re-binding of 'map'.  We call this the "shadow binding".
-
-But we can't use the original binder 'map' unchanged, because
-it might be exported, in which case the shadow binding won't be
-discarded as dead code after it is inlined.
-
-So we use a hack: we make a new SysLocal binder with the *same* unique
-as binder.  (Another alternative would be to reset the export flag.)
 
 Note [Binder type capture]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
-Notice that in the inner map (the "shadow function"), the static arguments
+Notice that in the inner map (the "wrapper function"), the static arguments
 are discarded -- it's as if they were underscores.  Instead, mentions
 of these arguments (notably in the types of dynamic arguments) are bound
 by the *outer* lambdas of the main function.  So we must make up fresh
 names for the static arguments so that they do not capture variables
 mentioned in the types of dynamic args.
 
-In the map example, the shadow function must clone the static type
+In the map example, the wrapper function must clone the static type
 argument a,b, giving a',b', to ensure that in the \(as:[a]), the 'a'
 is bound by the outer forall.  We clone f' too for consistency, but
 that doesn't matter either way because static Id arguments aren't
-mentioned in the shadow binding at all.
+mentioned in the wrapper binding at all.
 
 If we don't we get something like this:
 
@@ -345,10 +334,10 @@ GHC.Base.until =
       sat_worker_s1aU =
         \ (x_a6X :: a_aiK) ->
           let {
-            sat_shadow_r17 :: forall a_a3O.
-                              (a_a3O -> GHC.Types.Bool) -> (a_a3O -> a_a3O) -> a_a3O -> a_a3O
+            sat_wrapper_r17 :: forall a_a3O.
+                               (a_a3O -> GHC.Types.Bool) -> (a_a3O -> a_a3O) -> a_a3O -> a_a3O
             []
-            sat_shadow_r17 =
+            sat_wrapper_r17 =
               \ (@ a_aiK)
                 (p_a6T :: a_aiK -> GHC.Types.Bool)
                 (f_a6V :: a_aiK -> a_aiK)
@@ -360,7 +349,7 @@ GHC.Base.until =
           }; } in
     sat_worker_s1aU x_a6X
 
-Where sat_shadow has captured the type variables of x_a6X etc as it has a a_aiK
+Where sat_wrapper has captured the type variables of x_a6X etc as it has a a_aiK
 type argument. This is bad because it means the application sat_worker_s1aU x_a6X
 is not well typed.
 -}
@@ -379,9 +368,9 @@ saTransformMaybe binder maybe_arg_staticness rhs_binders rhs_body
 
 saTransform :: Id -> SATInfo -> [Id] -> CoreExpr -> SatM CoreBind
 saTransform binder arg_staticness rhs_binders rhs_body
-  = do  { shadow_lam_bndrs <- mapM clone binders_w_staticness
-        ; uniq             <- newUnique
-        ; return (NonRec binder (mk_new_rhs uniq shadow_lam_bndrs)) }
+  = do  { wrapper_lam_bndrs <- mapM clone binders_w_staticness
+        ; new_rhs           <- mk_new_rhs wrapper_lam_bndrs
+        ; return (NonRec binder new_rhs) }
   where
     -- Running example: foldr
     -- foldr \alpha \beta c n xs = e, for some e
@@ -402,31 +391,38 @@ saTransform binder arg_staticness rhs_binders rhs_body
                                  ; return (setVarUnique bndr uniq) }
 
     -- new_rhs = \alpha beta c n xs ->
-    --           let sat_worker = \xs -> let sat_shadow = \alpha' beta' c n xs ->
-    --                                       sat_worker xs
-    --                                   in e
+    --           let sat_worker = \xs ->
+    --                 let sat_wrapper = \alpha' beta' c n xs ->
+    --                       sat_worker xs
+    --                 in e[sat_wrapper / foldr]
     --           in sat_worker xs
-    mk_new_rhs uniq shadow_lam_bndrs
-        = mkLams rhs_binders $
-          Let (Rec [(rec_body_bndr, rec_body)])
-          local_body
-        where
-          local_body = mkVarApps (Var rec_body_bndr) non_static_args
+    mk_new_rhs wrapper_lam_bndrs = do
+      wrapper_bndr_uniq <- getUniqueM
+      rec_body_bndr_uniq <- getUniqueM
+
+      let local_body = mkVarApps (Var rec_body_bndr) non_static_args
 
           rec_body = mkLams non_static_args $
-                     Let (NonRec shadow_bndr shadow_rhs) rhs_body
+                     Let (NonRec wrapper_bndr wrapper_rhs) rhs_body
 
             -- See Note [Binder type capture]
-          shadow_rhs = mkLams shadow_lam_bndrs local_body
+          wrapper_rhs = mkLams wrapper_lam_bndrs local_body
             -- nonrec_rhs = \alpha' beta' c n xs -> sat_worker xs
 
-          rec_body_bndr = mkSysLocal (fsLit "sat_worker") uniq (exprType rec_body)
+          rec_body_bndr = mkSysLocal (fsLit "sat_worker")
+                                     rec_body_bndr_uniq
+                                     (exprType rec_body)
             -- rec_body_bndr = sat_worker
 
-            -- See Note [Shadow binding]; make a SysLocal
-          shadow_bndr = mkSysLocal (occNameFS (getOccName binder))
-                                   (idUnique binder)
-                                   (exprType shadow_rhs)
+            -- See Note [Wrapper binding]; make a SysLocal
+          wrapper_bndr = mkSysLocal (fsLit "sat_wrapper")
+                                    wrapper_bndr_uniq
+                                    (exprType wrapper_rhs)
+
+      return $
+        mkLams rhs_binders $
+        Let (Rec [(rec_body_bndr, rec_body)])
+        local_body
 
 isStaticValue :: Staticness -> Bool
 isStaticValue (Static (VarApp _)) = True
