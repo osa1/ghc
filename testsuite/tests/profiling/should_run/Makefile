@@ -2,8 +2,6 @@ TOP=../../..
 include $(TOP)/mk/boilerplate.mk
 include $(TOP)/mk/test.mk
 
-DECIMAL_REGEXP = [0-9]\+.[0-9]\+
-
 .PHONY: T11489
 T11489:
 	$(RM) T11489

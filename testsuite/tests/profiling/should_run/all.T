@@ -143,3 +143,8 @@ test('toplevel_scc_1',
 test('T12962', [], compile_and_run, [''])
 
 test('T14257', [], run_command, ['$MAKE -s --no-print-directory T14257'])
+
+test('T15604',
+     [extra_files(['file_T15604.prof.sample']), extra_run_opts('+RTS -pofile_T15604 -RTS')],
+     compile_and_run,
+     [''])

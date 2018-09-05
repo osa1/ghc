@@ -1292,10 +1292,19 @@ def simple_run(name, way, prog, extra_run_opts):
     check_hp = '-h' in my_rts_flags and opts.check_hp
     check_prof = '-p' in my_rts_flags
 
+    if check_hp or check_prof:
+        prof_file_name_re = re.compile(r'-po(\w+)')
+        prof_file_names = prof_file_name_re.findall(my_rts_flags) + \
+                          prof_file_name_re.findall(extra_run_opts)
+        if prof_file_names:
+            prof_file_name = prof_file_names[-1]
+        else:
+            prof_file_name = name
+
     # exit_code > 127 probably indicates a crash, so don't try to run hp2ps.
-    if check_hp and (exit_code <= 127 or exit_code == 251) and not check_hp_ok(name):
+    if check_hp and (exit_code <= 127 or exit_code == 251) and not check_hp_ok(prof_file_name):
         return failBecause('bad heap profile')
-    if check_prof and not check_prof_ok(name, way):
+    if check_prof and not check_prof_ok(prof_file_name, way):
         return failBecause('bad profile')
 
     return checkStats(name, way, stats_file, opts.stats_range_fields)
@@ -1528,11 +1537,12 @@ def check_prof_ok(name, way):
 
     if not os.path.exists(actual_prof_path):
         print(actual_prof_path + " does not exist")
-        return(False)
+        return False
 
     if os.path.getsize(actual_prof_path) == 0:
         print(actual_prof_path + " is empty")
-        return(False)
+        return False
+
 
     return compare_outputs(way, 'prof', normalise_prof,
                             expected_prof_file, actual_prof_file,

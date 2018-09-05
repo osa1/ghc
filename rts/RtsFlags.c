@@ -1220,7 +1220,7 @@ error = true;
                         break;
                       }
                       RtsFlags.CcFlags.outputFileNameStem = rts_argv[arg]+3;
-                      break;
+                      /* fallthrough */
                   case '\0':
                       if (rts_argv[arg][1] == 'P') {
                           RtsFlags.CcFlags.doCostCentres = COST_CENTRES_VERBOSE;
