@@ -679,6 +679,23 @@ for:
 
   R1 = StgAP_STACK_fun(ap);
 
+#if defined(DEBUG)
+  // At this point the closure already became a (eager) blackhole and lost the
+  // size information, so we can't call overwritingClosure(ap) here. Instead we
+  // zero the slop manually.
+  p = ap + SIZEOF_StgThunkHeader;
+  i = 0;
+  // Words is size of the stack. +2 for size and fun fields.
+  Words = Words + 2;
+zero_slop:
+  if (i < Words) {
+    W_[p] = 0;
+    p = p + WDS(1);
+    i = i + 1;
+    goto zero_slop;
+  }
+#endif
+
   ENTER_R1();
 }
 
@@ -730,6 +747,19 @@ for:
   TICK_ENT_VIA_NODE();
 
   R1 = StgAP_STACK_fun(ap);
+
+#if defined(DEBUG)
+  p = ap + SIZEOF_StgThunkHeader;
+  i = 0;
+  Words = Words + 2;
+zero_slop:
+  if (i < Words + 2) {
+    W_[p] = 0;
+    p = p + WDS(1);
+    i = i + 1;
+    goto zero_slop;
+  }
+#endif
 
   ENTER_R1();
 }
