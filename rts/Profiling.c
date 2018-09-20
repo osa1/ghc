@@ -110,7 +110,8 @@ static  CostCentreStack * appendCCS       ( CostCentreStack *ccs1,
 static  CostCentreStack * actualPush_     ( CostCentreStack *ccs, CostCentre *cc,
                                             CostCentreStack *new_ccs );
 static  void              inheritCosts    ( CostCentreStack *ccs );
-static  ProfilerTotals    countTickss     ( CostCentreStack const *ccs );
+static  void              countTickss     ( CostCentreStack const *ccs,
+                                            ProfilerTotals *totals );
 static  CostCentreStack * checkLoop       ( CostCentreStack *ccs,
                                             CostCentre *cc );
 static  void              sortCCSTree     ( CostCentreStack *ccs );
@@ -722,7 +723,8 @@ reportCCSProfiling( void )
     stopProfTimer();
     if (RtsFlags.CcFlags.doCostCentres == 0) return;
 
-    ProfilerTotals totals = countTickss(CCS_MAIN);
+    ProfilerTotals totals = {0,0};
+    countTickss(CCS_MAIN, &totals);
     aggregateCCCosts(CCS_MAIN);
     inheritCosts(CCS_MAIN);
     CostCentreStack *stack = pruneCCSTree(CCS_MAIN);
@@ -739,9 +741,11 @@ reportCCSProfiling( void )
  * Accumulating total allocatinos and tick count
    -------------------------------------------------------------------------- */
 
-/* Helper */
+/* Traverse the cost centre stack tree and accumulate
+ * total ticks/allocations.
+ */
 static void
-countTickss_(CostCentreStack const *ccs, ProfilerTotals *totals)
+countTickss(CostCentreStack const *ccs, ProfilerTotals *totals)
 {
     if (!ignoreCCS(ccs)) {
         totals->total_alloc += ccs->mem_alloc;
@@ -749,20 +753,9 @@ countTickss_(CostCentreStack const *ccs, ProfilerTotals *totals)
     }
     for (IndexTable *i = ccs->indexTable; i != NULL; i = i->next) {
         if (!i->back_edge) {
-            countTickss_(i->ccs, totals);
+            countTickss(i->ccs, totals);
         }
     }
-}
-
-/* Traverse the cost centre stack tree and accumulate
- * total ticks/allocations.
- */
-static ProfilerTotals
-countTickss(CostCentreStack const *ccs)
-{
-    ProfilerTotals totals = {0,0};
-    countTickss_(ccs, &totals);
-    return totals;
 }
 
 /* Traverse the cost centre stack tree and inherit ticks & allocs.
