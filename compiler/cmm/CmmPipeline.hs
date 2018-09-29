@@ -45,6 +45,7 @@ cmmPipeline hsc_env srtInfo prog =
      tops <- {-# SCC "tops" #-} mapM (cpsTop hsc_env) prog
 
      (srtInfo, cmms) <- {-# SCC "doSRTs" #-} doSRTs dflags srtInfo tops
+
      dumpWith dflags Opt_D_dump_cmm_cps "Post CPS Cmm" (ppr cmms)
 
      return (srtInfo, cmms)

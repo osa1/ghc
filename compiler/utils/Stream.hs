@@ -7,8 +7,8 @@
 -- -----------------------------------------------------------------------------
 module Stream (
     Stream(..), yield, liftIO,
-    collect, fromList,
-    Stream.map, Stream.mapM, Stream.mapAccumL
+    collect, collect', fromList,
+    Stream.map, Stream.mapM, Stream.mapAccumL, Stream.mapAccumL'
   ) where
 
 import GhcPrelude
@@ -71,6 +71,15 @@ collect str = go str []
       Left () -> return (reverse acc)
       Right (a, str') -> go str' (a:acc)
 
+collect' :: Monad m => Stream m a x -> m ([a], x)
+collect' str = go str []
+ where
+  go str acc = do
+    r <- runStream str
+    case r of
+      Left x -> return (reverse acc, x)
+      Right (a, str') -> go str' (a:acc)
+
 -- | Turn a list into a 'Stream', by yielding each element in turn.
 fromList :: Monad m => [a] -> Stream m a ()
 fromList = mapM_ yield
@@ -104,3 +113,13 @@ mapAccumL f c str = Stream $ do
     Right (a, str') -> do
       (c',b) <- f c a
       return (Right (b, mapAccumL f c' str'))
+
+mapAccumL' :: Monad m => (c -> a -> m (c,b)) -> c -> Stream m a x
+           -> Stream m b (c, x)
+mapAccumL' f c str = Stream $ do
+  r <- runStream str
+  case r of
+    Left  x -> return (Left (c, x))
+    Right (a, str') -> do
+      (c',b) <- f c a
+      return (Right (b, mapAccumL' f c' str'))

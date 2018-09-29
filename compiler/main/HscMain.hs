@@ -1344,18 +1344,24 @@ hscGenHardCode hsc_env cgguts mod_summary output_filename = do
 
             ------------------  Code output -----------------------
             rawcmms0 <- {-# SCC "cmmToRawCmm" #-}
-                      cmmToRawCmm dflags cmms
+                        cmmToRawCmm dflags cmms
 
             let dump a = do dumpIfSet_dyn dflags Opt_D_dump_cmm_raw "Raw Cmm"
                               (ppr a)
                             return a
                 rawcmms1 = Stream.mapM dump rawcmms0
 
-            (output_filename, (_stub_h_exists, stub_c_exists), foreign_fps)
+            (output_filename, (_stub_h_exists, stub_c_exists), foreign_fps, mb_srts)
                 <- {-# SCC "codeOutput" #-}
                   codeOutput dflags this_mod output_filename location
                   foreign_stubs foreign_files dependencies rawcmms1
-            return (output_filename, stub_c_exists, foreign_fps)
+
+            let ret = return (output_filename, stub_c_exists, foreign_fps)
+            case mb_srts of
+              Nothing ->
+                ret
+              Just srts -> 
+                pprTrace "hscGenHardCode, ModuleSRTInfo" (ppr srts) ret
 
 
 hscInteractive :: HscEnv
@@ -1418,7 +1424,7 @@ doCodeGen   :: HscEnv -> Module -> [TyCon]
             -> CollectedCCs
             -> [StgTopBinding]
             -> HpcInfo
-            -> IO (Stream IO CmmGroup ())
+            -> IO (Stream IO CmmGroup (Maybe ModuleSRTInfo))
          -- Note we produce a 'Stream' of CmmGroups, so that the
          -- backend can be run incrementally.  Otherwise it generates all
          -- the C-- up front, which has a significant space cost.
@@ -1449,6 +1455,7 @@ doCodeGen hsc_env this_mod data_tycons
     -- When splitting, we generate one SRT per split chunk, otherwise
     -- we generate one SRT for the whole module.
     let
+     pipeline_stream :: Stream IO CmmGroup (Maybe ModuleSRTInfo)
      pipeline_stream
       | gopt Opt_SplitObjs dflags || gopt Opt_SplitSections dflags ||
         osSubsectionsViaSymbols (platformOS (targetPlatform dflags))
@@ -1458,15 +1465,15 @@ doCodeGen hsc_env this_mod data_tycons
                   cmmPipeline hsc_env (emptySRT this_mod) cmmgroup
                 return (us, cmmgroup)
 
-          in do _ <- Stream.mapAccumL run_pipeline us ppr_stream1
-                return ()
+          in do void $ Stream.mapAccumL run_pipeline us ppr_stream1
+                return Nothing
 
       | otherwise
         = {-# SCC "cmmPipeline" #-}
-          let run_pipeline = cmmPipeline hsc_env
-          in void $ Stream.mapAccumL run_pipeline (emptySRT this_mod) ppr_stream1
+          Just <$> Stream.mapAccumL (cmmPipeline hsc_env) (emptySRT this_mod) ppr_stream1
 
     let
+        dump2 :: CmmGroup -> IO CmmGroup
         dump2 a = do dumpIfSet_dyn dflags Opt_D_dump_cmm
                         "Output Cmm" (ppr a)
                      return a

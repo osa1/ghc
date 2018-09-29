@@ -6,7 +6,8 @@
 --
 -- -----------------------------------------------------------------------------
 
-{-# LANGUAGE BangPatterns, CPP, GADTs, ScopedTypeVariables, UnboxedTuples #-}
+{-# LANGUAGE BangPatterns, CPP, GADTs, ScopedTypeVariables, UnboxedTuples,
+            TupleSections #-}
 
 module AsmCodeGen (
                     -- * Module entry point
@@ -177,13 +178,14 @@ data NcgImpl statics instr jumpDest = NcgImpl {
     }
 
 --------------------
-nativeCodeGen :: DynFlags -> Module -> ModLocation -> Handle -> UniqSupply
-              -> Stream IO RawCmmGroup ()
-              -> IO UniqSupply
+nativeCodeGen :: forall a
+               . DynFlags -> Module -> ModLocation -> Handle -> UniqSupply
+              -> Stream IO RawCmmGroup a
+              -> IO (UniqSupply, a)
 nativeCodeGen dflags this_mod modLoc h us cmms
  = let platform = targetPlatform dflags
        nCG' :: (Outputable statics, Outputable instr, Instruction instr)
-            => NcgImpl statics instr jumpDest -> IO UniqSupply
+            => NcgImpl statics instr jumpDest -> IO (UniqSupply, a)
        nCG' ncgImpl = nativeCodeGen' dflags this_mod modLoc ncgImpl h us cmms
    in case platformArch platform of
       ArchX86       -> nCG' (x86NcgImpl    dflags)
@@ -329,8 +331,8 @@ nativeCodeGen' :: (Outputable statics, Outputable instr, Instruction instr)
                -> NcgImpl statics instr jumpDest
                -> Handle
                -> UniqSupply
-               -> Stream IO RawCmmGroup ()
-               -> IO UniqSupply
+               -> Stream IO RawCmmGroup a
+               -> IO (UniqSupply, a)
 nativeCodeGen' dflags this_mod modLoc ncgImpl h us cmms
  = do
         -- BufHandle is a performance hack.  We could hide it inside
@@ -338,9 +340,9 @@ nativeCodeGen' dflags this_mod modLoc ncgImpl h us cmms
         -- printDocs here (in order to do codegen in constant space).
         bufh <- newBufHandle h
         let ngs0 = NGS [] [] [] [] [] [] emptyUFM mapEmpty
-        (ngs, us') <- cmmNativeGenStream dflags this_mod modLoc ncgImpl bufh us
-                                         cmms ngs0
-        finishNativeGen dflags modLoc bufh us' ngs
+        (ngs, us', a) <- cmmNativeGenStream dflags this_mod modLoc ncgImpl bufh us
+                                            cmms ngs0
+        (,a) <$> finishNativeGen dflags modLoc bufh us' ngs
 
 finishNativeGen :: Instruction instr
                 => DynFlags
@@ -400,20 +402,21 @@ cmmNativeGenStream :: (Outputable statics, Outputable instr, Instruction instr)
               -> NcgImpl statics instr jumpDest
               -> BufHandle
               -> UniqSupply
-              -> Stream IO RawCmmGroup ()
+              -> Stream IO RawCmmGroup a
               -> NativeGenAcc statics instr
-              -> IO (NativeGenAcc statics instr, UniqSupply)
+              -> IO (NativeGenAcc statics instr, UniqSupply, a)
 
 cmmNativeGenStream dflags this_mod modLoc ncgImpl h us cmm_stream ngs
  = do r <- Stream.runStream cmm_stream
       case r of
-        Left () ->
+        Left a ->
           return (ngs { ngs_imports = reverse $ ngs_imports ngs
                       , ngs_natives = reverse $ ngs_natives ngs
                       , ngs_colorStats = reverse $ ngs_colorStats ngs
                       , ngs_linearStats = reverse $ ngs_linearStats ngs
                       },
-                  us)
+                  us,
+                  a)
         Right (cmms, cmm_stream') -> do
 
           -- Generate debug information

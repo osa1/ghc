@@ -465,7 +465,12 @@ data ModuleSRTInfo = ModuleSRTInfo
   }
 instance Outputable ModuleSRTInfo where
   ppr ModuleSRTInfo{..} =
-    text "ModuleSRTInfo:" <+> ppr dedupSRTs <+> ppr flatSRTs
+    hang (text "ModuleSRTInfo {") 4
+      (vcat [ text "module:" $$ ppr thisModule
+            , text "dedupSRTs:" $$ ppr dedupSRTs
+            , text "flatSRTs:" $$ ppr flatSRTs
+            ])
+    $+$ text "}"
 
 emptySRT :: Module -> ModuleSRTInfo
 emptySRT mod =
@@ -609,10 +614,10 @@ doSRTs dflags moduleSRTInfo tops = do
           , [(Label, CLabel)]      -- SRT fields for info tables
           , [(Label, [SRTEntry])]  -- SRTs to attach to static functions
           ) ]
-      ((result, _srtMap), moduleSRTInfo') =
+      (result, moduleSRTInfo') =
         initUs_ us $
         flip runStateT moduleSRTInfo $
-        flip runStateT Map.empty $ do
+        flip evalStateT Map.empty $ do
           nonCAFs <- mapM (doSCC dflags staticFuns) sccs
           cAFs <- forM cafsWithSRTs $ \(l, cafLbl, cafs) ->
             oneSRT dflags staticFuns [l] [cafLbl] True{-is a CAF-} cafs
@@ -625,8 +630,10 @@ doSRTs dflags moduleSRTInfo tops = do
     srtFieldMap = mapFromList (concat pairs)
     funSRTMap = mapFromList (concat funSRTs)
     decls' = concatMap (updInfoSRTs dflags srtFieldMap funSRTMap) decls
+    declss' = concat declss
+    ret = return (moduleSRTInfo', declss' ++ decls')
 
-  return (moduleSRTInfo', concat declss ++ decls')
+  (if null declss' then id else pprTrace "SRTs" (ppr declss')) ret
 
 
 -- | Build the SRT for a strongly-connected component of blocks
