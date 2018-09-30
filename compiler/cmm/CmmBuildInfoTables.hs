@@ -29,6 +29,7 @@ import SMRep
 import UniqSupply
 import CostCentre
 import StgCmmHeap
+import Data.List (foldl')
 
 import PprCmm()
 import Control.Monad
@@ -625,9 +626,11 @@ doSRTs dflags moduleSRTInfo tops = do
     srtFieldMap = mapFromList (concat pairs)
     funSRTMap = mapFromList (concat funSRTs)
     decls' = concatMap (updInfoSRTs dflags srtFieldMap funSRTMap) decls
+    declss' = concat declss
+    srts_size = foldl' (+) 0 [length statics | CmmData _ (Statics _ statics) <- declss']
+    ret = return (moduleSRTInfo', declss' ++ decls')
 
-  return (moduleSRTInfo', concat declss ++ decls')
-
+  (if null declss' then id else pprTrace "SRTs:" (ppr (length declss') <+> text "SRT(s), total size:" <+> ppr srts_size)) ret
 
 -- | Build the SRT for a strongly-connected component of blocks
 doSCC

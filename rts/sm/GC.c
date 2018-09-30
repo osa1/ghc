@@ -124,6 +124,8 @@ uint32_t mutlist_MUTVARS,
     mutlist_OTHERS;
 #endif
 
+uint64_t n_srt_scavs = 0;
+
 /* Thread-local data for each GC thread
  */
 gc_thread **gc_threads = NULL;

@@ -1030,7 +1030,9 @@ static void report_one_line(const RTSSummaryStats * sum)
                 "%" FMT_Word64 "M in use, "
                 "%.3f INIT (%.3f elapsed), "
                 "%.3f MUT (%.3f elapsed), "
-                "%.3f GC (%.3f elapsed) :ghc>>\n",
+                "%.3f GC (%.3f elapsed), "
+                "%" FMT_Word64 " SRT scavs "
+                ":ghc>>\n",
                 stats.allocated_bytes,
                 stats.gcs,
                 sum->average_bytes_used,
@@ -1042,7 +1044,8 @@ static void report_one_line(const RTSSummaryStats * sum)
                 TimeToSecondsDbl(stats.mutator_cpu_ns),
                 TimeToSecondsDbl(stats.mutator_elapsed_ns),
                 TimeToSecondsDbl(stats.gc_cpu_ns),
-                TimeToSecondsDbl(stats.gc_elapsed_ns));
+                TimeToSecondsDbl(stats.gc_elapsed_ns),
+                n_srt_scavs);
 }
 
 void

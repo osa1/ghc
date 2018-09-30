@@ -371,6 +371,7 @@ scavenge_thunk_srt(const StgInfoTable *info)
     if (thunk_info->i.srt) {
         StgClosure *srt = (StgClosure*)GET_SRT(thunk_info);
         evacuate(&srt);
+        n_srt_scavs++;
     }
 }
 
@@ -385,6 +386,7 @@ scavenge_fun_srt(const StgInfoTable *info)
     if (fun_info->i.srt) {
         StgClosure *srt = (StgClosure*)GET_FUN_SRT(fun_info);
         evacuate(&srt);
+        n_srt_scavs++;
     }
 }
 
@@ -1911,6 +1913,7 @@ scavenge_stack(StgPtr p, StgPtr stack_end)
         if (major_gc && info->i.srt) {
             StgClosure *srt = (StgClosure*)GET_SRT(info);
             evacuate(&srt);
+            n_srt_scavs++;
         }
         continue;
 

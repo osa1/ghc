@@ -37,6 +37,8 @@ extern StgPtr mark_sp;
 
 extern bool work_stealing;
 
+extern uint64_t n_srt_scavs;
+
 #if defined(DEBUG)
 extern uint32_t mutlist_MUTVARS, mutlist_MUTARRS, mutlist_MVARS, mutlist_OTHERS,
     mutlist_TVAR,
