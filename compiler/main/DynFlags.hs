@@ -1125,7 +1125,15 @@ data DynFlags = DynFlags {
 
   -- | Unique supply configuration for testing build determinism
   initialUnique         :: Int,
-  uniqueIncrement       :: Int
+  uniqueIncrement       :: Int,
+
+
+  -- | 0 (default): CAF behavior normal
+  --   1: Do not generate CAFs for top-level unpackCString# applications
+  --   2: 1, and also do not generate CAFs for non-top-level unpackCString#
+  --      applications
+  --   3: 2, and also do not generate CAFs CONLIKEs (not implemented yet)
+  avoidCafsLvl          :: Int
 }
 
 class HasDynFlags m where
@@ -1932,7 +1940,9 @@ defaultDynFlags mySettings (myLlvmTargets, myLlvmPasses) =
         uniqueIncrement = 1,
 
         reverseErrors = False,
-        maxErrors     = Nothing
+        maxErrors     = Nothing,
+
+        avoidCafsLvl = 0
       }
 
 defaultWays :: Settings -> [Way]
@@ -3524,6 +3534,7 @@ dynamic_flags_deps = [
 
          ------ Debugging flags ----------------------------------------------
   , make_ord_flag defGhcFlag "g"             (OptIntSuffix setDebugLevel)
+  , make_ord_flag defGhcFlag "favoid-cafs"   (OptIntSuffix setAvoidCafLevel)
  ]
  ++ map (mkFlag turnOn  ""          setGeneralFlag    ) negatableFlagsDeps
  ++ map (mkFlag turnOff "no-"       unSetGeneralFlag  ) negatableFlagsDeps
@@ -4875,6 +4886,9 @@ setVerbosity mb_n = upd (\dfs -> dfs{ verbosity = mb_n `orElse` 3 })
 
 setDebugLevel :: Maybe Int -> DynP ()
 setDebugLevel mb_n = upd (\dfs -> dfs{ debugLevel = mb_n `orElse` 2 })
+
+setAvoidCafLevel :: Maybe Int -> DynP ()
+setAvoidCafLevel mb_n = upd (\dfs -> dfs{ avoidCafsLvl = mb_n `orElse` 0 })
 
 data PkgConfRef
   = GlobalPkgConf
