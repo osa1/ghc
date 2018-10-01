@@ -765,6 +765,9 @@ static void report_summary(const RTSSummaryStats* sum)
                 sum->productivity_cpu_percent * 100,
                 sum->productivity_elapsed_percent * 100);
 
+    statsPrintf("  SRTs scavd   %" FMT_Word64 "\n",
+                n_srt_scavs);
+
     // See Note [Internal Counter Stats] for a description of the
     // following counters. If you add a counter here, please remember
     // to update the Note.
