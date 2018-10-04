@@ -27,6 +27,7 @@ import StgCmmHpc
 import StgCmmTicky
 import StgCmmUtils
 import StgCmmClosure
+import CmmUtils (mkIntExpr)
 
 import StgSyn
 
@@ -40,13 +41,14 @@ import ForeignCall
 import Id
 import PrimOp
 import TyCon
-import Type             ( isUnliftedType )
+import Type             ( isUnliftedType, tyConAppTyCon_maybe )
 import RepType          ( isVoidTy, countConRepArgs, primRepSlot )
 import CostCentre       ( CostCentreStack, currentCCS )
 import Maybes
 import Util
 import FastString
 import Outputable
+import Literal          ( mkMachInt )
 
 import Control.Monad (unless,void)
 import Control.Arrow (first)
@@ -64,6 +66,36 @@ cgExpr (StgApp fun args)     = cgIdApp fun args
 -- See Note [seq# magic] in PrelRules
 cgExpr (StgOpApp (StgPrimOp SeqOp) [StgVarArg a, _] _res_ty) =
   cgIdApp a []
+
+-- dataToTag# :: a -> Int#
+cgExpr (StgOpApp (StgPrimOp DataToTagOp) [StgVarArg a] _res_ty) = do
+  dflags <- getDynFlags
+  arg_lf_info <- cg_lf <$> getCgIdInfo a
+  case isLFCon_maybe arg_lf_info of
+    Just con -> do
+      -- Known constructor, just return the tag
+      emitComment (mkFastString "======= DATA TO TAG KNOWN CONSTR ========")
+      cgExpr (StgLit (mkMachInt dflags (fromIntegral (dataConTagZ con))))
+    _ -> do
+      emitComment (mkFastString "======= DATA TO TAG ========")
+      tmp <- newTemp (bWord dflags)
+      _ <- withSequel (AssignTo [tmp] False) (cgIdApp a [])
+      -- For small families look at the tag
+      -- TODO: Probably not a good idea! We don't preserve types too well in STG
+      -- so type of a may not be correct!
+      let a_ty = idType a
+      let general_case = do
+            emitComment (mkFastString "======= DATA TO TAG GENERAL CASE ========")
+            emitReturn [getConstrTag dflags (cmmUntag dflags (CmmReg (CmmLocal tmp)))]
+      case tyConAppTyCon_maybe a_ty of
+        Nothing -> general_case
+        Just tycon -> do
+          let fam_sz = tyConFamilySize tycon
+          if isSmallFamily dflags fam_sz then do
+            emitComment (mkFastString "======= DATA TO TAG SMALL FAMILY ========")
+            emitReturn [cmmSubWord dflags (cmmConstrTag1 dflags (CmmReg (CmmLocal tmp))) (mkIntExpr dflags 1)]
+          else
+            general_case
 
 cgExpr (StgOpApp op args ty) = cgOpApp op args ty
 cgExpr (StgConApp con args _)= cgConApp con args
