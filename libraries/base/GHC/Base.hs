@@ -1391,7 +1391,7 @@ by the deriving code for Eq, Ord and Enum.
 -}
 {-# INLINE getTag #-}
 getTag :: a -> Int#
-getTag = dataToTag#
+getTag x = dataToTag# x
 
 ----------------------------------------------
 -- Numeric primops
