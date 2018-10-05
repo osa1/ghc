@@ -27,7 +27,7 @@ module StgCmmClosure (
         mkApLFInfo, mkLFImported, mkLFArgument, mkLFLetNoEscape,
         mkLFStringLit,
         lfDynTag,
-        isLFThunk, isLFReEntrant, lfUpdatable, isLFCon_maybe,
+        isLFThunk, isLFReEntrant, lfUpdatable,
 
         -- * Used by other modules
         CgLoc(..), SelfLoopInfo, CallMethod(..),
@@ -395,10 +395,6 @@ isLFThunk _ = False
 isLFReEntrant :: LambdaFormInfo -> Bool
 isLFReEntrant (LFReEntrant {}) = True
 isLFReEntrant _                = False
-
-isLFCon_maybe :: LambdaFormInfo -> Maybe DataCon
-isLFCon_maybe (LFCon con) = Just con
-isLFCon_maybe _           = Nothing
 
 -----------------------------------------------------------------------------
 --                Choosing SM reps

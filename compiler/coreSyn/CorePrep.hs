@@ -1618,15 +1618,17 @@ Note [Preserve evaluated-ness in CorePrep]
 Note [Preserve evaluated-ness in CorePrep]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 We want to preserve the evaluated-ness of each binder (via
-evaldUnfolding) for two reasons
+evaldUnfolding):
 
 * In the code generator if we have
      case x of y { Red -> e1; DEFAULT -> y }
   we can return 'y' rather than entering it, if we know
   it is evaluated (Trac #14626)
 
-* In the DataToTag magic (in CorePrep itself) we rely on
-  evaluated-ness. <-- TODO UPDATE THIS, POINT TO NEW NOTE
+(Previously we also used evaluated-ness of binders to optimise dataToTag#
+applications, but that turned out to be incorrect, we really can't do this
+optimisation in Core. See #15646 for more details. The optimisation we were
+doing here is point (2) in comment:44.)
 -}
 
 ------------------------------------------------------------------------------

@@ -362,12 +362,6 @@ emitPrimOp _      [res] AddrToAnyOp [arg]
 emitPrimOp _      [res] AnyToAddrOp [arg]
    = emitAssign (CmmLocal res) arg
 
---  #define dataToTagzh(r,a)  r=(GET_TAG(((StgClosure *)a)->header.info))
---  Note: argument may be tagged!
-emitPrimOp _dflags [res] DataToTagOp [arg]
-   = pprPanic "emitPrimOp - DataToTagOp" (ppr res <+> ppr arg)
-     -- emitAssign (CmmLocal res) (getConstrTag dflags (cmmUntag dflags arg))
-
 {- Freezing arrays-of-ptrs requires changing an info table, for the
    benefit of the generational collector.  It needs to scavenge mutable
    objects, even if they are in old space.  When they become immutable,

@@ -1042,7 +1042,7 @@ primop  CopySmallMutableArrayOp "copySmallMutableArray#" GenPrimOp
    to the destination array. The source and destination arrays can
    refer to the same array. Both arrays must fully contain the
    specified ranges, but this is not checked.
-   The regions are allowed to overlap, although this is only possible when the same 
+   The regions are allowed to overlap, although this is only possible when the same
    array is provided as both the source and the destination. }
   with
   out_of_line      = True
@@ -1911,7 +1911,7 @@ primop  CopyMutableArrayArrayOp "copyMutableArrayArray#" GenPrimOp
   {Copy a range of the first MutableArrayArray# to the specified region in the second
    MutableArrayArray#.
    Both arrays must fully contain the specified ranges, but this is not checked.
-   The regions are allowed to overlap, although this is only possible when the same 
+   The regions are allowed to overlap, although this is only possible when the same
    array is provided as both the source and the destination.
    }
   with
@@ -2884,7 +2884,7 @@ primop  ReallyUnsafePtrEqualityOp "reallyUnsafePtrEquality#" GenPrimOp
 
 -- Note [reallyUnsafePtrEquality#]
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
--- 
+--
 -- reallyUnsafePtrEquality# can't actually fail, per se, but we mark it can_fail
 -- anyway. Until 5a9a1738023a, GHC considered primops okay for speculation only
 -- when their arguments were known to be forced. This was unnecessarily
@@ -2893,22 +2893,20 @@ primop  ReallyUnsafePtrEqualityOp "reallyUnsafePtrEquality#" GenPrimOp
 -- sometimes lose track of whether those arguments were forced, leading to let/app
 -- invariant failures (see Trac 13027 and the discussion in Trac 11444). Now that
 -- ok_for_speculation skips over lifted arguments, we need to explicitly prevent
--- reallyUnsafePtrEquality# from floating out. The reasons are closely related
--- to those described in Note [dataToTag#], although the consequences are less
--- severe. Imagine if we had
--- 
+-- reallyUnsafePtrEquality# from floating out. Imagine if we had
+--
 --     \x y . case x of x'
 --              DEFAULT ->
 --            case y of y'
 --              DEFAULT ->
 --               let eq = reallyUnsafePtrEquality# x' y'
 --               in ...
--- 
+--
 -- If the let floats out, we'll get
--- 
+--
 --     \x y . let eq = reallyUnsafePtrEquality# x y
 --            in case x of ...
--- 
+--
 -- The trouble is that pointer equality between thunks is very different
 -- from pointer equality between the values those thunks reduce to, and the latter
 -- is typically much more precise.
@@ -2958,10 +2956,23 @@ primop  DataToTagOp "dataToTag#" GenPrimOp
    with
    can_fail   = False
    strictness = { \ _arity -> mkClosedStrictSig [evalDmd] topRes }
-                 -- TODO Should we update this?
 
 primop  TagToEnumOp "tagToEnum#" GenPrimOp
    Int# -> a
+
+{- Note [dataToTag#]
+~~~~~~~~~~~~~~~~~~~~
+dataToTag# used to expect an evaluated argument. To ensure this we used to mark
+it as `can_fail = True` (so that FloatOut won't make it use its argument
+_before_ it's actually evaluated, by floating it out), and checked evaluted-ness
+of its argument in CorePrep. However, it was discovered in #15696 that we can't
+really use evaluted-ness of the argument (as seen in Core) to avoid entering the
+argument before reading the tag. So now we lower dataToTag# in StgCmmExpr and
+ensure that we always enter the argument.
+
+dataToTag# applications to known arguments are optimised by dataToTagRule in
+PrelRules.
+-}
 
 ------------------------------------------------------------------------
 section "Bytecode operations"
@@ -3071,8 +3082,8 @@ pseudoop "proxy#"
 pseudoop   "seq"
    a -> b -> b
    { The value of {\tt seq a b} is bottom if {\tt a} is bottom, and
-     otherwise equal to {\tt b}. In other words, it evaluates the first 
-     argument {\tt a} to weak head normal form (WHNF). {\tt seq} is usually 
+     otherwise equal to {\tt b}. In other words, it evaluates the first
+     argument {\tt a} to weak head normal form (WHNF). {\tt seq} is usually
      introduced to improve performance by avoiding unneeded laziness.
 
      A note on evaluation order: the expression {\tt seq a b} does
