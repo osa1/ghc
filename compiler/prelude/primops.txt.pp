@@ -2964,11 +2964,12 @@ primop  TagToEnumOp "tagToEnum#" GenPrimOp
 ~~~~~~~~~~~~~~~~~~~~
 dataToTag# used to expect an evaluated argument. To ensure this we used to mark
 it as `can_fail = True` (so that FloatOut won't make it use its argument
-_before_ it's actually evaluated, by floating it out), and checked evaluted-ness
-of its argument in CorePrep. However, it was discovered in #15696 that we can't
-really use evaluted-ness of the argument (as seen in Core) to avoid entering the
-argument before reading the tag. So now we lower dataToTag# in StgCmmExpr and
-ensure that we always enter the argument.
+_before_ it's actually evaluated, by floating it out), and check evaluted-ness
+of its argument in CorePrep and introduce a case if the argument is not already
+evaluated. However, it was discovered in #15696 that we can't really use
+evaluted-ness of the argument (as seen in Core) to avoid entering the argument
+before reading the tag. So we now lower dataToTag# in StgCmmExpr and ensure that
+we always enter the argument.
 
 dataToTag# applications to known arguments are optimised by dataToTagRule in
 PrelRules.
