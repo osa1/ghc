@@ -43,6 +43,7 @@ import Id
 import IdInfo
 import TysWiredIn
 import DataCon
+import PrimOp
 import BasicTypes
 import Module
 import UniqSupply
@@ -1070,6 +1071,11 @@ The type is the type of the entire application
 
 maybeSaturate :: Id -> CpeApp -> Int -> UniqSM CpeRhs
 maybeSaturate fn expr n_args
+  | Just DataToTagOp <- isPrimOpId_maybe fn     -- DataToTag must have an evaluated arg
+                                                -- A gruesome special case
+  = saturateDataToTag sat_expr
+
+
   | hasNoBinding fn        -- There's no binding
   = return sat_expr
 
@@ -1079,6 +1085,28 @@ maybeSaturate fn expr n_args
     fn_arity     = idArity fn
     excess_arity = fn_arity - n_args
     sat_expr     = cpeEtaExpand excess_arity expr
+
+-------------
+saturateDataToTag :: CpeApp -> UniqSM CpeApp
+-- See Note [dataToTag magic]
+saturateDataToTag sat_expr
+  = do { let (eta_bndrs, eta_body) = collectBinders sat_expr
+       ; eta_body' <- eval_data2tag_arg eta_body
+       ; return (mkLams eta_bndrs eta_body') }
+  where
+    eval_data2tag_arg :: CpeApp -> UniqSM CpeBody
+    eval_data2tag_arg app@(fun `App` arg)
+        = do { arg_id <- newVar (exprType arg)
+             ; let arg_id1 = setIdUnfolding arg_id evaldUnfolding
+             ; return (Case arg arg_id1 (exprType app)
+                            [(DEFAULT, [], fun `App` Var arg_id1)]) }
+
+    eval_data2tag_arg (Tick t app)    -- Scc notes can appear
+        = do { app' <- eval_data2tag_arg app
+             ; return (Tick t app') }
+
+    eval_data2tag_arg other     -- Should not happen
+        = pprPanic "eval_data2tag" (ppr other)
 
 {-
 ************************************************************************

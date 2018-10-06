@@ -65,16 +65,6 @@ cgExpr (StgApp fun args)     = cgIdApp fun args
 cgExpr (StgOpApp (StgPrimOp SeqOp) [StgVarArg a, _] _res_ty) =
   cgIdApp a []
 
--- dataToTag# :: a -> Int#
--- See Note [dataToTag#] in primops.txt.pp
-cgExpr (StgOpApp (StgPrimOp DataToTagOp) [StgVarArg a] _res_ty) = do
-  dflags <- getDynFlags
-  emitComment (mkFastString "dataToTag#")
-  tmp <- newTemp (bWord dflags)
-  _ <- withSequel (AssignTo [tmp] False) (cgIdApp a [])
-  -- TODO: For small types look at the tag bits instead of reading info table
-  emitReturn [getConstrTag dflags (cmmUntag dflags (CmmReg (CmmLocal tmp)))]
-
 cgExpr (StgOpApp op args ty) = cgOpApp op args ty
 cgExpr (StgConApp con args _)= cgConApp con args
 cgExpr (StgTick t e)         = cgTick t >> cgExpr e
