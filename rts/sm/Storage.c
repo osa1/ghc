@@ -1012,7 +1012,7 @@ allocatePinned (Capability *cap, W_ n)
 
         // stash the old block on cap->pinned_object_blocks.  On the
         // next GC cycle these objects will be moved to
-        // g0->large_objects.
+        // oldest_gen->large_objects.
         if (bd != NULL) {
             // add it to the allocation stats when the block is full
             finishedNurseryBlock(cap, bd);
@@ -1033,7 +1033,6 @@ allocatePinned (Capability *cap, W_ n)
             ACQUIRE_SM_LOCK;
             bd = allocBlockOnNode(cap->node);
             RELEASE_SM_LOCK;
-            initBdescr(bd, g0, g0);
         } else {
             newNurseryBlock(bd);
             // we have a block in the nursery: steal it
@@ -1043,6 +1042,8 @@ allocatePinned (Capability *cap, W_ n)
             }
             cap->r.rNursery->n_blocks -= bd->blocks;
         }
+
+        initBdescr(bd, oldest_gen, oldest_gen);
 
         cap->pinned_object_block = bd;
         bd->flags  = BF_PINNED | BF_LARGE | BF_EVACUATED;

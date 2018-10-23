@@ -1530,27 +1530,28 @@ collect_gct_blocks (void)
    stashed on the local pinned_object_blocks list, to avoid needing to
    take a global lock.  Here we collect those blocks from the
    cap->pinned_object_blocks lists and put them on the
-   main g0->large_object list.
+   main oldest_gen->large_object list.
    -------------------------------------------------------------------------- */
 
 static void
 collect_pinned_object_blocks (void)
 {
-    uint32_t n;
-    bdescr *bd, *prev;
-
-    for (n = 0; n < n_capabilities; n++) {
-        prev = NULL;
-        for (bd = capabilities[n]->pinned_object_blocks; bd != NULL; bd = bd->link) {
-            prev = bd;
-        }
-        if (prev != NULL) {
-            prev->link = g0->large_objects;
-            if (g0->large_objects != NULL) {
-                g0->large_objects->u.back = prev;
+    for (uint32_t n = 0; n < n_capabilities; n++) {
+        bdescr *last = NULL;
+        for (bdescr *bd = capabilities[n]->pinned_object_blocks; bd != NULL; bd = bd->link) {
+            last = bd;
+            if (!major_gc) {
+                oldest_gen->n_large_words += bd->free - bd->start;
+                oldest_gen->n_large_blocks += bd->blocks;
             }
-            g0->large_objects = capabilities[n]->pinned_object_blocks;
-            capabilities[n]->pinned_object_blocks = 0;
+        }
+        if (last != NULL) {
+            last->link = oldest_gen->large_objects;
+            if (oldest_gen->large_objects != NULL) {
+                oldest_gen->large_objects->u.back = last;
+            }
+            oldest_gen->large_objects = capabilities[n]->pinned_object_blocks;
+            capabilities[n]->pinned_object_blocks = NULL;
         }
     }
 }
