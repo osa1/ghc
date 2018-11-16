@@ -18,15 +18,16 @@
    -------------------------------------------------------------------------- */
 
 typedef struct {
-    StgPtr  addr;        // Haskell object when entry is in use, next free
-                         // entry (NULL when this is the last free entry)
-                         // otherwise. May be NULL temporarily during GC (when
-                         // pointee dies).
+    // Haskell object when entry is in use, next free entry (NULL when this is
+    // the last free entry) otherwise. May be NULL temporarily during GC (when
+    // pointee dies).
+    StgPtr  addr;
 
-    StgPtr  old;         // Old Haskell object, used during GC
+    // Old Haskell object, used during GC
+    StgPtr  old;
 
-    StgClosure *sn_obj;  // The StableName object, or NULL when the entry is
-                         // free
+    // The StableName object, or NULL when the entry is free
+    StgClosure *sn_obj;
 } snEntry;
 
 extern DLL_IMPORT_RTS snEntry *stable_name_table;
