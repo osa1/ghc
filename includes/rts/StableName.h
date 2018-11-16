@@ -13,20 +13,28 @@
 
 #pragma once
 
+// It's important that SN_ENTRY_FREE is NULL as return value of isAlive is
+// directly used as new sn_obj in gcStableNameTable().
+#define SN_ENTRY_FREE 0
+#define SN_ENTRY_ALLOCATING ((StgClosure*)1)
+
 /* -----------------------------------------------------------------------------
    PRIVATE from here.
    -------------------------------------------------------------------------- */
 
 typedef struct {
-    // Haskell object when entry is in use, next free entry (NULL when this is
-    // the last free entry) otherwise. May be NULL temporarily during GC (when
-    // pointee dies).
+    // Haskell object when entry is in use (when sn_obj is not SN_ENTRY_FREE),
+    // next free entry otherwise (NULL when this is the last free entry). May be
+    // NULL temporarily during GC (when pointee dies).
     StgPtr  addr;
 
-    // Old Haskell object, used during GC
+    // Old Haskell object, used during GC.
     StgPtr  old;
 
-    // The StableName object, or NULL when the entry is free
+    // SN_ENTRY_FREE when the entry is free, SN_ENTRY_ALLOCATING when the entry
+    // is being allocated (we run out of heap space after allocating the entry
+    // but before allocating the StableName object). Otherwise the StableName
+    // object.
     StgClosure *sn_obj;
 } snEntry;
 

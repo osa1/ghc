@@ -62,7 +62,7 @@ initSnEntryFreeList(snEntry *table, uint32_t n, snEntry *free)
   for (p = table + n - 1; p >= table; p--) {
     p->addr   = (P_)free;
     p->old    = NULL;
-    p->sn_obj = NULL;
+    p->sn_obj = SN_ENTRY_FREE;
     free = p;
   }
   stable_name_free = table;
@@ -131,7 +131,7 @@ exitStableNameTable(void)
 STATIC_INLINE void
 freeSnEntry(snEntry *sn)
 {
-  ASSERT(sn->sn_obj == NULL);
+  ASSERT(sn->sn_obj == SN_ENTRY_FREE);
   removeHashTable(addrToStableHash, (W_)sn->old, NULL);
   sn->addr = (P_)stable_name_free;
   stable_name_free = sn;
@@ -203,7 +203,7 @@ lookupStableName (StgPtr p)
   sn = stable_name_free - stable_name_table;
   stable_name_free  = (snEntry*)(stable_name_free->addr);
   stable_name_table[sn].addr = p;
-  stable_name_table[sn].sn_obj = NULL;
+  stable_name_table[sn].sn_obj = SN_ENTRY_ALLOCATING;
   /* debugTrace(DEBUG_stable, "new stable name %d at %p\n",sn,p); */
 
   /* add the new stable name to the hash table */
@@ -258,7 +258,7 @@ void
 threadStableNameTable( evac_fn evac, void *user )
 {
     FOR_EACH_STABLE_NAME(p, {
-        if (p->sn_obj != NULL) {
+        if (p->sn_obj != SN_ENTRY_FREE && p->sn_obj != SN_ENTRY_ALLOCATING) {
             evac(user, (StgClosure **)&p->sn_obj);
         }
         if (p->addr != NULL) {
@@ -288,18 +288,24 @@ gcStableNameTable( void )
         p, {
             // FOR_EACH_STABLE_NAME traverses free entries too, so
             // check sn_obj
-            if (p->sn_obj == NULL) {
+            if (p->sn_obj == SN_ENTRY_FREE) {
                 continue;
             }
 
             // Update the pointer to the StableName object, if there is one
-            p->sn_obj = isAlive(p->sn_obj);
-            if (p->sn_obj == NULL) {
-                // StableName object died
-                debugTrace(DEBUG_stable, "GC'd StableName %ld (addr=%p)",
-                           (long)(p - stable_name_table), p->addr);
-                freeSnEntry(p);
-            } else if (p->addr != NULL) {
+            if (p->sn_obj != SN_ENTRY_ALLOCATING) {
+                p->sn_obj = isAlive(p->sn_obj);
+                if (p->sn_obj == NULL) {
+                    // StableName object died
+                    debugTrace(DEBUG_stable, "GC'd StableName %ld (addr=%p)",
+                               (long)(p - stable_name_table), p->addr);
+                    freeSnEntry(p);
+                    continue;
+                }
+            }
+
+            // Update the pointer to the named object
+            if (p->addr != NULL) {
                 // sn_obj is alive, update pointee
                 p->addr = (StgPtr)isAlive((StgClosure *)p->addr);
                 if (p->addr == NULL) {

@@ -196,6 +196,7 @@ typedef struct {
 
 typedef struct _StgStableName {
   StgHeader      header;
+  // Index to stable_name_table
   StgWord        sn;
 } StgStableName;
 

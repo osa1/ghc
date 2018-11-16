@@ -1889,6 +1889,9 @@ stg_tryReadMVarzh ( P_ mvar, /* :: MVar a */ )
    Stable pointer primitives
    -------------------------------------------------------------------------  */
 
+// Should be in sync with the def in StableName.h
+#define SN_ENTRY_ALLOCATING 1
+
 stg_makeStableNamezh ( P_ obj )
 {
     W_ index, sn_obj;
@@ -1898,7 +1901,8 @@ stg_makeStableNamezh ( P_ obj )
     /* Is there already a StableName for this heap object?
      *  stable_name_table is a pointer to an array of snEntry structs.
      */
-    if ( snEntry_sn_obj(W_[stable_name_table] + index*SIZEOF_snEntry) == NULL ) {
+    if ( snEntry_sn_obj(W_[stable_name_table] + index*SIZEOF_snEntry) ==
+            SN_ENTRY_ALLOCATING ) {
         ALLOC_PRIM (SIZEOF_StgStableName);
         sn_obj = Hp - SIZEOF_StgStableName + WDS(1);
         SET_HDR(sn_obj, stg_STABLE_NAME_info, CCCS);
