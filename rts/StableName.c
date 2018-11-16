@@ -234,7 +234,7 @@ lookupStableName (StgPtr p)
                 /* it is either the last item in the free list or it */ \
                 /* is a stable name whose pointee died. sn_obj == NULL */ \
                 /* disambiguates as last free list item. */             \
-                do { CODE } while(0);                                   \
+                CODE                                                    \
             }                                                           \
         }                                                               \
     } while(0)
@@ -288,22 +288,24 @@ gcStableNameTable( void )
         p, {
             // FOR_EACH_STABLE_NAME traverses free entries too, so
             // check sn_obj
-            if (p->sn_obj != NULL) {
-                // Update the pointer to the StableName object, if there is one
-                p->sn_obj = isAlive(p->sn_obj);
-                if (p->sn_obj == NULL) {
-                    // StableName object died
-                    debugTrace(DEBUG_stable, "GC'd StableName %ld (addr=%p)",
-                               (long)(p - stable_name_table), p->addr);
-                    freeSnEntry(p);
-                } else if (p->addr != NULL) {
-                    // sn_obj is alive, update pointee
-                    p->addr = (StgPtr)isAlive((StgClosure *)p->addr);
-                    if (p->addr == NULL) {
-                        // Pointee died
-                        debugTrace(DEBUG_stable, "GC'd pointee %ld",
-                                   (long)(p - stable_name_table));
-                    }
+            if (p->sn_obj == NULL) {
+                continue;
+            }
+
+            // Update the pointer to the StableName object, if there is one
+            p->sn_obj = isAlive(p->sn_obj);
+            if (p->sn_obj == NULL) {
+                // StableName object died
+                debugTrace(DEBUG_stable, "GC'd StableName %ld (addr=%p)",
+                           (long)(p - stable_name_table), p->addr);
+                freeSnEntry(p);
+            } else if (p->addr != NULL) {
+                // sn_obj is alive, update pointee
+                p->addr = (StgPtr)isAlive((StgClosure *)p->addr);
+                if (p->addr == NULL) {
+                    // Pointee died
+                    debugTrace(DEBUG_stable, "GC'd pointee %ld",
+                               (long)(p - stable_name_table));
                 }
             }
         });
