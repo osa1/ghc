@@ -196,8 +196,8 @@ corePrepPgm hsc_env this_mod mod_loc binds data_tycons =
             -- so that they are suitably cloned and eta-expanded
 
         binds_out = initUs_ us $ do
-                      floats1 <- corePrepTopBinds initialCorePrepEnv binds
-                      floats2 <- corePrepTopBinds initialCorePrepEnv implicit_binds
+                      floats1 <- corePrepTopBinds initialCorePrepEnv implicit_binds
+                      floats2 <- corePrepTopBinds initialCorePrepEnv binds
                       return (deFloatTop (floats1 `appendFloats` floats2))
 
     endPassIO hsc_env alwaysQualify CorePrep binds_out []
