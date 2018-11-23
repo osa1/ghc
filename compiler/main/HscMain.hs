@@ -129,7 +129,7 @@ import CostCentre
 import ProfInit
 import TyCon
 import Name
-import SimplStg         ( stg2stg )
+import SimplStg
 import Cmm
 import CmmParse         ( parseCmmFile )
 import CmmBuildInfoTables
@@ -1428,6 +1428,14 @@ doCodeGen hsc_env this_mod data_tycons
     let dflags = hsc_dflags hsc_env
 
     let stg_binds_w_fvs = annTopBindingsFreeVars stg_binds
+
+
+    let dep_sorted_binds = depSortStg stg_binds_w_fvs
+    -- pprTraceM "dep_sorted_binds" (ppr dep_sorted_binds)
+    let caf_anal = cafAnalStg dep_sorted_binds
+    pprTraceM "caf_anal" (ppr caf_anal)
+
+
     let cmm_stream :: Stream IO CmmGroup ()
         cmm_stream = {-# SCC "StgCmm" #-}
             StgCmm.codeGen dflags this_mod data_tycons

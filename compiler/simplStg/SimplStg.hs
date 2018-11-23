@@ -4,9 +4,9 @@
 \section[SimplStg]{Driver for simplifying @STG@ programs}
 -}
 
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, LambdaCase #-}
 
-module SimplStg ( stg2stg ) where
+module SimplStg ( stg2stg, depSortStg, cafAnalStg ) where
 
 #include "HsVersions.h"
 
@@ -19,12 +19,20 @@ import StgStats         ( showStgStats )
 import UnariseStg       ( unarise )
 import StgCse           ( stgCse )
 import Module           ( Module )
+import Digraph          ( SCC(..) )
+import NameEnv          ( depAnal )
+import Name             ( Name )
+import Id               ( Id, idName, idCafInfo )
+import UniqSet
+import NameEnv
+import IdInfo           ( CafInfo (..) )
 
 import DynFlags
 import ErrUtils
 import UniqSupply       ( mkSplitUniqSupply )
 import Outputable
 import Control.Monad
+import Data.List        ( foldl' )
 
 stg2stg :: DynFlags                  -- includes spec of what stg-to-stg passes to do
         -> Module                    -- module being compiled
@@ -77,6 +85,72 @@ stg2stg dflags this_mod binds
               (pprStgTopBindings binds2)
            stg_linter True what binds2
            return binds2
+
+depSortStg :: [CgStgTopBinding] -> [CgStgTopBinding]
+depSortStg pgm =
+    concatMap get_binds (depAnal defs deps pgm)
+  where
+    deps (StgTopLifted (StgNonRec _ rhs)) =
+      rhs_deps rhs
+    deps (StgTopLifted (StgRec binds)) =
+      concatMap (\(_, rhs) -> rhs_deps rhs) binds
+    deps (StgTopStringLit _ _) =
+      []
+
+    defs (StgTopLifted (StgNonRec bndr _)) =
+      [idName bndr]
+    defs (StgTopLifted (StgRec binds)) =
+      map (\(bndr, _) -> idName bndr) binds
+    defs (StgTopStringLit bndr _) =
+      [idName bndr]
+
+    rhs_deps :: CgStgRhs -> [Name]
+    rhs_deps (StgRhsClosure fvs _ _ _ _) =
+      map idName (nonDetEltsUniqSet fvs)
+    rhs_deps (StgRhsCon _ _ args) =
+      [ idName i | StgVarArg i <- args ]
+
+    get_binds (AcyclicSCC bind) = [bind]
+    get_binds (CyclicSCC binds) = binds
+
+-- Should be called with dep sorted Stg!
+cafAnalStg :: [CgStgTopBinding] -> NameEnv CafInfo
+cafAnalStg = foldl' cafAnalTopBinding emptyNameEnv
+  where
+    join MayHaveCafRefs _ = MayHaveCafRefs
+    join _ MayHaveCafRefs = MayHaveCafRefs
+    join NoCafRefs NoCafRefs = NoCafRefs
+
+    cafAnalTopBinding :: NameEnv CafInfo -> CgStgTopBinding -> NameEnv CafInfo
+    cafAnalTopBinding env0 bind = case bind of
+      StgTopLifted (StgNonRec bndr rhs) ->
+        extendNameEnv env0 (idName bndr) (cafAnalRhs env0 rhs)
+      StgTopLifted (StgRec binds) ->
+        let
+          rhs_env =
+            extendNameEnvList env0 $
+              map (\(bndr, _) -> (idName bndr, NoCafRefs)) binds
+
+          caf_info =
+            foldl' join NoCafRefs $
+              map (\(_, rhs) -> cafAnalRhs rhs_env rhs) binds
+        in
+          extendNameEnvList env0 $
+            map (\(bndr, _) -> (idName bndr, caf_info)) binds
+      StgTopStringLit bndr _ ->
+        extendNameEnv env0 (idName bndr) NoCafRefs
+
+    idCafInfo' :: NameEnv CafInfo -> Id -> CafInfo
+    idCafInfo' env id =
+      case lookupNameEnv env (idName id) of
+        Nothing -> idCafInfo id -- must be imported
+        Just caf_info -> caf_info
+
+    cafAnalRhs :: NameEnv CafInfo -> CgStgRhs -> CafInfo
+    cafAnalRhs env0 (StgRhsClosure fvs _ _ _ _) =
+      foldl' join NoCafRefs (map (idCafInfo' env0) (nonDetEltsUniqSet fvs))
+    cafAnalRhs env (StgRhsCon _ con args) =
+      foldl' join NoCafRefs [ idCafInfo' env i | StgVarArg i <- args ]
 
 -- -----------------------------------------------------------------------------
 -- StgToDo:  abstraction of stg-to-stg passes to run.
