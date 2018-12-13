@@ -1705,7 +1705,7 @@ dataConToIfaceDecl dataCon
   = IfaceId { ifName      = getName dataCon,
               ifType      = toIfaceType (dataConUserType dataCon),
               ifIdDetails = IfVanillaId,
-              ifIdInfo    = NoInfo }
+              ifIdInfo    = [] }
 
 --------------------------
 coAxiomToIfaceDecl :: CoAxiom br -> IfaceDecl
