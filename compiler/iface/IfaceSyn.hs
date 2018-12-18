@@ -1670,7 +1670,6 @@ details.
 
 -}
 
--- TODO (osa): Orphan OK?
 instance Binary IfaceCafInfo where
     put_ bh IfNoCafRefs = putByte bh 0
     put_ bh IfMayHaveCafRefs = putByte bh 1
