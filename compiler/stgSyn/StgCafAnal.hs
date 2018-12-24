@@ -205,9 +205,7 @@ depSort = concatMap get_binds . depAnal defs uses
     get_binds (AcyclicSCC bind) =
       [bind]
     get_binds (CyclicSCC binds) =
-      -- TODO: Disabling this panic for now, see #16038
-      -- pprPanic "depSortStgBinds" (text "Found cyclic SCC:" $$ ppr binds)
-      binds
+      pprPanic "depSortStgBinds" (text "Found cyclic SCC:" $$ ppr binds)
 
 -- | Given CafInfos of dependencies and a top-level binding return CafInfos of
 -- Ids that the binding binds.
