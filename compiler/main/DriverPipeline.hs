@@ -64,8 +64,6 @@ import Hooks
 import qualified GHC.LanguageExtensions as LangExt
 import FileCleanup
 import Ar
-import NameEnv
-import Id
 
 import Exception
 import System.Directory
