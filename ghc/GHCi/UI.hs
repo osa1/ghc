@@ -50,11 +50,10 @@ import GHC ( LoadHowMuch(..), Target(..),  TargetId(..), InteractiveImport(..),
              TyThing(..), Phase, BreakIndex, Resume, SingleStep, Ghc,
              GetDocsFailure(..),
              getModuleGraph, handleSourceError )
-import HscMain
 import HsImpExp
 import HsSyn
 import HscTypes ( tyThingParent_maybe, handleFlagWarnings, getSafeMode, hsc_IC,
-                  setInteractivePrintName, hsc_dflags, msObjFilePath, runInteractiveHsc )
+                  setInteractivePrintName, hsc_dflags, msObjFilePath )
 import Module
 import Name
 import Packages ( trusted, getPackageDetails, getInstalledPackageDetails,
@@ -1121,18 +1120,17 @@ runStmt input step = do
      -- Note: `GHC.isDecl` returns False on input like
      -- `data Infix a b = a :@: b; infixl 4 :@:`
      -- and should therefore not be used here.
-     | otherwise ->
-         case GHC.parseDecl source line dflags input of
-           Lexer.POk _ [L l (ValD _ bind@FunBind{})] -> run_stmt (mk_stmt l bind)
-           Lexer.POk _ [L l (ValD _ bind@VarBind{})] -> run_stmt (mk_stmt l bind)
-           Lexer.POk _ decls -> run_decls decls
-           Lexer.PFailed warnFn span err -> do
-             hsc_env <- GHC.getSession
-             liftIO $ runInteractiveHsc hsc_env $ do
-               logWarningsReportErrors (warnFn dflags)
-               handleWarnings
-               let msg = mkPlainErrMsg dflags span err
-               throwErrors (unitBag msg)
+     | Just decls <- GHC.parseDecl source line dflags input
+     -> case decls of
+          -- Turn declaration value bindings into GHCi let statement (#16096).
+          -- DO NOT turn pattern synonym bindings! Those are not allowed in
+          -- `let` statements.
+          [L l (ValD _ bind@FunBind{})] -> run_stmt (mk_stmt l bind)
+          [L l (ValD _ bind@VarBind{})] -> run_stmt (mk_stmt l bind)
+          -- Otherwise run as decl
+          _ -> run_decls decls
+
+     | otherwise -> throwGhcException (CmdLineError "error: can't parse input")
   where
     mk_stmt :: SrcSpan -> HsBind GhcPs -> GhciLStmt GhcPs
     mk_stmt loc bind =
