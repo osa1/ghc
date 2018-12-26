@@ -11,9 +11,9 @@
 
 module InteractiveEval (
         Resume(..), History(..),
-        execStmt, ExecOptions(..), execOptions, ExecResult(..), resumeExec,
-        runDecls, runDeclsWithLocation,
-        isStmt, hasImport, isImport, isDecl,
+        execStmt, execStmt', ExecOptions(..), execOptions, ExecResult(..), resumeExec,
+        runDecls, runDeclsWithLocation, runParsedDecls,
+        isStmt, parseStmt, hasImport, isImport, isDecl,
         parseImportDecl, SingleStep(..),
         abandon, abandonAll,
         getResumeContext,
@@ -198,6 +198,38 @@ execStmt stmt ExecOptions{..} = do
         handleRunStatus execSingleStep stmt bindings ids
                         status (emptyHistory size)
 
+execStmt' :: GhcMonad m => GhciLStmt GhcPs -> String -> ExecOptions -> m ExecResult
+execStmt' stmt stmt_text ExecOptions{..} = do
+    hsc_env <- getSession
+
+    -- Turn off -fwarn-unused-local-binds when running a statement, to hide
+    -- warnings about the implicit bindings we introduce.
+    let ic       = hsc_IC hsc_env -- use the interactive dflags
+        idflags' = ic_dflags ic `wopt_unset` Opt_WarnUnusedLocalBinds
+        hsc_env' = mkInteractiveHscEnv (hsc_env{ hsc_IC = ic{ ic_dflags = idflags' } })
+
+    r <- liftIO $ hscParsedStmt hsc_env' stmt
+
+    case r of
+      Nothing ->
+        -- empty statement / comment
+        return (ExecComplete (Right []) 0)
+      Just (ids, hval, fix_env) -> do
+        -- FIXME (osa): Duplicate code from execStmt
+        updateFixityEnv fix_env
+
+        status <-
+          withVirtualCWD $
+            liftIO $
+              evalStmt hsc_env' (isStep execSingleStep) (execWrap hval)
+
+        let ic = hsc_IC hsc_env
+            bindings = (ic_tythings ic, ic_rn_gbl_env ic)
+
+            size = ghciHistSize idflags'
+
+        handleRunStatus execSingleStep stmt_text bindings ids
+                        status (emptyHistory size)
 
 runDecls :: GhcMonad m => String -> m [Name]
 runDecls = runDeclsWithLocation "<interactive>" 1
@@ -210,6 +242,20 @@ runDeclsWithLocation source linenumber expr =
     hsc_env <- getSession
     (tyThings, ic) <- liftIO $ hscDeclsWithLocation hsc_env expr source linenumber
 
+    setSession $ hsc_env { hsc_IC = ic }
+    hsc_env <- getSession
+    hsc_env' <- liftIO $ rttiEnvironment hsc_env
+    setSession hsc_env'
+    return $ filter (not . isDerivedOccName . nameOccName)
+             -- For this filter, see Note [What to show to users]
+           $ map getName tyThings
+
+runParsedDecls :: GhcMonad m => [LHsDecl GhcPs] -> m [Name]
+runParsedDecls decls = do
+    hsc_env <- getSession
+    (tyThings, ic) <- liftIO (hscParsedDecls hsc_env decls)
+
+    -- TODO(osa): code dupacklue from runDeclsWithLoc
     setSession $ hsc_env { hsc_IC = ic }
     hsc_env <- getSession
     hsc_env' <- liftIO $ rttiEnvironment hsc_env
@@ -789,10 +835,14 @@ parseName str = withSession $ \hsc_env -> liftIO $
 
 -- | Returns @True@ if passed string is a statement.
 isStmt :: DynFlags -> String -> Bool
-isStmt dflags stmt =
-  case parseThing Parser.parseStmt dflags stmt of
-    Lexer.POk _ _ -> True
-    Lexer.PFailed _ _ _ -> False
+isStmt dflags stmt = isJust (parseStmt "<interactive>" 1 dflags stmt)
+
+-- Just Nothing <=> empty statement / comment
+parseStmt :: String -> Int -> DynFlags -> String -> Maybe (Maybe (LStmt GhcPs (LHsExpr GhcPs)))
+parseStmt source line dflags stmt =
+  case parseThingWithLocation source line Parser.parseStmt dflags stmt of
+    Lexer.POk _ stmt -> Just stmt
+    Lexer.PFailed _ _ _ -> Nothing
 
 -- | Returns @True@ if passed string has an import declaration.
 hasImport :: DynFlags -> String -> Bool
@@ -821,10 +871,12 @@ isDecl dflags stmt = do
     Lexer.PFailed _ _ _ -> False
 
 parseThing :: Lexer.P thing -> DynFlags -> String -> Lexer.ParseResult thing
-parseThing parser dflags stmt = do
-  let buf = stringToStringBuffer stmt
-      loc = mkRealSrcLoc (fsLit "<interactive>") 1 1
+parseThing = parseThingWithLocation "<interactive>" 1
 
+parseThingWithLocation :: String -> Int -> Lexer.P thing -> DynFlags -> String -> Lexer.ParseResult thing
+parseThingWithLocation source line parser dflags thing = do
+  let buf = stringToStringBuffer thing
+  let loc = mkRealSrcLoc (fsLit source) line 1
   Lexer.unP parser (Lexer.mkPState dflags buf loc)
 
 getDocs :: GhcMonad m
