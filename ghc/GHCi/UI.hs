@@ -50,6 +50,7 @@ import GHC ( LoadHowMuch(..), Target(..),  TargetId(..), InteractiveImport(..),
              TyThing(..), Phase, BreakIndex, Resume, SingleStep, Ghc,
              GetDocsFailure(..),
              getModuleGraph, handleSourceError )
+import HscMain (hscParseDeclsWithLocation)
 import HsImpExp
 import HsSyn
 import HscTypes ( tyThingParent_maybe, handleFlagWarnings, getSafeMode, hsc_IC,
@@ -1120,17 +1121,13 @@ runStmt input step = do
      -- Note: `GHC.isDecl` returns False on input like
      -- `data Infix a b = a :@: b; infixl 4 :@:`
      -- and should therefore not be used here.
-     | Just decls <- GHC.parseDecl source line dflags input
-     -> case decls of
-          -- Turn declaration value bindings into GHCi let statement (#16096).
-          -- DO NOT turn pattern synonym bindings! Those are not allowed in
-          -- `let` statements.
-          [L l (ValD _ bind@FunBind{})] -> run_stmt (mk_stmt l bind)
-          [L l (ValD _ bind@VarBind{})] -> run_stmt (mk_stmt l bind)
-          -- Otherwise run as decl
-          _ -> run_decls decls
-
-     | otherwise -> throwGhcException (CmdLineError "error: can't parse input")
+     | otherwise -> do
+         hsc_env <- GHC.getSession
+         decls <- liftIO (hscParseDeclsWithLocation hsc_env source line input)
+         case decls of
+           [L l (ValD _ bind@FunBind{})] -> run_stmt (mk_stmt l bind)
+           [L l (ValD _ bind@VarBind{})] -> run_stmt (mk_stmt l bind)
+           decls -> run_decls decls
   where
     mk_stmt :: SrcSpan -> HsBind GhcPs -> GhciLStmt GhcPs
     mk_stmt loc bind =

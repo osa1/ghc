@@ -64,7 +64,7 @@ module HscMain
     , hscRnImportDecls
     , hscTcRnLookupRdrName
     , hscStmt, hscStmtWithLocation, hscParsedStmt
-    , hscDecls, hscDeclsWithLocation, hscParsedDecls
+    , hscDecls, hscParseDeclsWithLocation, hscDeclsWithLocation, hscParsedDecls
     , hscTcExpr, TcRnExprMode(..), hscImport, hscKcType
     , hscParseExpr
     , hscCompileCoreExpr
@@ -1600,6 +1600,13 @@ hscDecls :: HscEnv
          -> String -- ^ The statement
          -> IO ([TyThing], InteractiveContext)
 hscDecls hsc_env str = hscDeclsWithLocation hsc_env str "<interactive>" 1
+
+hscParseDeclsWithLocation :: HscEnv -> String -> Int -> String -> IO [LHsDecl GhcPs]
+hscParseDeclsWithLocation hsc_env source line_num str = do
+    L _ (HsModule{ hsmodDecls = decls }) <-
+      runInteractiveHsc hsc_env $
+        hscParseThingWithLocation source line_num parseModule str
+    return decls
 
 -- | Compile a decls
 hscDeclsWithLocation :: HscEnv
