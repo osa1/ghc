@@ -82,6 +82,7 @@ import NameSet
 import Panic hiding ( showException )
 import Util
 import qualified GHC.LanguageExtensions as LangExt
+import Bag (unitBag)
 
 -- Haskell Libraries
 import System.Console.Haskeline as Haskeline
@@ -1120,9 +1121,17 @@ runStmt input step = do
      -- `data Infix a b = a :@: b; infixl 4 :@:`
      -- and should therefore not be used here.
      | Just decl <- GHC.parseDecl source line dflags input
-     -> run_decl decl
+     -> case unLoc decl of
+          ValD _ bind -> do
+            -- Turn declaration into GHCi let statement (#16096)
+            let l = L (getLoc decl)
+            run_stmt (l (LetStmt noExt (l (HsValBinds noExt (ValBinds noExt (unitBag (l bind)) []))))) input
+          _ ->
+            -- Otherwise run as decl
+            run_decl decl
 
-     | otherwise -> undefined -- run_decl TODO
+
+     | otherwise -> throwGhcException (CmdLineError "error: can't parse input")
 
   where
     exec_complete = GHC.ExecComplete (Right []) 0
