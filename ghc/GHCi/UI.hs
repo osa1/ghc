@@ -1105,7 +1105,7 @@ runStmt input step = do
              -- empty statement / comment
              return (Just exec_complete)
            Just stmt ->
-             run_stmt stmt input
+             run_stmt stmt
 
      -- TODO (osa): Do parsing once, similar to parseStmt and parseDecl
      | GHC.isImport dflags input -> run_import
@@ -1122,18 +1122,21 @@ runStmt input step = do
      -- and should therefore not be used here.
      | Just decl <- GHC.parseDecl source line dflags input
      -> case unLoc decl of
-          ValD _ bind -> do
-            -- Turn declaration into GHCi let statement (#16096)
-            let l = L (getLoc decl)
-            run_stmt (l (LetStmt noExt (l (HsValBinds noExt (ValBinds noExt (unitBag (l bind)) []))))) input
-          _ ->
-            -- Otherwise run as decl
-            run_decl decl
-
+          -- Turn declaration value bindings into GHCi let statement (#16096).
+          -- DO NOT turn pattern synonym bindings! Those are not allowed in
+          -- `let` statements.
+          ValD _ bind@FunBind{} -> run_stmt (mk_stmt (getLoc decl) bind)
+          ValD _ bind@VarBind{} -> run_stmt (mk_stmt (getLoc decl) bind)
+          -- Otherwise run as decl
+          _ -> run_decl decl
 
      | otherwise -> throwGhcException (CmdLineError "error: can't parse input")
-
   where
+    mk_stmt :: SrcSpan -> HsBind GhcPs -> GhciLStmt GhcPs
+    mk_stmt loc bind =
+      let l = L loc
+      in l (LetStmt noExt (l (HsValBinds noExt (ValBinds noExt (unitBag (l bind)) []))))
+
     exec_complete = GHC.ExecComplete (Right []) 0
 
     run_import = do
@@ -1141,8 +1144,8 @@ runStmt input step = do
       return (Just exec_complete)
 
     run_decl :: LHsDecl GhcPs -> GHCi (Maybe GHC.ExecResult)
-    run_decl decl =
-        do _ <- liftIO $ tryIO $ hFlushAll stdin
+    run_decl decl = pprTrace "run_decl" (ppr decl) $ do
+           _ <- liftIO $ tryIO $ hFlushAll stdin
            m_result <- GhciMonad.runDecl decl
            case m_result of
                Nothing     -> return Nothing
@@ -1150,15 +1153,15 @@ runStmt input step = do
                  Just <$> afterRunStmt (const True)
                             (GHC.ExecComplete (Right result) 0)
 
-    run_stmt :: GhciLStmt GhcPs -> String -> GHCi (Maybe GHC.ExecResult)
-    run_stmt stmt stmt_text =
-        do -- In the new IO library, read handles buffer data even if the Handle
+    run_stmt :: GhciLStmt GhcPs -> GHCi (Maybe GHC.ExecResult)
+    run_stmt stmt = pprTrace "run_stmt" (ppr stmt) $ do
+           -- In the new IO library, read handles buffer data even if the Handle
            -- is set to NoBuffering.  This causes problems for GHCi where there
            -- are really two stdin Handles.  So we flush any bufferred data in
            -- GHCi's stdin Handle here (only relevant if stdin is attached to
            -- a file, otherwise the read buffer can't be flushed).
            _ <- liftIO $ tryIO $ hFlushAll stdin
-           m_result <- GhciMonad.runStmt stmt stmt_text step
+           m_result <- GhciMonad.runStmt stmt input step
            case m_result of
                Nothing     -> return Nothing
                Just result -> Just <$> afterRunStmt (const True) result
