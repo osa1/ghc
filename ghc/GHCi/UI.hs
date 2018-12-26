@@ -31,7 +31,7 @@ module GHCi.UI (
 #include "HsVersions.h"
 
 -- GHCi
-import qualified GHCi.UI.Monad as GhciMonad ( args, runStmt, runDecl )
+import qualified GHCi.UI.Monad as GhciMonad ( args, runStmt, runDecls' )
 import GHCi.UI.Monad hiding ( args, runStmt )
 import GHCi.UI.Tags
 import GHCi.UI.Info
@@ -1120,15 +1120,15 @@ runStmt input step = do
      -- Note: `GHC.isDecl` returns False on input like
      -- `data Infix a b = a :@: b; infixl 4 :@:`
      -- and should therefore not be used here.
-     | Just decl <- GHC.parseDecl source line dflags input
-     -> case unLoc decl of
+     | Just decls <- GHC.parseDecl source line dflags input
+     -> case decls of
           -- Turn declaration value bindings into GHCi let statement (#16096).
           -- DO NOT turn pattern synonym bindings! Those are not allowed in
           -- `let` statements.
-          ValD _ bind@FunBind{} -> run_stmt (mk_stmt (getLoc decl) bind)
-          ValD _ bind@VarBind{} -> run_stmt (mk_stmt (getLoc decl) bind)
+          [L l (ValD _ bind@FunBind{})] -> run_stmt (mk_stmt l bind)
+          [L l (ValD _ bind@VarBind{})] -> run_stmt (mk_stmt l bind)
           -- Otherwise run as decl
-          _ -> run_decl decl
+          _ -> run_decls decls
 
      | otherwise -> throwGhcException (CmdLineError "error: can't parse input")
   where
@@ -1143,10 +1143,10 @@ runStmt input step = do
       addImportToContext input
       return (Just exec_complete)
 
-    run_decl :: LHsDecl GhcPs -> GHCi (Maybe GHC.ExecResult)
-    run_decl decl = pprTrace "run_decl" (ppr decl) $ do
+    run_decls :: [LHsDecl GhcPs] -> GHCi (Maybe GHC.ExecResult)
+    run_decls decls = pprTrace "run_decl" (ppr decls) $ do
            _ <- liftIO $ tryIO $ hFlushAll stdin
-           m_result <- GhciMonad.runDecl decl
+           m_result <- GhciMonad.runDecls' decls
            case m_result of
                Nothing     -> return Nothing
                Just result ->

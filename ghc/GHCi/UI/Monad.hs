@@ -20,7 +20,7 @@ module GHCi.UI.Monad (
         TickArray,
         getDynFlags,
 
-        runStmt, runDecl, runDecls, resume, timeIt, recordBreak, revertCAFs,
+        runStmt, runDecls, runDecls', resume, timeIt, recordBreak, revertCAFs,
 
         printForUserNeverQualify, printForUserModInfo,
         printForUser, printForUserPartWay, prettyLocations,
@@ -350,18 +350,6 @@ runStmt stmt stmt_text step = do
                                                    (EvalThis fhv) }
     Just <$> GHC.execStmt' stmt stmt_text opts
 
-runDecl :: LHsDecl GhcPs -> GHCi (Maybe [GHC.Name])
-runDecl decl = do
-  st <- getGHCiState
-  reifyGHCi $ \x ->
-    withProgName (progname st) $
-    withArgs (args st) $
-    reflectGHCi x $
-      GHC.handleSourceError
-        (\e -> do GHC.printException e;
-                  return Nothing)
-        (Just <$> GHC.runParsedDecl decl)
-
 runDecls :: String -> GHCi (Maybe [GHC.Name])
 runDecls decls = do
   st <- getGHCiState
@@ -373,6 +361,18 @@ runDecls decls = do
                                         return Nothing) $ do
           r <- GHC.runDeclsWithLocation (progname st) (line_number st) decls
           return (Just r)
+
+runDecls' :: [LHsDecl GhcPs] -> GHCi (Maybe [GHC.Name])
+runDecls' decls = do
+  st <- getGHCiState
+  reifyGHCi $ \x ->
+    withProgName (progname st) $
+    withArgs (args st) $
+    reflectGHCi x $
+      GHC.handleSourceError
+        (\e -> do GHC.printException e;
+                  return Nothing)
+        (Just <$> GHC.runParsedDecls decls)
 
 resume :: (SrcSpan -> Bool) -> GHC.SingleStep -> GHCi GHC.ExecResult
 resume canLogSpan step = do

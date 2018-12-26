@@ -12,7 +12,7 @@
 module InteractiveEval (
         Resume(..), History(..),
         execStmt, execStmt', ExecOptions(..), execOptions, ExecResult(..), resumeExec,
-        runDecls, runDeclsWithLocation, runParsedDecl,
+        runDecls, runDeclsWithLocation, runParsedDecls,
         isStmt, parseStmt, hasImport, isImport, isDecl, parseDecl,
         parseImportDecl, SingleStep(..),
         abandon, abandonAll,
@@ -250,10 +250,10 @@ runDeclsWithLocation source linenumber expr =
              -- For this filter, see Note [What to show to users]
            $ map getName tyThings
 
-runParsedDecl :: GhcMonad m => LHsDecl GhcPs -> m [Name]
-runParsedDecl decl = do
+runParsedDecls :: GhcMonad m => [LHsDecl GhcPs] -> m [Name]
+runParsedDecls decls = do
     hsc_env <- getSession
-    (tyThings, ic) <- liftIO (hscParsedDecls hsc_env [decl])
+    (tyThings, ic) <- liftIO (hscParsedDecls hsc_env decls)
 
     -- TODO(osa): code dupacklue from runDeclsWithLoc
     setSession $ hsc_env { hsc_IC = ic }
@@ -870,10 +870,10 @@ isDecl dflags stmt = do
         _ -> True
     Lexer.PFailed _ _ _ -> False
 
-parseDecl :: String -> Int -> DynFlags -> String -> Maybe (LHsDecl GhcPs)
+parseDecl :: String -> Int -> DynFlags -> String -> Maybe [LHsDecl GhcPs]
 parseDecl source line dflags decl =
-  case parseThingWithLocation source line Parser.parseDeclaration dflags decl of
-    Lexer.POk _ decl -> Just decl
+  case parseThingWithLocation source line Parser.parseModule dflags decl of
+    Lexer.POk _ (L _ (HsModule{ hsmodDecls = decls })) -> Just decls
     Lexer.PFailed _ _ _ -> Nothing
 
 parseThing :: Lexer.P thing -> DynFlags -> String -> Lexer.ParseResult thing

@@ -100,7 +100,7 @@ module GHC (
         resumeExec,
 
         -- ** Adding new declarations
-        runDecls, runDeclsWithLocation, runParsedDecl,
+        runDecls, runDeclsWithLocation, runParsedDecls,
 
         -- ** Get/set the current context
         parseImportDecl,
