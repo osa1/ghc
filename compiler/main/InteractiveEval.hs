@@ -870,11 +870,10 @@ isDecl dflags stmt = do
         _ -> True
     Lexer.PFailed _ _ _ -> False
 
-parseDecl :: String -> Int -> DynFlags -> String -> Maybe [LHsDecl GhcPs]
+parseDecl :: String -> Int -> DynFlags -> String -> Lexer.ParseResult [LHsDecl GhcPs]
 parseDecl source line dflags decl =
-  case parseThingWithLocation source line Parser.parseModule dflags decl of
-    Lexer.POk _ (L _ (HsModule{ hsmodDecls = decls })) -> Just decls
-    Lexer.PFailed _ _ _ -> Nothing
+   fmap (\(L _ (HsModule{ hsmodDecls = decls })) -> decls)
+        (parseThingWithLocation source line Parser.parseModule dflags decl)
 
 parseThing :: Lexer.P thing -> DynFlags -> String -> Lexer.ParseResult thing
 parseThing = parseThingWithLocation "<interactive>" 1

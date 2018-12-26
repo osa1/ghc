@@ -80,6 +80,9 @@ module HscMain
     , ioMsgMaybe
     , showModuleIndex
     , hscAddSptEntries
+    , logWarningsReportErrors
+    , handleWarnings
+    , throwErrors
     ) where
 
 import GhcPrelude

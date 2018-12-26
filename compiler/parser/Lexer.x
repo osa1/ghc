@@ -43,6 +43,7 @@
 {
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 {-# OPTIONS_GHC -funbox-strict-fields #-}
 
@@ -1930,6 +1931,7 @@ data ParseResult a
                                -- which can show this span, e.g. by
                                -- highlighting it.
         MsgDoc                 -- The error message
+  deriving (Functor)
 
 -- | Test whether a 'WarningFlag' is set
 warnopt :: WarningFlag -> ParserFlags -> Bool
