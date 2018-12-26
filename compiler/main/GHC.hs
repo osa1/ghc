@@ -96,11 +96,11 @@ module GHC (
         -- * Interactive evaluation
 
         -- ** Executing statements
-        execStmt, ExecOptions(..), execOptions, ExecResult(..),
+        execStmt, execStmt', ExecOptions(..), execOptions, ExecResult(..),
         resumeExec,
 
         -- ** Adding new declarations
-        runDecls, runDeclsWithLocation,
+        runDecls, runDeclsWithLocation, runParsedDecl,
 
         -- ** Get/set the current context
         parseImportDecl,
@@ -139,7 +139,7 @@ module GHC (
 
         -- ** Other
         runTcInteractive,   -- Desired by some clients (Trac #8878)
-        isStmt, hasImport, isImport, isDecl,
+        isStmt, parseStmt, hasImport, isImport, isDecl, parseDecl,
 
         -- ** The debugger
         SingleStep(..),

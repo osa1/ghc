@@ -64,7 +64,7 @@ module HscMain
     , hscRnImportDecls
     , hscTcRnLookupRdrName
     , hscStmt, hscStmtWithLocation, hscParsedStmt
-    , hscDecls, hscDeclsWithLocation
+    , hscDecls, hscDeclsWithLocation, hscParsedDecls
     , hscTcExpr, TcRnExprMode(..), hscImport, hscKcType
     , hscParseExpr
     , hscCompileCoreExpr
@@ -1607,13 +1607,15 @@ hscDeclsWithLocation :: HscEnv
                      -> String -- ^ The source
                      -> Int    -- ^ Starting line
                      -> IO ([TyThing], InteractiveContext)
-hscDeclsWithLocation hsc_env0 str source linenumber =
- runInteractiveHsc hsc_env0 $ do
+hscDeclsWithLocation hsc_env str source linenumber = do
     L _ (HsModule{ hsmodDecls = decls }) <-
+      runInteractiveHsc hsc_env $
         hscParseThingWithLocation source linenumber parseModule str
+    hscParsedDecls hsc_env decls
 
+hscParsedDecls :: HscEnv -> [LHsDecl GhcPs] -> IO ([TyThing], InteractiveContext)
+hscParsedDecls hsc_env decls = runInteractiveHsc hsc_env $ do
     {- Rename and typecheck it -}
-    hsc_env <- getHscEnv
     tc_gblenv <- ioMsgMaybe $ tcRnDeclsi hsc_env decls
 
     {- Grab the new instances -}
