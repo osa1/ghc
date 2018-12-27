@@ -50,11 +50,11 @@ import GHC ( LoadHowMuch(..), Target(..),  TargetId(..), InteractiveImport(..),
              TyThing(..), Phase, BreakIndex, Resume, SingleStep, Ghc,
              GetDocsFailure(..),
              getModuleGraph, handleSourceError )
-import HscMain (hscParseDeclsWithLocation)
+import HscMain (hscParseDeclsWithLocation, hscParseStmtWithLocation)
 import HsImpExp
 import HsSyn
 import HscTypes ( tyThingParent_maybe, handleFlagWarnings, getSafeMode, hsc_IC,
-                  setInteractivePrintName, hsc_dflags, msObjFilePath )
+                  setInteractivePrintName, hsc_dflags, msObjFilePath, runInteractiveHsc )
 import Module
 import Name
 import Packages ( trusted, getPackageDetails, getInstalledPackageDetails,
@@ -1100,7 +1100,9 @@ runStmt input step = do
   let source = progname st
   let line = line_number st
 
-  if | Just mb_stmt <- GHC.parseStmt source line dflags input ->
+  if | GHC.isStmt dflags input -> do
+         hsc_env <- GHC.getSession
+         mb_stmt <- liftIO (runInteractiveHsc hsc_env (hscParseStmtWithLocation source line input))
          case mb_stmt of
            Nothing ->
              -- empty statement / comment
@@ -1144,7 +1146,7 @@ runStmt input step = do
       return (Just exec_complete)
 
     run_decls :: [LHsDecl GhcPs] -> GHCi (Maybe GHC.ExecResult)
-    run_decls decls = pprTrace "run_decl" (ppr decls) $ do
+    run_decls decls = do
            _ <- liftIO $ tryIO $ hFlushAll stdin
            m_result <- GhciMonad.runDecls' decls
            case m_result of
@@ -1154,7 +1156,7 @@ runStmt input step = do
                             (GHC.ExecComplete (Right result) 0)
 
     run_stmt :: GhciLStmt GhcPs -> GHCi (Maybe GHC.ExecResult)
-    run_stmt stmt = pprTrace "run_stmt" (ppr stmt) $ do
+    run_stmt stmt = do
            -- In the new IO library, read handles buffer data even if the Handle
            -- is set to NoBuffering.  This causes problems for GHCi where there
            -- are really two stdin Handles.  So we flush any bufferred data in

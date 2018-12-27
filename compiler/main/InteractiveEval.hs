@@ -13,7 +13,7 @@ module InteractiveEval (
         Resume(..), History(..),
         execStmt, execStmt', ExecOptions(..), execOptions, ExecResult(..), resumeExec,
         runDecls, runDeclsWithLocation, runParsedDecls,
-        isStmt, parseStmt, hasImport, isImport, isDecl,
+        isStmt, hasImport, isImport, isDecl,
         parseImportDecl, SingleStep(..),
         abandon, abandonAll,
         getResumeContext,
@@ -835,14 +835,10 @@ parseName str = withSession $ \hsc_env -> liftIO $
 
 -- | Returns @True@ if passed string is a statement.
 isStmt :: DynFlags -> String -> Bool
-isStmt dflags stmt = isJust (parseStmt "<interactive>" 1 dflags stmt)
-
--- Just Nothing <=> empty statement / comment
-parseStmt :: String -> Int -> DynFlags -> String -> Maybe (Maybe (LStmt GhcPs (LHsExpr GhcPs)))
-parseStmt source line dflags stmt =
-  case parseThingWithLocation source line Parser.parseStmt dflags stmt of
-    Lexer.POk _ stmt -> Just stmt
-    Lexer.PFailed _ _ _ -> Nothing
+isStmt dflags stmt =
+  case parseThing Parser.parseStmt dflags stmt of
+    Lexer.POk _ _ -> True
+    Lexer.PFailed _ _ _ -> False
 
 -- | Returns @True@ if passed string has an import declaration.
 hasImport :: DynFlags -> String -> Bool
@@ -871,12 +867,10 @@ isDecl dflags stmt = do
     Lexer.PFailed _ _ _ -> False
 
 parseThing :: Lexer.P thing -> DynFlags -> String -> Lexer.ParseResult thing
-parseThing = parseThingWithLocation "<interactive>" 1
+parseThing parser dflags stmt = do
+  let buf = stringToStringBuffer stmt
+      loc = mkRealSrcLoc (fsLit "<interactive>") 1 1
 
-parseThingWithLocation :: String -> Int -> Lexer.P thing -> DynFlags -> String -> Lexer.ParseResult thing
-parseThingWithLocation source line parser dflags thing = do
-  let buf = stringToStringBuffer thing
-  let loc = mkRealSrcLoc (fsLit source) line 1
   Lexer.unP parser (Lexer.mkPState dflags buf loc)
 
 getDocs :: GhcMonad m

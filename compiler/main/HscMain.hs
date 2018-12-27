@@ -63,7 +63,7 @@ module HscMain
     , hscGetModuleInterface
     , hscRnImportDecls
     , hscTcRnLookupRdrName
-    , hscStmt, hscStmtWithLocation, hscParsedStmt
+    , hscStmt, hscParseStmtWithLocation, hscStmtWithLocation, hscParsedStmt
     , hscDecls, hscParseDeclsWithLocation, hscDeclsWithLocation, hscParsedDecls
     , hscTcExpr, TcRnExprMode(..), hscImport, hscKcType
     , hscParseExpr
